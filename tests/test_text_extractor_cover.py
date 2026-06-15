@@ -32,6 +32,19 @@ def region(region_type, text, bbox=None):
     }
 
 
+def style_span(text, size, bold, y0, y1):
+    return {
+        "text": text,
+        "bbox": (0, y0, 100, y1),
+        "font": "TestFont",
+        "size": size,
+        "flags": 0,
+        "bold_candidate": bold,
+        "italic_candidate": False,
+        "underline_candidate": False,
+    }
+
+
 class CoverExtractionTests(unittest.TestCase):
     def test_contact_table_keeps_multiple_website_regions(self):
         rows = build_contact_table_rows(
@@ -194,6 +207,86 @@ class CoverExtractionTests(unittest.TestCase):
 
         self.assertEqual(items[0]["kind"], "ui_label")
         self.assertEqual(items[0]["text"], "Auto Update")
+
+    def test_settings_path_fragments_are_ui_labels_not_headings(self):
+        items = build_review_items(
+            "All Settings\n"
+            "General & Privacy\n"
+            "Power and\n"
+            "Energy Saving\n"
+            "Brightness Optimization",
+            language="ENG",
+        )
+
+        self.assertEqual(items[0]["kind"], "ui_label")
+        self.assertEqual(
+            items[0]["text"],
+            "All Settings General & Privacy Power and Energy Saving Brightness Optimization",
+        )
+
+    def test_large_bold_consecutive_lines_are_merged_as_heading(self):
+        items = build_review_items(
+            "Before Reading This\n"
+            "Simple User Guide\n"
+            "This TV comes with this Simple User Guide.",
+            language="ENG",
+            style_spans=[
+                style_span("Before Reading This", size=16, bold=True, y0=10, y1=20),
+                style_span("Simple User Guide", size=16, bold=True, y0=22, y1=32),
+                style_span(
+                    "This TV comes with this Simple User Guide.",
+                    size=7,
+                    bold=False,
+                    y0=45,
+                    y1=55,
+                ),
+            ],
+        )
+
+        self.assertEqual(items[0]["kind"], "heading")
+        self.assertEqual(items[0]["text"], "Before Reading This Simple User Guide")
+        self.assertEqual(items[1]["kind"], "body")
+
+    def test_troubleshooting_inline_reference_is_not_heading_but_bold_topics_are(self):
+        items = build_review_items(
+            "Troubleshooting\n"
+            "For more information, refer to \"\n"
+            "Troubleshooting\n"
+            "\" in the User\n"
+            "Guide.\n"
+            "The TV won’t turn on.\n"
+            "Make sure that the power cord is securely plugged into the product.\n"
+            "The screen dims.\n"
+            "The Eco Sensor automatically adjusts the screen brightness.",
+            language="ENG",
+            style_spans=[
+                style_span("Troubleshooting", size=13, bold=True, y0=10, y1=20),
+                style_span("For more information, refer to \"", size=7, bold=False, y0=30, y1=40),
+                style_span("Troubleshooting", size=7, bold=True, y0=42, y1=52),
+                style_span("\" in the User", size=7, bold=False, y0=54, y1=64),
+                style_span("Guide.", size=7, bold=False, y0=66, y1=76),
+                style_span("The TV won’t turn on.", size=9, bold=True, y0=90, y1=102),
+                style_span(
+                    "Make sure that the power cord is securely plugged into the product.",
+                    size=7,
+                    bold=False,
+                    y0=112,
+                    y1=122,
+                ),
+                style_span("The screen dims.", size=9, bold=True, y0=134, y1=146),
+                style_span(
+                    "The Eco Sensor automatically adjusts the screen brightness.",
+                    size=7,
+                    bold=False,
+                    y0=156,
+                    y1=166,
+                ),
+            ],
+        )
+
+        headings = [item["text"] for item in items if item["kind"] == "heading"]
+
+        self.assertEqual(headings, ["Troubleshooting", "The TV won’t turn on.", "The screen dims."])
 
 
 if __name__ == "__main__":

@@ -1,185 +1,350 @@
 # TODO
 
-## 완료
+## Current Goal
 
-- 프로젝트 목적과 전체 방향 정리
-  - 문서: `README.md`
-  - 목표: 전자 제품 매뉴얼 PDF 자동 검토 시스템
-  - 핵심 방향: 완전 자동 판정보다 자동 추출, 자동 비교, 사람이 확인 가능한 근거 제공
+Build a local Python-based PDF manual review engine for SUG manuals.
 
-- SUG 샘플 PDF 24개 분석
-  - 샘플 위치: `samples/SUG_RAW/`
-  - 문서: `SUG_RAW_ANALYSIS.md`
-  - 확인 내용:
-    - 파일명 메타데이터 파싱 가능
-    - PDF 텍스트 추출 가능
-    - 페이지 크기: `A2`, `A3`, `A5`
-    - `A2`, `A3` 문서는 페이지 상단 언어 라벨 확인 가능
-    - `BOOK` 문서는 PDF bookmark 기준으로 언어 구간 분리 가능
+The current focus is still extraction quality, not final pass/fail review. The engine must reliably extract document structure, language sections, headings, blocks, tables, model conditions, navigation paths, and review evidence before checklist DB rules are finalized.
 
-- PDF 프로필 메타데이터 정리
-  - 기준 파일: `metadata/pdf_profile_mapping/pdf_profile_mapping.json`
-  - 보조 파일:
-    - `metadata/pdf_profile_mapping/pdf_profile_mapping.xlsx`
-    - `metadata/pdf_profile_mapping/pdf_profile_mapping.csv`
-  - 컬럼:
-    - `source_token`
-    - `region`
-    - `buyer_codes`
-    - `languages`
-    - `doc_type`
-    - `language_count`
-  - 결정 사항:
-    - `region`은 대표 지역 코드로 관리
-    - 기존 대분류 `REGION`, 대표 국가, `ref_row`는 관리하지 않음
-    - `C-FRA`, `M-SPA`, `B-POR`는 별도 언어 코드로 유지
-    - `BOOK` 언어 순서는 실제 PDF bookmark 순서 기준
-    - `AFRICA MENA_L05`는 `region=AFRICA`, `doc_type=BOOK`으로 정규화
+## Current Status
 
-- 프로젝트 폴더 정리
-  - 기준 메타데이터: `metadata/`
-  - 샘플 PDF: `samples/`
-  - 참고 기준표: `REF/260612_manual_lan_region.xlsx`
-  - 에이전트 작업 규칙: `AGENTS.md`
-  - 임시 분석 산출물과 임시 스크립트 삭제
+### Completed Foundation
 
-## 진행 방향
+- Created canonical PDF profile metadata in `metadata/pdf_profile_mapping/`.
+  - `pdf_profile_mapping.json` is the application source.
+  - `pdf_profile_mapping.xlsx` and `.csv` are review/diff helpers.
+- Implemented filename parsing and `source_token` lookup.
+- Implemented profile loading from `pdf_profile_mapping.json`.
+- Implemented PDF structure analysis for current sample types.
+- Verified current sample PDF structure against profile metadata.
+- Implemented GridCell extraction and reading order.
+  - A2 landscape: `2 x 8`
+  - A3 portrait: `2 x 4`
+  - BOOK A5 portrait: `1 x 2`
+- Implemented RTL/LTR GridCell reading order.
+  - LTR: left to right within each row.
+  - RTL: right to left within each row.
+- Implemented BOOK language section extraction from PDF bookmarks.
+- Implemented BOOK RTL page reading order correction for Arabic.
+- Added review-oriented JSON export and Excel review export.
 
-- 1차 구현은 로컬 실행형 Python 앱으로 시작
-  - 사용자는 각자 PC에서 프로젝트 폴더를 받고 Python과 라이브러리를 설치
-  - `run_app.bat` 또는 명령어로 앱 실행
-  - 화면은 브라우저에서 열리지만, 실제 실행은 각자 PC에서 수행
+### Completed ZC English Extraction POC
 
-- UI는 우선 Streamlit을 고려
-  - PDF 업로드
-  - 모델코드 입력
-  - 검토 옵션 선택
-  - 진행 로그 표시
-  - 결과 리포트 다운로드
+ZC English extraction is now stabilized against current available ZC ENG samples:
 
-- 장기적으로는 사내 웹 시스템으로 확장 가능하게 설계
-  - 핵심 검토 로직은 `src/` 아래에 분리
-  - Streamlit은 초기 UI 역할만 담당
-  - 이후 필요 시 FastAPI + React 또는 사내 표준 웹 시스템으로 전환
+```text
+BN68-20834D-00_SUG_Y25 TV ALL_ZC_L02_250710.0.pdf
+BN68-25100A-00_SUG_Y26 TV ALL_ZC_L02_251222.0.pdf
+BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf
+```
 
-## 다음 작업
+Latest verified output:
 
-### 1. Python 프로젝트 기본 구조 생성
+```text
+outputs/content_poc_review_zc_eng_final_v3/
+```
+
+Verification summary:
+
+- Full tests: `58` tests passing.
+- `python -m compileall src tests` passing.
+- `26Y A` block sequence matches user-verified `26Y B`.
+- `25Y` has a different format, but current checks show no remaining orphan fragments such as `>`, `Auto`, `Frame.`, `.`, or `1. 2. 3.`.
+- Current suspicious pattern check found no body blocks containing known bullet-only fragments.
+
+ZC ENG block handling now includes:
+
+- `safety_symbol_table`
+- `navigation_ui`
+- `item_list`
+- `item_list_note`
+- `condition_label`
+- `procedure_note`
+- `numbered_step`
+- `figure_notice`
+- `figure_legend`
+- `figure_action_labels`
+- `figure_variant_labels`
+- `figure_callout_label`
+- `model_condition`
+- `spec_table`
+- `regulatory_note`
+
+## Current Code Modules
 
 ```text
 src/
-  domain/
-  application/
-  infrastructure/
-  interfaces/
+  models.py                shared dataclasses
+  filename_parser.py       parse manual PDF filenames and source tokens
+  profile_repository.py    load pdf_profile_mapping.json
+  profile_lookup.py        combine filename parsing and profile lookup
+  pdf_analyzer.py          analyze page size, orientation, language, GridCells, BOOK sections
+  structure_validator.py   compare profile metadata with actual PDF structure
+  text_extractor.py        extract review text as items, blocks, and normalized sentences
+  excel_exporter.py        legacy XLSX exporter for extracted review text
+  content_poc.py           current section/block content extraction POC and review export
+  cli.py                   temporary developer CLI
 ```
 
-- `domain/`
-  - 핵심 데이터 모델과 업무 규칙
-  - 예: PDF 프로필, 파일명 파싱 결과, PDF 구조, 검증 결과
+## Current Extraction Decisions
 
-- `application/`
-  - 업무 흐름 조합
-  - 예: 파일명 파싱 -> 프로필 조회 -> PDF 구조 분석 -> 검증 결과 생성
+### Review Unit
 
-- `infrastructure/`
-  - 파일, JSON, PDF 라이브러리 접근
-  - 예: `pdf_profile_mapping.json` 로딩, PyMuPDF 기반 PDF 분석
+GridCell is an intermediate extraction unit only.
 
-- `interfaces/`
-  - 실행 입구
-  - 초기에는 CLI 또는 Streamlit 앱
-
-### 2. PDF 파일명 파서 구현
-
-- 입력 예:
+The future review unit is:
 
 ```text
-BN68-25100A-00_SUG_Y26 TV ALL_ZC_L02_251222.0.pdf
+language
+  section / heading
+    block
+      lines
+      sentences
+      structured rows when table/spec/list
 ```
 
-- 추출 값:
-  - `manual_code`
-  - `manual_type`
-  - `product_info`
-  - `buyer_region_token`
-  - `language_token`
-  - `source_token`
-  - `date_code`
+GridCell/page/cell coordinates should remain as provenance fields, not final review grouping.
 
-### 3. PDF 프로필 매핑 로더 구현
+### Lines and Sentences
 
-- 입력:
+Keep both `lines` and `sentences` internally, but review Excel should prioritize `lines_text`.
+
+Reason:
+
+- Block/line level is more stable for multilingual DB management.
+- A single English sentence may become 2-3 sentences in another language.
+- Sentence level is still useful for phrase checks and diffs.
+
+### Topic IDs
+
+Use `topic_id` only where a stable DB/checklist key is necessary.
+
+Current rule:
+
+- Keep `topic_id` in JSON.
+- Show `topic_id` in `Regulatory Notes`.
+- Do not show `topic_id` in the general `Content Review` sheet.
+
+### Navigation and Icons
+
+If navigation text is recoverable, keep it as `navigation_ui`.
+
+Do not introduce `icon_token` unless navigation text cannot be recovered or an icon-only instruction becomes a required checklist item.
+
+For navigation paths that start with a button-only vector icon, keep the block as `navigation_ui` and evaluate inline `btn_*` tokens only when the icon is needed to preserve the path meaning. Current candidate:
+
+- home button at the start of navigation paths => `{btn_home}`
+
+### English Variants
+
+Do not store English text as only `ENG`.
+
+Always preserve profile context:
 
 ```text
-metadata/pdf_profile_mapping/pdf_profile_mapping.json
+language=ENG
+source_token=ZC_L02
+region=ZC
+buyer_codes=ZC
+doc_type=A2
+language_variant=null
 ```
 
-- 기능:
-  - 전체 프로필 로드
-  - `source_token` 기준 조회
-  - 없는 `source_token`이면 명확한 오류 반환
+Future checklist DB should allow:
 
-### 4. 실제 PDF 구조 분석기 구현
+```text
+ENG / GLOBAL
+ENG / US
+ENG / UK
+ENG / CA
+ENG / source-token-specific exception
+```
 
-- 확인 항목:
-  - 페이지 수
-  - 페이지 크기
-  - `A2`, `A3`, `BOOK` 판정
-  - `BOOK` bookmark 언어 목록
-  - `A2`, `A3` 상단 언어 라벨
+## Heading-Based Extraction Rules
 
-### 5. 매핑과 실제 PDF 비교
+Heading-specific behavior is required for multilingual stability.
 
-- 비교 항목:
-  - `doc_type`
-  - `language_count`
-  - `languages`
+English canonical headings should become stable rule keys. Localized headings must be mapped and checked before broad multilingual extraction.
 
-- 불일치 시 처리:
-  - 자동 실패 처리보다 수동 확인 필요로 분류
-  - 실제 PDF가 변경된 것인지, `pdf_profile_mapping` 수정이 필요한지 판단할 수 있게 표시
+Current ZC ENG canonical rule examples:
 
-### 6. 체크리스트 Excel 구조 설계
+```text
+Warning! Important Safety Instructions
+- safety symbol content => safety_symbol_table
+- include split table rows even when final row moves to adjacent cell
 
-- 목적:
-  - 운영 DB가 아니라 체크리스트 입력/import 양식
+Safety Precaution
+- warning intro => body
+- precaution items => bullet
+- remove numeric layout artifacts such as "1. 2. 3."
 
-- 후보 시트:
-  - `required_phrases`
-  - `spec_rules`
-  - `icon_rules`
-  - `exceptions`
+Preventing the TV from falling
+- "Wall-anchor (not supplied)" => procedure_note
+- procedure text => numbered_step
+- do not rely only on extracted step numbers
 
-- 우선순위:
-  - 필수 문구 검토용 `required_phrases`부터 설계
+Internet security / Troubleshooting / Eco Sensor and screen brightness
+- navigation paths => navigation_ui
+- merge split UI/navigation fragments
 
-### 7. Streamlit 로컬 앱 초안
+01 Package Content
+- package items => item_list
+- "*:" and "**:" notes => item_list_note
 
-- 기능:
-  - 신규 PDF 업로드
-  - 이전 버전 PDF 업로드
-  - 모델코드 입력
-  - 검토 옵션 선택
-  - PDF 프로필 조회 결과 표시
-  - PDF 구조 분석 결과 표시
-  - 매핑 비교 결과 표시
+Using the TV Controller
+- figure legend labels => figure_legend
 
-## 보류 / 추후 결정
+02 Connecting the TV to the One Connect Box
+- model scoped text => condition_label
+- Bending/Twisting/Pulling/Pressing on/Electric shock => figure_action_labels
 
-- 결과 리포트 1차 형식
-  - HTML
-  - Excel
-  - 둘 다
+How to turn on and off the Microphone
+- Type A/B/C/D => figure_variant_labels
+- On/Off Switch => figure_callout_label
+- model applicability text => model_condition with parsed model list
 
-- 모델 사양값 연동
-  - MVP에 포함할지 추후 결정
+Specifications
+- Display Resolution and Sound (Output) => spec_table
+- inline model/value attached to heading must be included in spec_table
+- Operating/Storage Temperature/Humidity => common_required_spec table
 
-- 이미지/아이콘 검토
-  - 초기 MVP에서는 자동 판정보다 후보 탐지와 수동 확인 중심으로 검토
+Notes
+- regulatory note topics => regulatory_note with topic_id
+```
 
-- 검토 이력 저장
-  - 로컬 파일 저장으로 시작할지, DB를 둘지 추후 결정
+## Next Work
 
-- 사내 서버 배포
-  - 로컬 앱 검증 후 필요 시 검토
+### 1. Build Localized Heading Rule Mapping
+
+Before broad multilingual extraction, create a canonical heading rule table:
+
+- map English canonical headings to localized heading text
+- verify localized heading order against the PDF
+- apply expected block sequence per canonical heading
+- flag unmatched or ambiguous translated headings for manual review
+- check whether localized headings are literal translations or region-specific variants
+
+Suggested output shape:
+
+```text
+canonical_heading_id
+english_heading
+localized_heading
+language
+source_token
+heading_match_method
+expected_block_sequence
+status
+manual_review_note
+```
+
+### 2. Start C-FRA Validation for ZC_L02
+
+Use ZC C-FRA as the first multilingual validation target because ZC PDFs include `ENG` and `C-FRA`.
+
+Goal:
+
+- Compare C-FRA heading order with ENG canonical heading order.
+- Confirm localized heading detection.
+- Apply heading-based expected block rules.
+- Identify where non-English extraction still collapses into large body blocks.
+- Check whether navigation paths with leading home-button vectors fragment in C-FRA; if they do, decide whether to normalize them with `{btn_home}` inside `navigation_ui`.
+
+Important current limitation:
+
+- Non-ENG extraction is still coarse compared with ENG and needs improvement before C-FRA can be considered stable.
+
+### 3. Generalize Current ENG Rules Without Overfitting
+
+After C-FRA heading mapping starts, verify the same extraction shape against:
+
+```text
+ZX_L02 English
+one A3 English sample
+one BOOK English section
+```
+
+Goal:
+
+- avoid overfitting to `ZC_L02`
+- validate A2/A3/BOOK heading and block rules
+- check English variant differences
+- prepare for checklist DB and multilingual alignment
+
+### 4. Add Crop Evidence for Risky Blocks
+
+Create image crops for:
+
+- cover cells
+- section front/back cover pages
+- safety symbol table
+- navigation/UI blocks
+- figure/action label blocks
+- table-like regions
+
+Store crop paths in JSON and include them in review reports.
+
+### 5. Add OCR Decision Flow
+
+Do not OCR every page by default.
+
+Recommended flow:
+
+```text
+1. Try PyMuPDF text extraction.
+2. Check char count, empty cells, suspicious UI/table/cover blocks.
+3. Apply OCR only to risky regions or failed regions.
+4. Compare OCR text with PyMuPDF text.
+5. Mark manual_review_required when disagreement is high.
+```
+
+## Next Start Prompt
+
+Use this prompt when starting the next session:
+
+```text
+C:\Users\bella\image-extractor 프로젝트를 이어서 진행할거야.
+
+먼저 AGENTS.md, TODO.md, SUG_RAW_ANALYSIS.md를 읽고 현재 상태를 파악해줘.
+
+현재까지 ZC_L02 ENG content extraction POC는 아래 샘플 기준으로 안정화했어.
+
+- BN68-20834D-00_SUG_Y25 TV ALL_ZC_L02_250710.0.pdf
+- BN68-25100A-00_SUG_Y26 TV ALL_ZC_L02_251222.0.pdf
+- BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf
+
+최신 산출물은 outputs/content_poc_review_zc_eng_final_v3/ 에 있어.
+26Y B는 사람이 확인한 기준 파일이고, 26Y A는 B와 block sequence가 동일한 것으로 확인했어.
+25Y는 포맷 차이가 있지만 현재 의심 패턴 검사까지 통과했어.
+
+다음 작업은 다국어 확장 전 단계로, ZC C-FRA를 대상으로 localized heading mapping을 시작하는 거야.
+
+진행 순서:
+
+1. TODO.md와 SUG_RAW_ANALYSIS.md의 Heading-Based Block Rules 확인
+2. ZC_L02 ENG canonical heading 목록 추출
+3. 같은 PDF의 C-FRA heading 후보 추출
+4. ENG canonical heading과 C-FRA localized heading을 매핑
+5. heading order와 expected block sequence를 비교
+6. C-FRA에서 large body로 뭉치는 구간을 찾아 원인 분석
+7. 바로 고치기보다 먼저 heading mapping/schema를 안정화
+
+주의:
+
+- C-FRA는 아직 ENG처럼 세밀하게 추출되지 않을 수 있어.
+- 다국어에서는 heading 번역어가 영문과 같은 의미인지 체크가 필요해.
+- 같은 canonical heading이면 같은 block rule이 적용되어야 해.
+- navigation이 텍스트로 정상 추출되면 icon_token은 만들지 않아.
+- 섣불리 DB schema를 확정하지 말고 extraction 안정화를 우선해줘.
+```
+
+## Deferred
+
+- Checklist DB final schema
+- Required phrase authoring
+- Full multilingual alignment
+- Model/spec validation against model system data
+- Image/icon similarity review
+- Previous-version diff
+- Streamlit/FastAPI UI
+- Report format finalization

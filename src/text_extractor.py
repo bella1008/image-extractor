@@ -54,7 +54,11 @@ def extract_review_text(
     for page in pages:
         cells = []
         for cell in sorted(page.grid_cells, key=lambda item: item.reading_order):
-            review_items = build_review_items(cell.text, language=language)
+            review_items = build_review_items(
+                cell.text,
+                language=language,
+                style_spans=cell.styled_spans,
+            )
             normalized_text = build_normalized_text(review_items)
             normalized_sentences = split_sentences(normalized_text, language=language)
             sentences = [
@@ -691,7 +695,7 @@ def make_block(
         block["image_crop_required"] = True
         block["ocr_recommended"] = True
         block["sentences"] = [
-            {"sentence_order": index, "text": row["description"]}
+            {"sentence_order": index, "text": " ".join(row["lines"])}
             for index, row in enumerate(rows, start=1)
         ]
     return block
@@ -770,11 +774,18 @@ def parse_safety_symbol_rows(text: str) -> list[dict[str, Any]]:
                 "row_order": order,
                 "symbol_key": label,
                 "label": start.rstrip(":"),
-                "description": description,
+                "lines": split_safety_table_lines(description),
                 "symbol_image_crop": None,
             }
         )
     return rows
+
+
+def split_safety_table_lines(text: str) -> list[str]:
+    normalized = normalize_sentence(text)
+    if not normalized:
+        return []
+    return [line.strip() for line in split_sentences(normalized) if line.strip()]
 
 
 def extract_between(text: str, start: str, end: str | None) -> str:
@@ -787,7 +798,11 @@ def extract_between(text: str, start: str, end: str | None) -> str:
     return normalize_sentence(text[start_index:end_index])
 
 
-def build_review_items(text: str, language: str = "ENG") -> list[dict[str, Any]]:
+def build_review_items(
+    text: str,
+    language: str = "ENG",
+    style_spans: list[Any] | tuple[Any, ...] | None = None,
+) -> list[dict[str, Any]]:
     if not text.strip():
         return []
     if language != "ENG":
@@ -795,14 +810,22 @@ def build_review_items(text: str, language: str = "ENG") -> list[dict[str, Any]]
 
     items: list[dict[str, Any]] = []
     lines = [line.strip() for line in text.splitlines() if line.strip()]
+    style_heading_groups = build_style_heading_groups(lines, style_spans or [])
+    style_spans_by_line = build_style_spans_by_line(lines, style_spans or [])
     index = 0
     while index < len(lines):
         line = lines[index]
 
+        if index in style_heading_groups:
+            line_count, heading_text = style_heading_groups[index]
+            add_review_item(items, "heading", heading_text, language)
+            index += line_count
+            continue
+
         if is_standalone_bullet(line):
             index += 1
             bullet_lines = []
-            while index < len(lines) and should_continue_run(lines[index]):
+            while index < len(lines) and index not in style_heading_groups and should_continue_run(lines[index]):
                 bullet_lines.append(lines[index])
                 index += 1
             add_review_item(items, "bullet", " ".join(bullet_lines), language)
@@ -833,10 +856,17 @@ def build_review_items(text: str, language: str = "ENG") -> list[dict[str, Any]]
             index = consume_bullet(lines, index, items, language)
             continue
 
-        if is_heading_line(line):
+        if is_heading_line(line) and not is_text_heading_suppressed_by_style(
+            line,
+            style_spans_by_line.get(index),
+        ):
             heading_lines = [line]
             index += 1
-            while index < len(lines) and is_heading_continuation(heading_lines[-1], lines[index]):
+            while (
+                index < len(lines)
+                and index not in style_heading_groups
+                and is_heading_continuation(heading_lines[-1], lines[index])
+            ):
                 heading_lines.append(lines[index])
                 index += 1
             add_review_item(items, "heading", " ".join(heading_lines), language)
@@ -844,12 +874,108 @@ def build_review_items(text: str, language: str = "ENG") -> list[dict[str, Any]]
 
         body_lines = [line]
         index += 1
-        while index < len(lines) and should_continue_run(lines[index]):
+        while index < len(lines) and index not in style_heading_groups and should_continue_run(lines[index]):
             body_lines.append(lines[index])
             index += 1
         add_review_item(items, "body", " ".join(body_lines), language)
 
     return [{**item, "item_order": index} for index, item in enumerate(items, start=1)]
+
+
+def build_style_heading_groups(
+    lines: list[str],
+    style_spans: list[Any] | tuple[Any, ...],
+) -> dict[int, tuple[int, str]]:
+    if not lines or not style_spans:
+        return {}
+
+    style_spans_by_line = build_style_spans_by_line(lines, style_spans)
+    candidates: dict[int, Any] = {}
+    for index, line in enumerate(lines):
+        span = style_spans_by_line.get(index)
+        if span and is_prominent_heading_span(span):
+            candidates[index] = span
+
+    groups: dict[int, tuple[int, str]] = {}
+    index = 0
+    while index < len(lines):
+        if index not in candidates:
+            index += 1
+            continue
+        group_indexes = [index]
+        next_index = index + 1
+        while (
+            next_index in candidates
+            and is_continuing_heading_span(candidates[group_indexes[-1]], candidates[next_index])
+        ):
+            group_indexes.append(next_index)
+            next_index += 1
+        heading = normalize_sentence(" ".join(lines[group_index] for group_index in group_indexes))
+        groups[index] = (len(group_indexes), heading)
+        index = next_index
+    return groups
+
+
+def find_matching_style_span(line: str, style_spans: list[Any] | tuple[Any, ...]) -> Any | None:
+    normalized_line = normalize_sentence(line)
+    for span in style_spans:
+        if normalize_sentence(style_value(span, "text", "")) == normalized_line:
+            return span
+    return None
+
+
+def build_style_spans_by_line(
+    lines: list[str],
+    style_spans: list[Any] | tuple[Any, ...],
+) -> dict[int, Any]:
+    spans_by_line: dict[int, Any] = {}
+    next_span_index = 0
+    for index, line in enumerate(lines):
+        normalized_line = normalize_sentence(line)
+        while next_span_index < len(style_spans):
+            span = style_spans[next_span_index]
+            next_span_index += 1
+            if normalize_sentence(style_value(span, "text", "")) == normalized_line:
+                spans_by_line[index] = span
+                break
+    return spans_by_line
+
+
+def is_prominent_heading_span(span: Any) -> bool:
+    size = float(style_value(span, "size", 0))
+    return size >= 9 and (
+        bool(style_value(span, "bold_candidate", False))
+        or bool(style_value(span, "underline_candidate", False))
+    )
+
+
+def is_continuing_heading_span(previous: Any, current: Any) -> bool:
+    previous_size = float(style_value(previous, "size", 0))
+    current_size = float(style_value(current, "size", 0))
+    if abs(previous_size - current_size) > 0.75:
+        return False
+    previous_box = style_value(previous, "bbox", (0, 0, 0, 0))
+    current_box = style_value(current, "bbox", (0, 0, 0, 0))
+    vertical_gap = float(current_box[1]) - float(previous_box[3])
+    return vertical_gap <= max(previous_size, current_size) * 0.75
+
+
+def style_value(span: Any, key: str, default: Any) -> Any:
+    if isinstance(span, dict):
+        return span.get(key, default)
+    return getattr(span, key, default)
+
+
+def is_text_heading_suppressed_by_style(line: str, span: Any | None) -> bool:
+    if span is None:
+        return False
+    normalized = normalize_sentence(line)
+    size = float(style_value(span, "size", 0))
+    if size <= 7.25:
+        return True
+    if normalized.startswith(('"', "'", "“", "”")):
+        return True
+    return False
 
 
 def build_normalized_text(items: list[dict[str, Any]]) -> str:
@@ -1099,6 +1225,12 @@ def is_ui_label_line(line: str) -> bool:
         "Auto",
         "Update",
         "Software Update",
+        "All Settings",
+        "General & Privacy",
+        "Power and",
+        "Energy Saving",
+        "Power and Energy Saving",
+        "Brightness Optimization",
         "Troubleshooting",
         "button / Remote control sensor /",
         "button / Remote Control Sensor /",

@@ -11,7 +11,7 @@
 
 - 안전 주의사항 문구
 - 언어별 필수 문구
-- 바이어/국가별 필수 문구dff
+- 바이어/국가별 필수 문구
 - 모델코드별 사양값
 - 규격 관련 이미지 또는 아이콘
 - 이전 PDF 대비 변경사항
@@ -376,3 +376,81 @@ diff_section=safety_notice page=4 status=changed
 
 성공 기준은 완전 자동화가 아닙니다.  
 검토자가 믿을 수 있는 근거를 제공하고, 반복 확인 업무를 줄이며, 누락 가능성을 낮추는 것이 이 시스템의 핵심 목표입니다.
+
+## 14. 현재 MVP 구현 상태
+
+현재 로컬 Python 엔진은 다음 단계까지 구현되어 있습니다.
+
+- PDF 파일명 파싱
+- `pdf_profile_mapping.json` 기반 프로필 조회
+- A2/A3/BOOK 구조 분석
+- GridCell 및 LTR/RTL 읽기 순서 분석
+- BOOK bookmark 기반 언어 구간 분석
+- 구조 검증
+- ZC 영어 샘플 기준 section/block 텍스트 추출 POC 안정화
+- 추출 결과 검토용 JSON/XLSX 생성
+
+현재 전체 샘플 구조 검증 결과:
+
+```text
+25 samples
+0 failures
+```
+
+현재 추출 설계의 핵심은 다음과 같습니다.
+
+```text
+GridCell = PDF 읽기 순서를 안정화하기 위한 중간 단위
+Review unit = language -> section/heading -> block -> lines/sentences
+```
+
+즉, 최종 검토 DB는 GridCell 좌표가 아니라 heading/section과 block 중심으로 설계해야 합니다. GridCell 정보는 근거와 추적용으로 유지합니다.
+
+텍스트 추출은 문장 단위만 저장하지 않고, block, line, sentence 단위를 함께 저장하는 방향입니다. 다만 검토용 Excel에서는 `lines_text`를 우선 보여주고, sentence는 JSON 내부의 비교/검색 보조 데이터로 유지하는 것이 현재 방향입니다.
+
+```text
+block_type: heading | body | bullet | warning | table | navigation_ui | list_item | spec_table | regulatory_note
+block_text
+lines[]
+sentences[]
+```
+
+이 방식은 다국어 번역에서 영어 1문장이 다른 언어 2~3문장으로 나뉘는 경우를 처리하기 쉽습니다.
+
+현재 ZC 영어 content extraction POC는 아래 샘플에서 안정화되었습니다.
+
+```text
+BN68-20834D-00_SUG_Y25 TV ALL_ZC_L02_250710.0.pdf
+BN68-25100A-00_SUG_Y26 TV ALL_ZC_L02_251222.0.pdf
+BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf
+```
+
+최신 검토용 출력:
+
+```text
+outputs/content_poc_review_zc_eng_final_v3/
+```
+
+현재 다음 단계는 ZC `C-FRA`를 대상으로 영어 canonical heading과 localized heading을 매핑하고, 같은 heading rule과 block sequence가 다국어에서도 유지되는지 확인하는 것입니다.
+
+## 15. 현재 주요 추출 리스크
+
+다음 영역은 텍스트만으로 자동 판정하지 않고, 이미지 근거 또는 OCR 결과를 함께 남기는 방향이 적합합니다.
+
+- cover / back cover 영역
+- safety symbol table
+- navigation / UI 영역
+- 아이콘과 텍스트가 섞인 영역
+- 표 형태의 영역
+
+특히 `ZC_L02` 영어의 safety symbol explanation table은 향후 별도 table block으로 추출해야 합니다.
+
+```text
+block_type = safety_symbol_table
+rows:
+  symbol_image_crop
+  label
+  description
+```
+
+현재 POC에서는 safety symbol table, navigation/UI, package item list, model condition, specification table, regulatory note 등은 일반 body가 아니라 별도 block_type으로 분리하는 방향으로 구현되어 있습니다.

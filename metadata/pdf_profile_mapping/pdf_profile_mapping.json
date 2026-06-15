@@ -1,0 +1,186 @@
+[
+  {
+    "source_token": "AFRICA MENA_L05",
+    "region": "AFRICA",
+    "buyer_codes": "AFRICA;MENA",
+    "languages": "ENG;FRA;SPA;POR;ARA",
+    "doc_type": "BOOK",
+    "language_count": 5
+  },
+  {
+    "source_token": "AFRICA_L05",
+    "region": "AFRICA",
+    "buyer_codes": "AFRICA",
+    "languages": "ENG;FRA;SPA;POR;ARA",
+    "doc_type": "BOOK",
+    "language_count": 5
+  },
+  {
+    "source_token": "ASIA_ENG",
+    "region": "ASIA",
+    "buyer_codes": "ASIA",
+    "languages": "ENG",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "CE_L05",
+    "region": "CE",
+    "buyer_codes": "CE",
+    "languages": "RUS;ENG;KAZ;MON;KYR",
+    "doc_type": "BOOK",
+    "language_count": 5
+  },
+  {
+    "source_token": "KR_KOR",
+    "region": "KR",
+    "buyer_codes": "KR",
+    "languages": "KOR",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "LATIN_L02",
+    "region": "LATIN",
+    "buyer_codes": "LATIN",
+    "languages": "ENG;M-SPA",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "MENA_L02",
+    "region": "MENA",
+    "buyer_codes": "MENA",
+    "languages": "ENG;ARA",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "PY_ENRU",
+    "region": "RU",
+    "buyer_codes": "PY",
+    "languages": "RUS;ENG",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "SQ MI_HEAR",
+    "region": "SQ",
+    "buyer_codes": "SQ;MI",
+    "languages": "HEB;ARA",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "TK_ARA",
+    "region": "TK",
+    "buyer_codes": "TK",
+    "languages": "ARA",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "TK_L02",
+    "region": "TK",
+    "buyer_codes": "TK",
+    "languages": "ENG;TUR",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "UA_ENG",
+    "region": "UA",
+    "buyer_codes": "UA",
+    "languages": "ENG",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "XC_L12",
+    "region": "XC",
+    "buyer_codes": "XC",
+    "languages": "ENG;FRA;SPA;POR;DEU;SWE;DAN;NOR;FIN;CAT;GLG;EUS",
+    "doc_type": "BOOK",
+    "language_count": 12
+  },
+  {
+    "source_token": "XD_INS",
+    "region": "XD",
+    "buyer_codes": "XD",
+    "languages": "INS",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "XH_L16",
+    "region": "XH",
+    "buyer_codes": "XH",
+    "languages": "ENG;HUN;POL;GRE;BUL;CRO;CZE;SLK;ROM;SER;ALB;MKD;SLV;LAT;LTU;EST",
+    "doc_type": "BOOK",
+    "language_count": 16
+  },
+  {
+    "source_token": "XT_L02",
+    "region": "XT",
+    "buyer_codes": "XT",
+    "languages": "ENG;THA",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "XU_ENG",
+    "region": "XU",
+    "buyer_codes": "XU",
+    "languages": "ENG",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "XY_ENG",
+    "region": "XY",
+    "buyer_codes": "XY",
+    "languages": "ENG",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "ZA_ENG",
+    "region": "ZA",
+    "buyer_codes": "ZA",
+    "languages": "ENG",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "ZC_L02",
+    "region": "ZC",
+    "buyer_codes": "ZC",
+    "languages": "ENG;C-FRA",
+    "doc_type": "A2",
+    "language_count": 2
+  },
+  {
+    "source_token": "ZG XN ZT_L05",
+    "region": "ZG",
+    "buyer_codes": "ZG;XN;ZT",
+    "languages": "ENG;DEU;FRA;ITA;DUT",
+    "doc_type": "BOOK",
+    "language_count": 5
+  },
+  {
+    "source_token": "ZW_TPE",
+    "region": "ZW",
+    "buyer_codes": "ZW",
+    "languages": "TPE",
+    "doc_type": "A3",
+    "language_count": 1
+  },
+  {
+    "source_token": "ZX_L02",
+    "region": "ZX",
+    "buyer_codes": "ZX",
+    "languages": "ENG;M-SPA",
+    "doc_type": "A2",
+    "language_count": 2
+  }
+]

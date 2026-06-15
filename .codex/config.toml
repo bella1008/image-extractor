@@ -1,0 +1,7 @@
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+default_permissions = ":workspace"
+
+[sandbox_workspace_write]
+writable_roots = ["C:\\Users\\bella\\image-extractor"]
+network_access = true

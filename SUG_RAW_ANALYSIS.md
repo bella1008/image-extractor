@@ -1,743 +1,298 @@
-# SUG_RAW Sample Analysis
+# SUG_RAW PDF Sample Analysis
 
-This is a domain analysis document, not an agent instruction file.
+분석 대상: `SUG_RAW` 내 SUG 매뉴얼 PDF 24개  
+분석 일자: 2026-06-11  
+분석 도구: PyMuPDF 1.27.2.3
 
-This file is the original working analysis document for the SUG_RAW sample set.
-It now combines the current sample findings with the direction from
-`C:\Users\bella\Documents\명세서.md`.
+## 1. 분석 요약
 
-## Product Direction
+- PDF 24개 모두 파일명 파싱 가능
+- PDF 24개 모두 텍스트 추출 가능
+- 현재 샘플 기준 OCR 필수 PDF는 없음
+- 확인된 페이지 규격은 A2, A3, A5
+- `L05`, `L12`, `L16` book type 파일은 모두 PDF bookmark가 언어 구간 정보를 제공
+- A2/A3 시트형 파일은 대부분 페이지 상단 모서리에 언어 약자가 텍스트로 표시됨
 
-The project is a local Python-based PoC for automatic review of multilingual PDF
-manuals.
+## 2. 폴더명 사용 기준
 
-Primary goal:
+`TV_AFRICA`, `TV_ZA` 같은 폴더명은 샘플 정리용 참고값입니다.
 
-- Parse layout-based PDF structure.
-- Extract multilingual manual text in a stable review unit.
-- Build a future multilingual master DB.
-- Compare extracted text and specification values against master/checklist/spec DBs.
-- Detect missing, incorrect, or suspicious content automatically.
-- Provide review evidence for manual confirmation where full automation is risky.
+운영 시스템에서 PDF를 업로드할 때는 폴더명이 없거나 의미가 없을 수 있으므로, 폴더명은 메타데이터 기준으로 사용하지 않습니다. 메타데이터는 파일명과 PDF 내부 정보 기준으로 추출합니다.
 
-Operating assumption:
+## 3. 파일명 메타데이터
 
-- Local PC environment.
-- Network and external cloud usage may be restricted.
-- The first target is a reliable local review engine, not a full enterprise system.
-
-Success criteria for the early phase:
-
-- Do not aim for 100% automatic pass/fail immediately.
-- Produce reliable extracted evidence.
-- Mark risky regions for manual review.
-- Reduce repeated manual checking and missing-item risk.
-
-## Recommended Technical Direction
-
-Current PoC stack:
-
-- Python 3.10+
-- PyMuPDF for PDF parsing
-- JSON and XLSX outputs for review
-
-Recommended future stack:
-
-- SQLite for local PoC DB
-- PostgreSQL or internal RDBMS later if the tool becomes operational
-- Streamlit for quick internal MVP UI, or FastAPI + React for a longer-term app
-- OCR only for risky or failed extraction regions, not every page by default
-- Local embedding model or approved internal AI API for semantic similarity checks
-
-## Target Review Workflow
+현재 샘플 파일명은 아래 구조로 파싱됩니다.
 
 ```text
-User input
-  |
-  |-- new PDF
-  |-- previous PDF
-  |-- model code
-  |-- buyer / country
-  |-- review options
-  v
-
-PDF analysis
-  |
-  |-- document type detection
-  |-- page structure analysis
-  |-- language section splitting
-  |-- text extraction
-  |-- table / image / icon extraction candidates
-  |-- OCR/manual-review candidates
-  v
-
-Review execution
-  |
-  |-- checklist phrase review
-  |-- model specification validation
-  |-- buyer/country image and icon review
-  |-- previous-version comparison
-  v
-
-Result report
-  |
-  |-- pass/fail candidates
-  |-- manual review required items
-  |-- changed sections
-  |-- evidence crops / extracted text
-  |-- execution logs
+(매뉴얼코드)_(매뉴얼종류)_(출시연도 제품)_(바이어/판매지역)_(언어 토큰)_(날짜).0.pdf
 ```
 
-## Future Agent Responsibilities
-
-The extraction engine being built now is the foundation for these later agents.
-
-### PDF Extraction Agent
-
-Extract source evidence from PDFs:
-
-- filename/profile lookup
-- page size and document type
-- A2, A3, and BOOK layout structure
-- language section splitting
-- GridCell reading order
-- section/block text extraction
-- table candidates
-- image/icon candidates
-- OCR decision flags
-
-This is the current active development area.
-
-### Checklist Review Agent
-
-Use checklist/master DB rules to check:
-
-- required phrases by buyer/country
-- required phrases by language
-- product/model conditional phrases
-- missing phrases
-- similar but incorrect phrases
-- prohibited phrases
-
-### Spec Validation Agent
-
-Use model code and spec DB values to check:
-
-- voltage
-- frequency
-- dimensions
-- weight
-- capacity
-- other model-specific values
-
-Formatting variants such as `220V`, `AC 220 V`, and `220-240V~` will need
-normalization rules before comparison.
-
-### Image/Icon Review Agent
-
-Review visual requirements:
-
-- required icon existence
-- image/icon similarity against reference assets
-- location within language or buyer-specific region
-- evidence crop for manual confirmation
-
-Initial approach should be automatic detection plus manual confirmation, not
-fully automatic judgment.
-
-### Diff Review Agent
-
-Compare new PDF against previous PDF:
-
-- extracted text differences
-- section-level changes
-- language-level changes
-- intended checklist changes vs unexpected changes
-- review-focused change summary
-
-### Report Generation Agent
-
-Create human-readable review outputs:
-
-- overall status summary
-- failed items
-- manual review items
-- previous-version differences
-- page/language/section evidence
-- HTML, Excel, and later PDF reports
-
-## Future DB Direction
-
-Use a tag-based single DB concept for multilingual and country-specific review
-rules.
-
-The DB should not store only sentence-by-sentence text. The safer unit is a
-logical block with sentence details below it.
-
-Target review unit:
+예:
 
 ```text
-language
-  section / heading
-    block
-      sentence
+BN68-25099A-00_SUG_Y26 TV ALL_ZA_ENG_251217.0.pdf
 ```
 
-Recommended master block fields:
+추출 필드:
 
 ```text
-Block_ID
-Heading_Anchor
-Base_EN_Text
-Tags
-Translations
+manual_code: BN68-25099A-00
+manual_type: SUG
+product_year: Y26
+product: TV
+target: ALL
+buyer_region_token: ZA
+language_token: ENG
+date_code: 251217
 ```
 
-Translation handling should allow one English block to become multiple child
-translation blocks:
+주의:
 
-```json
-{
-  "Block_ID": "SEC-001",
-  "Heading_Anchor": "Operation",
-  "Base_EN_Text": "Press the desired button to confirm the setting.",
-  "Tags": ["Common", "Operation"],
-  "Translations": [
-    {
-      "Lang": "FR",
-      "Child_ID": "SEC-001.a",
-      "Text": "Appuyez sur le bouton souhaite."
-    },
-    {
-      "Lang": "FR",
-      "Child_ID": "SEC-001.b",
-      "Text": "Cela confirmera le reglage."
-    }
-  ]
-}
-```
+- `buyer_region_token`에는 `AFRICA MENA`, `ZG XN ZT`, `SQ MI`처럼 공백이 포함될 수 있음
+- `language_token`은 단일 언어 약어, 언어 수 토큰, 언어 조합 토큰 중 하나임
+- 실제 포함 언어 목록은 `buyer_region_token + language_token` 기준의 매핑 DB로 확정하는 구조가 적합함
 
-Reason:
+## 4. 페이지 규격
 
-- English one sentence may become two or three sentences in another language.
-- Bullet-level or block-level review is more stable for multilingual DB use.
-- Sentence arrays are still useful for phrase checks, diffs, and semantic review.
+현재 샘플에서 확인된 페이지 규격은 아래와 같습니다.
 
-## Sample Set
-
-Current sample PDFs live under:
-
-```text
-samples/SUG_RAW/
-```
-
-The current sample set contains 25 PDFs.
-
-Do not infer operational metadata from folder names such as `TV_ZC` or
-`TV_AFRICA`. Folder names are only for sample organization. Application logic
-must use filename tokens and:
-
-```text
-metadata/pdf_profile_mapping/pdf_profile_mapping.json
-```
-
-## Metadata Rules
-
-Canonical profile fields:
-
-```text
-source_token
-region
-buyer_codes
-languages
-doc_type
-language_count
-```
-
-Important rules:
-
-- `source_token` is parsed from the PDF filename as `<buyer_region_token>_<language_token>`.
-- `region` is the representative region code, not a broad spreadsheet category.
-- `C-FRA`, `M-SPA`, and `B-POR` are distinct language codes.
-- BOOK language order follows actual PDF bookmark order.
-- `AFRICA MENA_L05` is normalized as `region=AFRICA`, `doc_type=BOOK`.
-
-## Page Sizes
-
-Observed SUG sample page sizes:
-
-| Name | PDF size |
+| 공식 표기 | PDF 내부 크기 |
 |---|---|
 | A5 | `466.5 x 642.3` |
 | A3 | `888.9 x 1237.6` |
 | A2 | `1730.8 x 1237.6` |
 
-## Document Types
+문서와 리포트에서는 `A2`, `A3`, `A5`를 우선 표기하고, 필요 시 괄호 안에 PDF 내부 크기를 함께 표기합니다.
 
-### A2
+## 5. 문서 타입 정의
 
-Rules:
+현재 샘플 기준 SUG 문서 타입은 아래 4가지로 정의할 수 있습니다.
 
-- A2 landscape.
-- `2 x 8` GridCells.
-- `row=1`, `column=1~2` is cover.
-- Remaining cells are content.
-- LTR language labels are detected from the top-left corner.
-- RTL language labels are detected from the top-right corner.
-- LTR cell reading order is left-to-right within each row.
-- RTL cell reading order is right-to-left within each row.
+| 타입 | 파일명 기준 | 확인된 구조 | 언어 식별 기준 |
+|---|---|---|---|
+| 단일 언어 시트 | `ENG`, `KOR`, `ARA`, `INS`, `TPE` 등 | A3, 2페이지 | 파일명 언어 토큰 + 페이지 상단 언어 약자 |
+| L02 양면 2언어 시트 | `L02` | A2, 2페이지 | 파일명 매핑 + 각 페이지 상단 언어 약자 |
+| 언어 조합 시트 | `ENRU`, `HEAR` 등 | A2, 2페이지 | 파일명 조합 토큰 + 각 페이지 상단 언어 약자 |
+| Book Type 다국어 | `L05`, `L12`, `L16` | A5, 다페이지 | PDF bookmark의 언어 구간 정보 |
 
-Verified tokens:
+중요한 점:
 
-```text
-ZC_L02
-LATIN_L02
-MENA_L02
-TK_L02
-XT_L02
-ZX_L02
-PY_ENRU
-SQ MI_HEAR
-```
+- `L02`는 언어 2개를 의미하지만 실제 언어명은 바이어별 매핑 DB로 확정해야 함
+- `ENRU`는 단일 언어가 아니라 `ENG + RUS` 조합으로 해석해야 함
+- `HEAR`는 현재 샘플에서 `HEB + ARA` 언어 라벨이 확인됨
+- book type은 좌측 상단 고정 라벨이 아니라 PDF bookmark를 1차 기준으로 쓰는 것이 가장 안정적임
 
-Notes:
+## 6. 실제 샘플 분류
 
-- `MENA_L02` page 2 is Arabic and uses RTL reading order.
-- `SQ MI_HEAR` contains Hebrew and Arabic; both use RTL reading order.
-- `PY_ENRU` language order is `RUS`, `ENG` per profile and detected labels.
+### 6.1 단일 언어 시트
 
-### A3
+| 파일 토큰 | 페이지 | 규격 | 확인된 언어 라벨 |
+|---|---:|---|---|
+| `ASIA_ENG` | 2 | A3 | `ENG` |
+| `KR_KOR` | 2 | A3 | `KOR` |
+| `TK_ARA` | 2 | A3 | `ARA` |
+| `UA_ENG` | 2 | A3 | `ENG` |
+| `XD_INS` | 2 | A3 | `INS` |
+| `XU_ENG` | 2 | A3 | `ENG` |
+| `XY_ENG` | 2 | A3 | `ENG` |
+| `ZA_ENG` | 2 | A3 | `ENG` |
+| `ZW_TPE` | 2 | A3 | 언어 라벨 미제공, 파일명 기준 확인 |
 
-Rules:
+`ZW_TPE`는 실제 PDF에서 언어 라벨이 제공되지 않습니다. 파일명상 TPE 단일 언어이며 텍스트도 중국어 번체로 추출되므로, 이 케이스는 파일명 기준으로 언어를 확인합니다.
 
-- A3 portrait.
-- `2 x 4` GridCells.
-- Page 1 `row=1`, `column=1~2` is cover.
-- Page 2 is content only.
-- Single-language A3 PDFs may omit page labels on page 2. Use profile language
-  as fallback.
-- LTR/RTL GridCell reading order follows the detected or fallback language
-  direction.
+### 6.2 L02 양면 2언어 시트
 
-Verified tokens:
+| 파일 토큰 | 페이지 | 규격 | 확인된 언어 라벨 |
+|---|---:|---|---|
+| `LATIN_L02` | 2 | A2 | `ENG`, `M-SPA` |
+| `MENA_L02` | 2 | A2 | `ENG`, `ARA` |
+| `TK_L02` | 2 | A2 | `ENG`, `TUR` |
+| `XT_L02` | 2 | A2 | `ENG`, `THA` |
+| `ZC_L02` | 2 | A2 | `ENG`, `C-FRA` |
+| `ZX_L02` | 2 | A2 | `ENG`, `M-SPA` |
 
-```text
-ZA_ENG
-ASIA_ENG
-KR_KOR
-TK_ARA
-XD_INS
-ZW_TPE
-UA_ENG
-XU_ENG
-XY_ENG
-```
+### 6.3 언어 조합 시트
 
-Notes:
+| 파일 토큰 | 페이지 | 규격 | 확인된 언어 라벨 |
+|---|---:|---|---|
+| `PY_ENRU` | 2 | A2 | `RUS`, `ENG` |
+| `SQ MI_HEAR` | 2 | A2 | `HEB`, `ARA` |
 
-- `ZW_TPE` may omit visible language labels entirely. Use profile metadata as
-  fallback.
-- Avoid treating body headings such as `Operation` as language labels. Only
-  language-code patterns are labels.
+### 6.4 Book Type 다국어
 
-### BOOK
+| 파일 토큰 | 페이지 | 규격 | bookmark 언어 수 |
+|---|---:|---|---:|
+| `AFRICA MENA_L05` | 44 | A5 | 5 |
+| `AFRICA_L05` | 36 | A5 | 5 |
+| `CE_L05` | 44 | A5 | 5 |
+| `XC_L12` | 124 | A5 | 12 |
+| `XH_L16` | 164 | A5 | 16 |
+| `ZG XN ZT_L05` | 52 | A5 | 5 |
 
-Rules:
+Book type은 모든 샘플에서 PDF bookmark가 언어 정보를 제공합니다. 따라서 언어 구간 분리의 기준은 bookmark로 정의합니다.
 
-- A5 portrait.
-- `1 x 2` GridCells.
-- PDF bookmarks are the primary language section source.
-- Bookmark language order is the source of truth.
-- Language sections provide page ranges and reading order.
-- For RTL sections, use section reading order instead of physical page order.
-- Physical first/last page is not automatically front/back cover.
+## 7. Book Type 언어 구성 확인 결과
 
-BOOK page roles:
+### AFRICA MENA_L05
 
 ```text
-section_front_cover
-content
-section_back_cover
-book_unassigned
+English
+Français
+Español
+Português
+العربية
 ```
 
-`book_unassigned` means the page is outside bookmark-defined language sections.
-It is not automatically a cover.
-
-Verified tokens:
+### AFRICA_L05
 
 ```text
-AFRICA MENA_L05
-AFRICA_L05
-CE_L05
-XC_L12
-XH_L16
-ZG XN ZT_L05
+English
+Français
+Español
+Português
+العربية
 ```
 
-BOOK bookmark language codes:
+### CE_L05
 
 ```text
-AFRICA MENA_L05: ENG, FRA, SPA, POR, ARA
-AFRICA_L05:      ENG, FRA, SPA, POR, ARA
-CE_L05:          RUS, ENG, KAZ, MON, KYR
-XC_L12:          ENG, FRA, SPA, POR, DEU, SWE, DAN, NOR, FIN, CAT, GLG, EUS
-XH_L16:          ENG, HUN, POL, GRE, BUL, CRO, CZE, SLK, ROM, SER, ALB, MKD, SLV, LAT, LTU, EST
-ZG XN ZT_L05:    ENG, DEU, FRA, ITA, DUT
+Русский
+English
+Қазақ
+Монгол
+Кыргызча
 ```
 
-## Structure Validation Status
-
-Current full-sample structure validation:
+### XC_L12
 
 ```text
-25 samples
-0 failures
+English
+Français
+Español
+Português
+Deutsch
+Svenska
+Dansk
+Norsk
+Suomi
+Català
+Galego
+Euskara
 ```
 
-Verified dimensions:
-
-- profile `doc_type` vs detected document type
-- profile `language_count` vs detected language count
-- profile `languages` vs detected language order
-- GridCell reading order sanity
-- BOOK bookmark section extraction
-
-## Current Text Extraction Findings
-
-First-pass English extraction was tested with:
+### XH_L16
 
 ```text
-ZC_L02
-BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf
+English
+Magyar
+Polski
+Ελληνικά
+Български
+Hrvatski
+Čeština
+Slovenčina
+Română
+Srpski
+Shqip
+Македонски
+Slovenščina
+Latviešu
+Lietuvių kalba
+Eesti
 ```
 
-Generated artifacts:
+### ZG XN ZT_L05
 
 ```text
-outputs/text_extraction/ZC_L02_ENG.json
-outputs/text_extraction/ZC_L02_ENG_review_cover_schema.xlsx
-outputs/text_extraction/ZC_L02_ENG_cover_audit.json
+English
+Deutsch
+Français
+Italiano
+Nederlands
 ```
 
-Extraction status:
+## 8. 언어 식별 규칙
+
+실제 샘플 기준으로 언어 식별은 아래 순서가 적합합니다.
 
 ```text
-method: pymupdf_text
-language: ENG
-ocr_applied: false
+1. 파일명에서 buyer_region_token과 language_token 추출
+2. 매핑 DB로 PDF에 포함된 언어 목록 확정
+3. 문서 타입 분류
+4. 시트형이면 페이지 상단 모서리 언어 약자로 페이지별 언어 검증
+5. book type이면 PDF bookmark로 언어별 구간 확정
+6. bookmark가 깨진 비정상 파일만 대표 문구 또는 문자 스크립트 분석으로 예외 처리
 ```
 
-Current extracted item/block kinds:
+이 규칙에서 파일명은 “포함 언어 목록”을 정의하는 기준이고, PDF 내부 라벨/bookmark는 “실제 페이지 또는 페이지 구간”을 분리하는 기준입니다.
+
+## 9. 텍스트 추출 품질
+
+현재 샘플은 모두 텍스트 레이어가 있어 PyMuPDF로 텍스트 추출이 가능합니다.
+
+주의가 필요한 언어:
+
+- 아랍어: RTL 방향성 때문에 문장부호와 순서 정규화 필요
+- 히브리어: RTL 방향성 때문에 위치/순서 정규화 필요
+- 태국어: 조합문자와 폰트 인코딩 영향으로 정규화 필요
+- 중국어 번체: `ZW_TPE`는 언어 라벨 미제공 케이스이므로 파일명 기준으로 처리
+
+## 10. 이미지/아이콘 검토 주의점
+
+PyMuPDF의 raster image 기준으로는 총 80개 이미지가 확인됐습니다.
+
+하지만 이미지 수가 0이라고 해서 아이콘이 없다고 단정하면 안 됩니다. 아이콘이나 규격 마크가 vector drawing, 폰트 glyph, 도형 조합으로 들어갈 수 있기 때문입니다.
+
+이미지/아이콘 검토는 아래 방식이 적합합니다.
 
 ```text
-heading
-body
-bullet
-warning
-navigation
-navigation_ui
-list_item
-ui_label
-safety_symbol_table
-contact_table
+1. PDF 페이지 렌더링
+2. 기준 아이콘과 시각적 비교
+3. 후보 영역 crop
+4. 리포트에 캡처 첨부
+5. 필요 시 수동 확인
 ```
 
-Important conclusion:
+## 11. 설계 반영 사항
 
-GridCell is useful for extraction order, but it should not be the final review
-unit. Final review should be section/block based. GridCell data remains as
-provenance.
+### 11.1 파일명 파서
 
-## Special Extraction Risks
+파일명 파서는 반드시 필요합니다. PDF 업로드 직후 파일명에서 매뉴얼 코드, 바이어/판매지역, 언어 토큰, 날짜를 추출합니다.
 
-### Cover and Back Cover
+### 11.2 문서 타입 분류기
 
-Cover and back-cover areas are review targets and must not be excluded or
-treated as lower priority.
-
-They often contain:
-
-- contact information
-- model/serial fields
-- websites
-- irregular tables
-- icons
-- document code and copyright
-
-Required handling:
+문서 타입은 `language_token`, 페이지 수, 페이지 규격으로 분류합니다.
 
 ```text
-text extraction
-schema-based region classification
-table extraction where applicable
-image crop
-OCR/manual review flag
+L05/L12/L16 + A5 + 다페이지 -> Book Type 다국어
+L02 + A2 + 2페이지 -> L02 양면 2언어 시트
+ENRU/HEAR 등 + A2 + 2페이지 -> 언어 조합 시트
+ENG/KOR/ARA 등 + A3 + 2페이지 -> 단일 언어 시트
 ```
 
-Current ZC English cover schema:
+### 11.3 언어 구간 분리
 
-```text
-schema_id = ZC_A2_ENG
-required_regions:
-  language_label
-  title
-  model_serial_fields
-  support_note
-  disclaimer
-  contact_heading
-  contact_table
-  copyright
-  document_code
-optional_regions:
-  contact_note
-  address
-```
+시트형은 페이지 단위로 언어를 분리합니다.  
+Book type은 bookmark 기준으로 언어별 구간을 분리합니다.
 
-ZC cover observations:
+### 11.4 검토 엔진
 
-- Contact note should follow the contact heading.
-- `Samsung Service Center` and `Website` are one visual contact table.
-- Older ZC samples may also include an `Address` column in the same table.
-- Copyright and document code should be ordered as final footer regions.
-- Product registration URL in the cover body is not the same as contact-table
-  support URLs.
+검토 엔진은 전체 PDF 텍스트만 검색하면 안 됩니다. 반드시 언어별 페이지 또는 언어별 페이지 구간 단위로 필수 문구를 검토해야 합니다.
 
-### Safety Symbol Table
+## 12. 결론
 
-`ZC_L02` English GridCell reading order 3 contains the safety symbol explanation
-table.
+제공된 샘플은 초기 설계 검증용으로 충분히 좋습니다.
 
-It should be extracted as a table block, not plain body text:
+확정 가능한 내용:
 
-```text
-block_type = safety_symbol_table
-rows:
-  symbol_image_crop
-  label
-  description
-```
+- 파일명 규칙은 안정적으로 파싱 가능
+- 폴더명은 운영 메타데이터에서 제외
+- 페이지 규격은 A2/A3/A5로 정리 가능
+- 시트형은 페이지 상단 언어 약자가 주요 검증 포인트
+- book type은 bookmark가 언어 구간 분리 기준
+- 모든 샘플은 텍스트 추출 가능
 
-This area is expected to need image extraction because symbol images are part of
-the table.
+운영 기준:
 
-### Navigation and UI
-
-Navigation and UI text is high risk because icons and text are mixed.
-
-Required handling:
-
-```text
-raw_text
-normalized_text
-image_crop
-ocr_text
-manual_review_required
-```
-
-Navigation text should generally be treated as UI text, not ordinary body text.
-
-### Heading Detection
-
-Heading detection should use text content and style.
-
-Useful signals:
-
-- bold
-- underline
-- font size
-- short title-like text
-- no terminal period
-- followed by explanatory body text
-
-Example that should be treated as a heading:
-
-```text
-Mounting the TV on a wall
-```
-
-### Heading-Based Block Rules
-
-For multilingual extraction, section handling should be driven by a stable
-heading rule table instead of only row/column position. The English heading is
-the first canonical key, and each target language must be checked against the
-translated heading text before using the same rule.
-
-Recommended rule fields:
-
-```text
-canonical_heading_id
-english_heading
-localized_heading
-heading_match_method
-expected_block_sequence
-special_split_rule
-required_block_types
-model_condition_rule
-navigation_rule
-table_rule
-manual_review_required
-```
-
-Current ZC English heading rules:
-
-```text
-Warning! Important Safety Instructions
-- Keep safety symbol content as safety_symbol_table.
-- Include split table rows even when the final row moves to an adjacent cell.
-
-Safety Precaution
-- Keep warning intro as body.
-- Split each precaution item into bullet blocks.
-- Remove stray numeric layout artifacts such as "1. 2. 3.".
-
-Preventing the TV from falling
-- Keep "Wall-anchor (not supplied)" as procedure_note.
-- Split the following procedure into numbered_step blocks.
-- Do not rely only on visible extracted numbers; use step start phrases/layout
-  fragments as fallback because numbers can be lost during extraction.
-
-Internet security / Troubleshooting / Eco Sensor and screen brightness
-- Keep navigation paths as navigation_ui.
-- Merge UI/navigation fragments across adjacent items when the path is split.
-- Do not introduce icon_token unless navigation text cannot be recovered.
-
-01 Package Content
-- Keep package items in item_list.
-- Keep "*:" and "**:" notes outside item_list as item_list_note.
-
-Using the TV Controller
-- Keep figure legend labels as figure_legend.
-
-02 Connecting the TV to the One Connect Box
-- Keep model-scoped labels such as "(One Connect Box Supported Model only)" as
-  condition_label.
-- Keep figure action words such as Bending/Twisting/Pulling/Pressing on/Electric
-  shock as figure_action_labels.
-
-How to turn on and off the Microphone
-- Keep Type A/B/C/D as figure_variant_labels.
-- Keep On/Off Switch as figure_callout_label.
-- Merge split model applicability text into one model_condition block and parse
-  model names separately.
-
-Specifications
-- Keep Display Resolution and Sound (Output) as spec_table.
-- If the first model/value is attached to the heading, split the heading and
-  include the inline value in the spec_table.
-- Keep Operating/Storage Temperature/Humidity as common_required_spec tables.
-
-Notes
-- Keep regulatory topics as regulatory_note with topic_id in JSON and the
-  Regulatory Notes sheet.
-```
-
-For each new language, verify:
-
-- localized heading text matches the intended canonical heading
-- translated heading order follows the source PDF order
-- expected block_type sequence matches the canonical rule
-- model conditions remain separate from body text
-- navigation is recovered as navigation_ui or marked for crop/manual review
-- table/list/note blocks are not collapsed into body text
-
-## Checklist DB Direction
-
-The checklist DB should be review-rule data, not only a phrase list.
-
-Recommended fields:
-
-```text
-check_id
-buyer / country
-language
-product family
-model condition
-required phrase
-allowed similar phrase
-required keyword
-prohibited phrase
-required image or icon
-effective_start_date
-effective_end_date
-source standard or internal document
-severity
-review_method
-exception condition
-```
-
-Severity examples:
-
-- `Critical`: regulation, safety, certification
-- `Major`: specification, model information, core user guidance
-- `Minor`: expression, format, recommended wording
-
-Review method examples:
-
-- exact match
-- contains
-- semantic similarity
-- regular expression
-- manual confirmation
-
-## MVP Scope
-
-Recommended first MVP:
-
-- one new PDF
-- one previous PDF
-- model code input
-- two or three priority languages
-- 20 to 50 checklist rules
-- required phrase existence review
-- previous-version text diff
-- execution log
-- Excel or HTML report
-
-Do not finalize the full DB schema before extraction quality is stable.
-
-## Current ZC English Content POC Status
-
-`ZC_L02` English content extraction has been stabilized against the currently
-available ZC ENG samples:
-
-```text
-BN68-20834D-00_SUG_Y25 TV ALL_ZC_L02_250710.0.pdf
-BN68-25100A-00_SUG_Y26 TV ALL_ZC_L02_251222.0.pdf
-BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf
-```
-
-Latest verified output:
-
-```text
-outputs/content_poc_review_zc_eng_final_v3/
-```
-
-Current verification:
-
-- `58` tests passing
-- `python -m compileall src tests` passing
-- `26Y A` block sequence matches the user-reviewed `26Y B`
-- `25Y` has a different format, but no remaining known orphan-fragment or
-  bullet/body collapse patterns were found in the latest check
-
-## Next Analysis Targets
-
-After `ZC_L02` English stabilization, start localized heading validation:
-
-```text
-ZC_L02 C-FRA
-ZX_L02 English
-one A3 English sample
-one BOOK English section
-```
-
-Purpose:
-
-- map English canonical headings to localized headings
-- verify localized heading order and expected block sequences
-- find non-English regions that still collapse into large body blocks
-- avoid overfitting extraction rules to one ZC sample/type
-- verify heading/block extraction across layout types
-- check English variant differences for future DB management
-- prepare data shape for the future master/checklist DB
+- `ZW_TPE`처럼 언어 라벨이 없는 단일 언어 PDF는 파일명 기준으로 처리
+- book type은 bookmark가 항상 제공되는 전제이므로 side label 또는 하단 언어 라벨 분석은 기본 검토 로직에서 제외

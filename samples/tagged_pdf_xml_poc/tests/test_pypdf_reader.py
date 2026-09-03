@@ -607,6 +607,129 @@ def test_unresolved_page_reference_reports_page_and_owner_refs(
     }
 
 
+def test_explicit_null_page_reference_does_not_inherit_parent_page_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class PageReference:
+        idnum = 10
+        generation = 0
+
+    class Page:
+        indirect_reference = PageReference()
+
+    class NullPageReference:
+        idnum = 91
+        generation = 0
+
+        def get_object(self):
+            return None
+
+    mcr = {
+        "/Type": NameObject("/MCR"),
+        "/Pg": NullPageReference(),
+        "/MCID": NumberObject(7),
+    }
+
+    class McrReference:
+        idnum = 81
+        generation = 0
+
+        def get_object(self):
+            return mcr
+
+    parent = {
+        "/S": NameObject("/P"),
+        "/Pg": PageReference(),
+        "/K": [McrReference()],
+    }
+
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": {"/K": [parent]}}}
+        pages = [Page()]
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+    collector = RecordingCollector({0: {7: ("Inherited page text",)}})
+
+    result = TaggedPdfReader(collector).read(tmp_path / "null-page-ref.pdf")
+
+    structure = result.children[0]
+    assert isinstance(structure, StructureElement)
+    fragment = structure.children[0]
+    assert fragment == ContentFragment(-1, 7, (), "81 0 R")
+    assert [diagnostic.code for diagnostic in result.diagnostics] == [
+        "unresolved_page_reference",
+        "unresolved_mcid",
+    ]
+    assert result.diagnostics[0].context == {
+        "page_object_ref": "91 0 R",
+        "object_ref": "81 0 R",
+    }
+    assert result.diagnostics[1].context == {
+        "page_index": -1,
+        "mcid": 7,
+        "object_ref": "81 0 R",
+    }
+
+
+def test_direct_null_page_value_inherits_parent_page(tmp_path: Path) -> None:
+    def structure(writer: PdfWriter, pages: list[Any]):
+        mcr = DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/MCR"),
+                NameObject("/Pg"): NullObject(),
+                NameObject("/MCID"): NumberObject(7),
+            }
+        )
+        parent = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/P"),
+                    NameObject("/Pg"): pages[0].indirect_reference,
+                    NameObject("/K"): mcr,
+                }
+            )
+        )
+        return ArrayObject([parent]), None
+
+    pdf_path = tmp_path / "direct-null-page.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+
+    result = TaggedPdfReader(RecordingCollector({0: {7: ("Inherited",)}})).read(
+        pdf_path
+    )
+
+    structure = result.children[0]
+    assert isinstance(structure, StructureElement)
+    assert structure.children == (ContentFragment(0, 7, ("Inherited",), None),)
+    assert result.diagnostics == ()
+
+
+def test_null_structure_kids_are_empty_without_warning(tmp_path: Path) -> None:
+    def structure(writer: PdfWriter, _pages: list[Any]):
+        element = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/P"),
+                    NameObject("/K"): NullObject(),
+                }
+            )
+        )
+        return ArrayObject([element]), None
+
+    pdf_path = tmp_path / "null-kids.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+
+    result = TaggedPdfReader(RecordingCollector()).read(pdf_path)
+
+    structure = result.children[0]
+    assert isinstance(structure, StructureElement)
+    assert structure.children == ()
+    assert result.diagnostics == ()
+
+
 def test_seen_empty_mcid_is_not_unresolved_but_missing_mcid_is(
     tmp_path: Path,
 ) -> None:

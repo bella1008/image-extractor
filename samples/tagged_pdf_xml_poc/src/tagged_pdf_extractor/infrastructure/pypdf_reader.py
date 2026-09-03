@@ -144,6 +144,8 @@ class TaggedPdfReader:
             return []
         reference = self.object_ref(kids)
         resolved = self.resolve(kids)
+        if resolved is None:
+            return []
         if self._is_kid_sequence(resolved):
             if reference is not None:
                 self._enter_reference(reference, active_refs)
@@ -398,7 +400,20 @@ class TaggedPdfReader:
         reference = self.object_ref(page)
         resolved_page = self.resolve(page)
         if resolved_page is None:
-            return inherited_page_index
+            if reference is None:
+                return inherited_page_index
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="unresolved_page_reference",
+                    message="Page reference could not be resolved",
+                    context={
+                        "page_object_ref": reference,
+                        "object_ref": owner_reference,
+                    },
+                )
+            )
+            return None
         reference = self.object_ref(resolved_page) or reference
         if reference is not None and reference in page_indexes:
             return page_indexes[reference]

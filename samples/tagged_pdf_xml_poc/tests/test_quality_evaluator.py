@@ -394,12 +394,20 @@ def test_runtime_mask_estimate_bounds_actual_final_mask_dictionary(
         character: position for position, character in enumerate(indexed_text)
     }
     expected_storage = sys.getsizeof(max_positions) + sum(
+        sys.getsizeof(character) for character in max_positions
+    ) + sum(
         sys.getsizeof(1 << position) for position in max_positions.values()
     )
+    expected_key_bytes = sum(
+        sys.getsizeof(character) for character in max_positions
+    )
+    del max_positions
     masks = QualityEvaluator._build_bit_masks(indexed_text)
     actual = sys.getsizeof(masks) + sum(
+        sys.getsizeof(character) for character in masks
+    ) + sum(
         sys.getsizeof(mask) for mask in masks.values()
-    )
+    ) + estimate["algorithm_working_bytes"]
 
     assert estimate["mask_storage_bytes"] == expected_storage
     assert estimate["estimated_mask_bytes"] == (
@@ -412,13 +420,12 @@ def test_runtime_mask_estimate_bounds_actual_final_mask_dictionary(
     report = QualityEvaluator().evaluate(
         _body_only_document(indexed_text), indexed_text, xml_round_trip_ok=True
     )
-    expected_mode = (
-        "bit_parallel_lcs"
-        if estimate["estimated_mask_bytes"]
-        <= quality_module._BIT_MASK_MEMORY_BUDGET_BYTES
-        else "sparse_lcs"
-    )
-    assert report.metrics["comparison_mode"] == expected_mode
+    assert estimate["mask_key_bytes"] == expected_key_bytes
+    if length == 31_000:
+        assert estimate["estimated_mask_bytes"] > (
+            quality_module._BIT_MASK_MEMORY_BUDGET_BYTES
+        )
+        assert report.metrics["comparison_mode"] == "sparse_lcs"
 
 
 def test_mixed_high_cardinality_case_selects_bit_parallel_backend() -> None:
@@ -453,6 +460,60 @@ def test_sparse_parameters_report_exact_match_pair_count(monkeypatch) -> None:
     )
 
 
+def test_ordinary_12k_unique_sparse_candidate_remains_exact(monkeypatch) -> None:
+    import tagged_pdf_extractor.application.evaluate_quality as quality_module
+
+    monkeypatch.setattr(quality_module, "_BIT_MASK_MEMORY_BUDGET_BYTES", 1)
+    text = _nonrepetitive_text(12_000)
+
+    report = QualityEvaluator().evaluate(
+        _body_only_document(text), text, xml_round_trip_ok=True
+    )
+
+    assert report.metrics["character_match_ratio"] == 1.0
+    assert report.metrics["comparison_mode"] == "sparse_lcs"
+    parameters = report.metrics["comparison_parameters"]
+    assert parameters["estimated_sparse_bytes"] <= parameters[
+        "sparse_memory_budget_bytes"
+    ]
+
+
+def test_high_unique_sparse_candidate_fails_memory_guard_before_work() -> None:
+    import tagged_pdf_extractor.application.evaluate_quality as quality_module
+
+    text = _nonrepetitive_text(60_000)
+
+    with pytest.raises(QualityEvaluationLimitError) as caught:
+        QualityEvaluator().evaluate(
+            _body_only_document(text), text, xml_round_trip_ok=True
+        )
+
+    error = caught.value
+    assert error.match_pair_estimate == len(text)
+    assert error.match_pair_estimate <= quality_module._SPARSE_MATCH_PAIR_BUDGET
+    assert error.sparse_memory_estimate > (
+        quality_module._SPARSE_MEMORY_BUDGET_BYTES
+    )
+    assert error.sparse_memory_budget == quality_module._SPARSE_MEMORY_BUDGET_BYTES
+    assert error.reason == "exact_backend_resource_budget"
+
+
+def test_prepass_memory_guard_fails_incrementally(monkeypatch) -> None:
+    import tagged_pdf_extractor.application.evaluate_quality as quality_module
+
+    monkeypatch.setattr(quality_module, "_PREPASS_MEMORY_BUDGET_BYTES", 2_048)
+    text = _nonrepetitive_text(10_000)
+
+    with pytest.raises(QualityEvaluationLimitError) as caught:
+        QualityEvaluator().evaluate(
+            _body_only_document(text), text, xml_round_trip_ok=True
+        )
+
+    assert caught.value.reason == "prepass_memory_budget"
+    assert caught.value.prepass_memory_estimate > 2_048
+    assert caught.value.prepass_memory_budget == 2_048
+
+
 def test_fails_fast_when_no_exact_backend_fits_resource_budgets() -> None:
     import tagged_pdf_extractor.application.evaluate_quality as quality_module
 
@@ -470,6 +531,8 @@ def test_fails_fast_when_no_exact_backend_fits_resource_budgets() -> None:
     assert error.match_pair_estimate > quality_module._SPARSE_MATCH_PAIR_BUDGET
     assert error.mask_budget == quality_module._BIT_MASK_MEMORY_BUDGET_BYTES
     assert error.match_pair_budget == quality_module._SPARSE_MATCH_PAIR_BUDGET
+    assert error.sparse_memory_estimate > 0
+    assert error.sparse_memory_budget == quality_module._SPARSE_MEMORY_BUDGET_BYTES
 
 
 @pytest.mark.parametrize("padding_length", (8_150, 8_200))

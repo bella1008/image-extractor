@@ -39,6 +39,9 @@ _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
 _BIT_MASK_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
 _SPARSE_MATCH_PAIR_BUDGET = 10_000_000
+_SPARSE_MEMORY_BUDGET_BYTES = 16 * 1024 * 1024
+_PREPASS_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
+_PREPASS_CHECK_INTERVAL = 1_024
 
 
 class QualityEvaluationLimitError(RuntimeError):
@@ -51,6 +54,11 @@ class QualityEvaluationLimitError(RuntimeError):
         mask_budget: int,
         match_pair_estimate: int,
         match_pair_budget: int,
+        sparse_memory_estimate: int = 0,
+        sparse_memory_budget: int = _SPARSE_MEMORY_BUDGET_BYTES,
+        prepass_memory_estimate: int = 0,
+        prepass_memory_budget: int = _PREPASS_MEMORY_BUDGET_BYTES,
+        reason: str = "exact_backend_resource_budget",
     ) -> None:
         self.baseline_length = baseline_length
         self.tagged_length = tagged_length
@@ -58,12 +66,21 @@ class QualityEvaluationLimitError(RuntimeError):
         self.mask_budget = mask_budget
         self.match_pair_estimate = match_pair_estimate
         self.match_pair_budget = match_pair_budget
+        self.sparse_memory_estimate = sparse_memory_estimate
+        self.sparse_memory_budget = sparse_memory_budget
+        self.prepass_memory_estimate = prepass_memory_estimate
+        self.prepass_memory_budget = prepass_memory_budget
+        self.reason = reason
         super().__init__(
-            "Exact LCS resource limits exceeded: "
+            f"Exact LCS resource limit exceeded ({reason}): "
             f"baseline_length={baseline_length}, tagged_length={tagged_length}, "
             f"mask_estimate={mask_estimate}, mask_budget={mask_budget}, "
             f"match_pair_estimate={match_pair_estimate}, "
-            f"match_pair_budget={match_pair_budget}"
+            f"match_pair_budget={match_pair_budget}, "
+            f"sparse_memory_estimate={sparse_memory_estimate}, "
+            f"sparse_memory_budget={sparse_memory_budget}, "
+            f"prepass_memory_estimate={prepass_memory_estimate}, "
+            f"prepass_memory_budget={prepass_memory_budget}"
         )
 
 
@@ -276,14 +293,27 @@ class QualityEvaluator:
         else:
             indexed_text, iterated_text = tagged_text, baseline_text
 
-        memory = QualityEvaluator._estimate_bit_mask_memory(indexed_text)
-        indexed_counts = Counter(indexed_text)
-        iterated_counts = Counter(iterated_text)
-        match_pair_count = sum(
-            count * iterated_counts.get(character, 0)
-            for character, count in indexed_counts.items()
+        memory = QualityEvaluator._estimate_bit_mask_memory(
+            indexed_text,
+            baseline_length=len(baseline_text),
+            tagged_length=len(tagged_text),
         )
-        del indexed_counts, iterated_counts
+        indexed_counts, count_prepass_bytes = QualityEvaluator._count_characters(
+            indexed_text,
+            baseline_length=len(baseline_text),
+            tagged_length=len(tagged_text),
+        )
+        # One Counter is sufficient for the exact pair count. Scanning the
+        # other string avoids retaining two potentially large maps at once.
+        match_pair_count = sum(
+            indexed_counts.get(character, 0) for character in iterated_text
+        )
+        sparse_memory = QualityEvaluator._estimate_sparse_memory(
+            indexed_counts,
+            indexed_length=len(indexed_text),
+            iterated_length=len(iterated_text),
+        )
+        del indexed_counts
 
         common_parameters = {
             "indexed_dimension": "shorter",
@@ -291,8 +321,14 @@ class QualityEvaluator:
             "iterated_length": len(iterated_text),
             **memory,
             "mask_memory_budget_bytes": _BIT_MASK_MEMORY_BUDGET_BYTES,
+            "prepass_memory_peak_bytes": max(
+                memory["prepass_memory_bytes"], count_prepass_bytes
+            ),
+            "prepass_memory_budget_bytes": _PREPASS_MEMORY_BUDGET_BYTES,
             "match_pair_count": match_pair_count,
             "sparse_match_pair_budget": _SPARSE_MATCH_PAIR_BUDGET,
+            **sparse_memory,
+            "sparse_memory_budget_bytes": _SPARSE_MEMORY_BUDGET_BYTES,
         }
         if memory["estimated_mask_bytes"] <= _BIT_MASK_MEMORY_BUDGET_BYTES:
             return (
@@ -300,7 +336,11 @@ class QualityEvaluator:
                 "bit_parallel_lcs",
                 {**common_parameters, "bitset_dimension": "shorter"},
             )
-        if match_pair_count <= _SPARSE_MATCH_PAIR_BUDGET:
+        if (
+            match_pair_count <= _SPARSE_MATCH_PAIR_BUDGET
+            and sparse_memory["estimated_sparse_bytes"]
+            <= _SPARSE_MEMORY_BUDGET_BYTES
+        ):
             return (
                 QualityEvaluator._sparse_lcs(indexed_text, iterated_text),
                 "sparse_lcs",
@@ -313,10 +353,17 @@ class QualityEvaluator:
             mask_budget=_BIT_MASK_MEMORY_BUDGET_BYTES,
             match_pair_estimate=match_pair_count,
             match_pair_budget=_SPARSE_MATCH_PAIR_BUDGET,
+            sparse_memory_estimate=sparse_memory["estimated_sparse_bytes"],
+            sparse_memory_budget=_SPARSE_MEMORY_BUDGET_BYTES,
         )
 
     @staticmethod
-    def _estimate_bit_mask_memory(indexed_text: str) -> dict[str, int]:
+    def _estimate_bit_mask_memory(
+        indexed_text: str,
+        *,
+        baseline_length: int | None = None,
+        tagged_length: int | None = None,
+    ) -> dict[str, int]:
         """Measure the final mask table without retaining prepass state.
 
         Each mask's highest set bit is its character's final occurrence, so a
@@ -326,13 +373,52 @@ class QualityEvaluator:
         when the function returns, before the real masks are allocated.
         """
         max_positions: dict[str, int] = {}
+        key_bytes = 0
+        position_value_bytes = 0
+        peak_prepass_bytes = 0
         for position, character in enumerate(indexed_text):
+            previous = max_positions.get(character)
+            if previous is None:
+                key_bytes += sys.getsizeof(character)
+            else:
+                position_value_bytes -= sys.getsizeof(previous)
             max_positions[character] = position
+            position_value_bytes += sys.getsizeof(position)
+            if (position + 1) % _PREPASS_CHECK_INTERVAL == 0:
+                peak_prepass_bytes = QualityEvaluator._guard_prepass_memory(
+                    max_positions,
+                    key_bytes,
+                    position_value_bytes,
+                    (
+                        baseline_length
+                        if baseline_length is not None
+                        else len(indexed_text)
+                    ),
+                    (
+                        tagged_length
+                        if tagged_length is not None
+                        else len(indexed_text)
+                    ),
+                )
+        peak_prepass_bytes = max(
+            peak_prepass_bytes,
+            QualityEvaluator._guard_prepass_memory(
+                max_positions,
+                key_bytes,
+                position_value_bytes,
+                (
+                    baseline_length
+                    if baseline_length is not None
+                    else len(indexed_text)
+                ),
+                tagged_length if tagged_length is not None else len(indexed_text),
+            ),
+        )
         dictionary_bytes = sys.getsizeof(max_positions)
         mask_value_bytes = sum(
             sys.getsizeof(1 << position) for position in max_positions.values()
         )
-        mask_storage_bytes = dictionary_bytes + mask_value_bytes
+        mask_storage_bytes = dictionary_bytes + key_bytes + mask_value_bytes
         # The update expression retains the prior state and ``x`` while
         # creating shifted/subtraction intermediates. Four maximum-width ints
         # conservatively cover that concurrent working set.
@@ -342,10 +428,121 @@ class QualityEvaluator:
         return {
             "unique_character_count": len(max_positions),
             "mask_dictionary_bytes": dictionary_bytes,
+            "mask_key_bytes": key_bytes,
             "mask_value_bytes": mask_value_bytes,
             "mask_storage_bytes": mask_storage_bytes,
             "algorithm_working_bytes": algorithm_working_bytes,
             "estimated_mask_bytes": mask_storage_bytes + algorithm_working_bytes,
+            "prepass_memory_bytes": peak_prepass_bytes,
+        }
+
+    @staticmethod
+    def _guard_prepass_memory(
+        mapping: dict[str, int],
+        key_bytes: int,
+        value_bytes: int,
+        baseline_length: int,
+        tagged_length: int,
+    ) -> int:
+        estimate = sys.getsizeof(mapping) + key_bytes + value_bytes
+        if estimate > _PREPASS_MEMORY_BUDGET_BYTES:
+            raise QualityEvaluationLimitError(
+                baseline_length=baseline_length,
+                tagged_length=tagged_length,
+                mask_estimate=0,
+                mask_budget=_BIT_MASK_MEMORY_BUDGET_BYTES,
+                match_pair_estimate=0,
+                match_pair_budget=_SPARSE_MATCH_PAIR_BUDGET,
+                prepass_memory_estimate=estimate,
+                prepass_memory_budget=_PREPASS_MEMORY_BUDGET_BYTES,
+                reason="prepass_memory_budget",
+            )
+        return estimate
+
+    @staticmethod
+    def _count_characters(
+        text: str,
+        *,
+        baseline_length: int,
+        tagged_length: int,
+    ) -> tuple[Counter[str], int]:
+        counts: Counter[str] = Counter()
+        key_bytes = 0
+        value_bytes = 0
+        peak_bytes = 0
+        for position, character in enumerate(text):
+            previous = counts.get(character, 0)
+            if previous == 0:
+                key_bytes += sys.getsizeof(character)
+            else:
+                value_bytes -= sys.getsizeof(previous)
+            current = previous + 1
+            counts[character] = current
+            value_bytes += sys.getsizeof(current)
+            if (position + 1) % _PREPASS_CHECK_INTERVAL == 0:
+                peak_bytes = QualityEvaluator._guard_prepass_memory(
+                    counts,
+                    key_bytes,
+                    value_bytes,
+                    baseline_length,
+                    tagged_length,
+                )
+        peak_bytes = max(
+            peak_bytes,
+            QualityEvaluator._guard_prepass_memory(
+                counts,
+                key_bytes,
+                value_bytes,
+                baseline_length,
+                tagged_length,
+            ),
+        )
+        return counts, peak_bytes
+
+    @staticmethod
+    def _estimate_sparse_memory(
+        counts: Counter[str], *, indexed_length: int, iterated_length: int
+    ) -> dict[str, int]:
+        """Conservatively bound all owned Hunt-Szymanski structures.
+
+        Position lists use a two-times slot allowance plus 16 slots per list,
+        which safely exceeds CPython's normal append overallocation. Position
+        integers and a worst-case increasing-tails list are counted separately.
+        The temporary Counter is released before any of these structures are
+        allocated, so it is reported as prepass memory rather than concurrent
+        sparse storage.
+        """
+        empty_list_bytes = sys.getsizeof([])
+        pointer_bytes = sys.getsizeof([None]) - empty_list_bytes
+        position_lists_bytes = sum(
+            empty_list_bytes + (2 * count + 16) * pointer_bytes
+            for count in counts.values()
+        )
+        dictionary_bytes = sys.getsizeof(counts)
+        key_bytes = sum(sys.getsizeof(character) for character in counts)
+        position_integer_bytes = indexed_length * sys.getsizeof(
+            max(0, indexed_length - 1)
+        )
+        tails_length = min(indexed_length, iterated_length)
+        tails_bytes = (
+            empty_list_bytes
+            + (2 * tails_length + 16) * pointer_bytes
+            + tails_length * sys.getsizeof(max(0, indexed_length - 1))
+        )
+        estimated = (
+            dictionary_bytes
+            + key_bytes
+            + position_lists_bytes
+            + position_integer_bytes
+            + tails_bytes
+        )
+        return {
+            "sparse_positions_dictionary_bytes": dictionary_bytes,
+            "sparse_key_bytes": key_bytes,
+            "sparse_position_lists_bytes": position_lists_bytes,
+            "sparse_position_integer_bytes": position_integer_bytes,
+            "sparse_increasing_tails_bytes": tails_bytes,
+            "estimated_sparse_bytes": estimated,
         }
 
     @staticmethod

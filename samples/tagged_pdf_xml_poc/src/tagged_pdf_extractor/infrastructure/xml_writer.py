@@ -239,7 +239,8 @@ class XmlDocumentWriter:
         tree = ET.ElementTree(root)
         ET.indent(tree, space="  ")
         XmlDocumentWriter._remove_indentation_text(root, text_data_tags)
-        tree.write(path, encoding="utf-8", xml_declaration=True)
+        serialized = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        path.write_bytes(serialized.replace(b"\r", b"&#13;"))
 
         parsed_root = ET.parse(path).getroot()
         parsed_text = "".join(parsed_root.itertext())

@@ -232,3 +232,37 @@ def test_semantic_structural_part_removes_indentation_from_itertext(
     semantic = ET.parse(semantic_path).getroot()
     assert semantic.find("part/text") is not None
     assert "".join(semantic.itertext()) == fragment.text
+
+
+def test_raw_preserves_cr_crlf_and_literal_character_reference_text(
+    tmp_path: Path,
+) -> None:
+    parts = ("\r", "\r\n", "literal &#13; remains text")
+    fragment = ContentFragment(page_index=3, mcid=6, text_parts=parts)
+    document = TaggedDocument(Path("carriage-return.pdf"), True, None, (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+
+    XmlDocumentWriter().write_raw(document, raw_path)
+
+    raw_fragment = ET.parse(raw_path).getroot().find("fragment")
+    assert raw_fragment is not None
+    assert [part.text for part in raw_fragment.findall("part")] == list(parts)
+    assert "".join(raw_fragment.itertext()) == fragment.text
+    serialized = raw_path.read_bytes()
+    assert b"&#13;" in serialized
+    assert b"literal &amp;#13; remains text" in serialized
+
+
+def test_semantic_preserves_carriage_returns_in_serialized_text(tmp_path: Path) -> None:
+    source_text = "first\rsecond\r\nthird"
+    fragment = ContentFragment(page_index=4, mcid=7, text_parts=(source_text,))
+    document = TaggedDocument(Path("semantic-cr.pdf"), True, None, (), (fragment,))
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    semantic = ET.parse(semantic_path).getroot()
+    semantic_text = semantic.find("text")
+    assert semantic_text is not None
+    assert semantic_text.text == source_text
+    assert "".join(semantic.itertext()) == source_text

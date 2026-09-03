@@ -42,6 +42,22 @@ class OutputBusyError(RuntimeError):
         )
 
 
+class BundlePublicationErrorGroup(ExceptionGroup):
+    """Ordinary publication and rollback failures safe for CLI handling."""
+
+    def __new__(
+        cls, message: str, exceptions: tuple[Exception, ...] | list[Exception]
+    ) -> BundlePublicationErrorGroup:
+        instance = super().__new__(cls, message, exceptions)
+        instance._tagged_pdf_rollback_complete = True
+        return instance
+
+    def derive(
+        self, exceptions: tuple[Exception, ...]
+    ) -> BundlePublicationErrorGroup:
+        return BundlePublicationErrorGroup(self.message, exceptions)
+
+
 class BundleRollbackError(RuntimeError):
     def __init__(
         self,
@@ -826,12 +842,11 @@ class OutputBundleWriter:
                 ) from publication_error
             if removal_errors:
                 members = [publication_error, *removal_errors]
-                group_type = (
-                    ExceptionGroup
-                    if all(isinstance(member, Exception) for member in members)
-                    else BaseExceptionGroup
-                )
-                group = group_type(
+                if all(isinstance(member, Exception) for member in members):
+                    raise BundlePublicationErrorGroup(
+                        "bundle publication and rollback failed", members
+                    ) from publication_error
+                group = BaseExceptionGroup(
                     "bundle publication and rollback failed", members
                 )
                 setattr(group, "_tagged_pdf_rollback_complete", True)

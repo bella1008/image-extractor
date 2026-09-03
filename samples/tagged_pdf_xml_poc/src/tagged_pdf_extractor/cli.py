@@ -12,6 +12,7 @@ from tagged_pdf_extractor.application.evaluate_quality import (
 )
 from tagged_pdf_extractor.application.extract_document import ExtractDocument
 from tagged_pdf_extractor.infrastructure.output_bundle import (
+    BundlePublicationErrorGroup,
     BundlePublicationStateError,
     BundleRollbackError,
     BundleTransactionError,
@@ -74,7 +75,7 @@ def _build_use_case() -> ExtractDocument:
     )
 
 
-def _format_exception_group(group: ExceptionGroup[Exception]) -> str:
+def _format_exception_group(group: BundlePublicationErrorGroup) -> str:
     leaves: list[str] = []
 
     def collect(error: Exception) -> None:
@@ -100,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         _, report, artifacts = _build_use_case().run(
             args.pdf, args.output, args.overwrite
         )
-    except ExceptionGroup as exc:
+    except BundlePublicationErrorGroup as exc:
         print(
             f"error: output transaction failed: {_format_exception_group(exc)}",
             file=sys.stderr,

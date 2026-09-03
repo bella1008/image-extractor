@@ -19,17 +19,25 @@ XML-to-Markdown, OCR, UI, 체크리스트 평가, 언어/바이어별 보정 규
 Python 3.11 이상이 필요합니다.
 
 ```powershell
-cd C:\Users\bella\image-extractor\samples\tagged_pdf_xml_poc
+Set-Location .\samples\tagged_pdf_xml_poc
 python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 ```
 
+저장소 루트의 `samples/SUG_RAW`에 지정 샘플이 있는 경우 다음처럼 상대경로와 환경변수를 사용합니다.
+
 ```powershell
+$env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
+).Path
+
 .venv\Scripts\tagged-pdf-extract.exe `
-  "C:\Users\bella\image-extractor\samples\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
+  "$env:TAGGED_PDF_ZC_SAMPLE" `
   --output "outputs\BN68-25100B-00" `
   --overwrite
 ```
+
+통합 테스트도 같은 환경변수를 가장 먼저 사용합니다. 환경변수가 없거나 해당 파일이 없으면 테스트 파일의 상위 디렉터리에서 저장소 상대 `samples/SUG_RAW` 경로를 찾고, 마지막으로 `Path.home()/image-extractor/samples/SUG_RAW` 개발 경로를 확인합니다. 모든 후보가 없을 때만 샘플 통합 테스트를 건너뜁니다.
 
 `--overwrite`를 생략하면 세 필수 산출물 중 하나라도 이미 있을 때 쓰기를 시작하지 않습니다.
 
@@ -120,4 +128,4 @@ This symbol indicates that high voltage is present inside. It is dangerous to ma
 .venv\Scripts\python -m compileall src tests
 ```
 
-통합 테스트는 `TAGGED_PDF_ZC_SAMPLE` 환경 변수로 다른 샘플 경로를 지정할 수 있습니다. 환경 변수와 기본 절대 경로 모두 사용할 수 없을 때만 명시적으로 건너뜁니다.
+통합 테스트는 `TAGGED_PDF_ZC_SAMPLE`, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 선택적 개발 경로를 순서대로 확인하며 모든 후보가 없을 때만 명시적으로 건너뜁니다.

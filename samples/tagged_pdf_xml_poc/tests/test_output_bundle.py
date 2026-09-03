@@ -16,6 +16,7 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
+    BundlePublicationErrorGroup,
     BundlePublicationStateBaseExceptionGroup,
     BundleRollbackBaseExceptionGroup,
     BundleRollbackError,
@@ -646,6 +647,51 @@ def test_keyboard_interrupt_and_restore_failure_preserve_backup_in_base_group(
         for name in error.affected_files
     )
     assert error.backup_path.exists()
+
+
+def test_ordinary_publication_and_removal_failures_use_typed_exception_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    staging = tmp_path / "staging"
+    backup = tmp_path / "backup"
+    output = tmp_path / "output"
+    staging.mkdir()
+    backup.mkdir()
+    output.mkdir()
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        (staging / name).write_text(name, encoding="utf-8")
+
+    real_replace = os.replace
+    real_unlink = Path.unlink
+    publication_count = 0
+
+    def fail_second_publication(source: str | Path, destination: str | Path) -> None:
+        nonlocal publication_count
+        if Path(source).parent == staging and Path(destination).parent == output:
+            publication_count += 1
+            if publication_count == 2:
+                raise OSError("publication failed")
+        real_replace(source, destination)
+
+    def fail_published_file_removal(
+        path: Path, missing_ok: bool = False
+    ) -> None:
+        if path == output / output_bundle_module.RAW_XML_NAME:
+            raise RuntimeError("published file removal failed")
+        real_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", fail_second_publication)
+    monkeypatch.setattr(Path, "unlink", fail_published_file_removal)
+
+    with pytest.raises(BundlePublicationErrorGroup) as captured:
+        OutputBundleWriter._publish_into_existing(staging, backup, output)
+
+    error = captured.value
+    assert any("publication failed" in str(item) for item in error.exceptions)
+    assert any("published file removal failed" in str(item) for item in error.exceptions)
+    assert getattr(error, "_tagged_pdf_rollback_complete") is True
+    os_errors = error.subgroup(OSError)
+    assert isinstance(os_errors, BundlePublicationErrorGroup)
 
 
 def test_system_exit_during_publication_restores_old_files_and_reraises(

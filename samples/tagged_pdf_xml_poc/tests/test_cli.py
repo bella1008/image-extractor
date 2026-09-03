@@ -4,6 +4,7 @@ import pytest
 
 from tagged_pdf_extractor.domain.models import ExtractionArtifacts, QualityReport
 from tagged_pdf_extractor.infrastructure.output_bundle import (
+    BundlePublicationErrorGroup,
     BundleTransactionError,
     OutputCollisionError,
 )
@@ -138,7 +139,7 @@ def test_cli_returns_two_for_nested_output_transaction_exception_group(
 ) -> None:
     from tagged_pdf_extractor import cli
 
-    transaction_error = ExceptionGroup(
+    transaction_error = BundlePublicationErrorGroup(
         "publication failed",
         [
             OSError("replace failed"),
@@ -163,6 +164,26 @@ def test_cli_returns_two_for_nested_output_transaction_exception_group(
     assert "RuntimeError: cleanup failed" in captured.err
     assert "Traceback" not in captured.err
     assert captured.err.count("\n") == 1
+
+
+def test_cli_does_not_swallow_untyped_exception_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tagged_pdf_extractor import cli
+
+    unexpected = ExceptionGroup(
+        "reader invariant failed",
+        [AssertionError("unexpected reader state")],
+    )
+
+    def fail(self, pdf: Path, output: Path, overwrite: bool = False):
+        raise unexpected
+
+    monkeypatch.setattr(cli.ExtractDocument, "run", fail)
+
+    with pytest.raises(ExceptionGroup) as captured:
+        cli.main(["manual.pdf", "--output", "out"])
+    assert captured.value is unexpected
 
 
 def test_cli_does_not_swallow_base_exception_group_with_keyboard_interrupt(

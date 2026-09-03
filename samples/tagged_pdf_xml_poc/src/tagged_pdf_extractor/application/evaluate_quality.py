@@ -37,6 +37,15 @@ _BODY_ROLES = frozenset(
 )
 _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
+_UNRESOLVED_REFERENCE_CODES = (
+    "unresolved_mcid",
+    "unresolved_page_reference",
+    "unsupported_objr",
+)
+_HEADING_CANDIDATE = re.compile(
+    r"(?:heading(?:[1-6])?$|(?:^|[_-])title$)", re.IGNORECASE
+)
+_HEADING_CANDIDATE_LEVEL = re.compile(r"heading([1-6])$", re.IGNORECASE)
 _BIT_MASK_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
 _SPARSE_MATCH_PAIR_BUDGET = 10_000_000
 _SPARSE_MEMORY_BUDGET_BYTES = 16 * 1024 * 1024
@@ -107,6 +116,8 @@ class _Traversal:
     join_decisions: list[dict[str, Any]] = field(default_factory=list)
     forbidden_xml_control_count: int = 0
     forbidden_xml_control_field_count: int = 0
+    source_role_counts: Counter[str] = field(default_factory=Counter)
+    heading_hierarchy: list[dict[str, Any]] = field(default_factory=list)
 
     def count_text_field(self, value: str | None) -> None:
         if value is None:
@@ -147,19 +158,41 @@ class QualityEvaluator:
             normalized_tagged, normalized_baseline
         )
 
+        reference_counts = Counter(
+            diagnostic.code
+            for diagnostic in document.diagnostics
+            if diagnostic.code in _UNRESOLVED_REFERENCE_CODES
+        )
         unresolved = tuple(
             diagnostic
             for diagnostic in document.diagnostics
-            if diagnostic.code == "unresolved_mcid"
+            if diagnostic.code in _UNRESOLVED_REFERENCE_CODES
         )
+        special_characters = {
+            character: {
+                "tagged": normalized_tagged.count(character),
+                "baseline": normalized_baseline.count(character),
+                "preserved": (
+                    normalized_baseline.count(character) == 0
+                    or normalized_tagged.count(character)
+                    >= normalized_baseline.count(character)
+                ),
+            }
+            for character in _SPECIAL_CHARACTERS
+        }
         hard_gates = {
             "is_marked": document.marked,
             "has_structure": traversal.element_count > 0,
             "has_heading": traversal.heading_count > 0,
             "has_body": traversal.body_count > 0,
             "xml_round_trip": xml_round_trip_ok,
+            "resolved_references": not unresolved,
             "resolved_references_reported": all(
-                self._has_useful_mcid_context(diagnostic) for diagnostic in unresolved
+                self._has_useful_reference_context(diagnostic)
+                for diagnostic in unresolved
+            ),
+            "special_characters_preserved": all(
+                result["preserved"] for result in special_characters.values()
             ),
         }
         metrics = {
@@ -170,19 +203,18 @@ class QualityEvaluator:
             "body_role_node_count": traversal.body_role_node_count,
             "unknown_role_count": traversal.unknown_role_count,
             "empty_element_count": traversal.empty_element_count,
-            "unresolved_mcid_count": len(unresolved),
+            "unresolved_mcid_count": reference_counts["unresolved_mcid"],
+            "unresolved_page_reference_count": reference_counts[
+                "unresolved_page_reference"
+            ],
+            "unsupported_objr_count": reference_counts["unsupported_objr"],
+            "unresolved_reference_count": sum(reference_counts.values()),
             "character_match_ratio": comparison.ratio,
             "comparison_mode": comparison.mode,
             "comparison_parameters": comparison.parameters,
             "tagged_character_count": len(normalized_tagged),
             "baseline_character_count": len(normalized_baseline),
-            "special_characters": {
-                character: {
-                    "tagged": normalized_tagged.count(character),
-                    "baseline": normalized_baseline.count(character),
-                }
-                for character in _SPECIAL_CHARACTERS
-            },
+            "special_characters": special_characters,
             "forbidden_xml_control_count": traversal.forbidden_xml_control_count,
             "forbidden_xml_control_field_count": (
                 traversal.forbidden_xml_control_field_count
@@ -194,6 +226,12 @@ class QualityEvaluator:
             hard_gates=hard_gates,
             diagnostics=document.diagnostics,
             join_decisions=tuple(traversal.join_decisions),
+            source_path=document.source_path,
+            language=document.language,
+            marked=document.marked,
+            role_map=tuple(sorted(document.role_map)),
+            source_role_counts=dict(sorted(traversal.source_role_counts.items())),
+            heading_hierarchy=tuple(traversal.heading_hierarchy),
         )
 
     def _walk(
@@ -224,13 +262,45 @@ class QualityEvaluator:
                 continue
 
             traversal.element_count += 1
+            traversal.source_role_counts[child.source_role] += 1
             traversal.heading_count += child.semantic_role == "heading"
             is_body_role = child.semantic_role in _BODY_ROLES
             traversal.body_role_node_count += is_body_role
             traversal.unknown_role_count += child.semantic_role == "unknown"
             self._count_element_text_fields(child, traversal)
             element_path = f"{parent_path}/{child.semantic_role}[{child_index}]"
+            fragment_start = len(traversal.tagged_fragments)
+            heading_entry_index: int | None = None
+            if child.semantic_role == "heading" or self._is_heading_candidate(
+                child.source_role
+            ):
+                heading_entry_index = len(traversal.heading_hierarchy)
+                traversal.heading_hierarchy.append({})
             element_has_text = self._walk(child.children, element_path, traversal)
+            if heading_entry_index is not None:
+                match = _HEADING_CANDIDATE_LEVEL.search(child.source_role)
+                candidate_level = int(match.group(1)) if match else None
+                traversal.heading_hierarchy[heading_entry_index] = {
+                    "structure_path": element_path,
+                    "source_role": child.source_role,
+                    "semantic_role": child.semantic_role,
+                    "level": (
+                        child.heading_level
+                        if child.semantic_role == "heading"
+                        else candidate_level
+                    ),
+                    "joined_text": " ".join(
+                        text
+                        for text in traversal.tagged_fragments[fragment_start:]
+                        if text
+                    ),
+                    "title": child.title,
+                    "classification": (
+                        "heading"
+                        if child.semantic_role == "heading"
+                        else "source_role_candidate"
+                    ),
+                }
             traversal.body_count += is_body_role and element_has_text
             traversal.empty_element_count += not element_has_text
             has_descendant_text = has_descendant_text or element_has_text
@@ -578,7 +648,13 @@ class QualityEvaluator:
         return len(increasing_tails)
 
     @staticmethod
-    def _has_useful_mcid_context(diagnostic: Diagnostic) -> bool:
+    def _is_heading_candidate(source_role: str) -> bool:
+        return bool(_HEADING_CANDIDATE.search(source_role))
+
+    @staticmethod
+    def _has_useful_reference_context(diagnostic: Diagnostic) -> bool:
+        if diagnostic.code != "unresolved_mcid":
+            return bool(diagnostic.context)
         page_index = diagnostic.context.get("page_index")
         mcid = diagnostic.context.get("mcid")
         return (

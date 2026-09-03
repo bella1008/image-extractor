@@ -141,7 +141,9 @@ def test_quality_report_counts_structure_roles_and_special_characters() -> None:
         assert report.metrics["special_characters"][character] == {
             "tagged": baseline.count(character),
             "baseline": baseline.count(character),
+            "preserved": True,
         }
+    assert report.hard_gates["special_characters_preserved"] is True
     assert report.status == "pass"
 
 
@@ -642,7 +644,8 @@ def test_unresolved_mcid_gate_requires_useful_page_and_mcid_context() -> None:
 
     assert reported.metrics["unresolved_mcid_count"] == 1
     assert reported.hard_gates["resolved_references_reported"] is True
-    assert reported.status == "pass"
+    assert reported.hard_gates["resolved_references"] is False
+    assert reported.status == "fail"
     assert unreported.hard_gates["resolved_references_reported"] is False
     assert unreported.status == "fail"
     assert reported.diagnostics == (useful,)
@@ -702,7 +705,9 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "has_heading",
         "has_body",
         "xml_round_trip",
+        "resolved_references",
         "resolved_references_reported",
+        "special_characters_preserved",
     )
     assert report.hard_gates == {
         "is_marked": False,
@@ -710,6 +715,139 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "has_heading": False,
         "has_body": False,
         "xml_round_trip": False,
+        "resolved_references": True,
         "resolved_references_reported": True,
+        "special_characters_preserved": True,
     }
+    assert report.status == "fail"
+
+
+def test_report_contains_deterministic_document_audit_and_heading_candidates() -> None:
+    document = TaggedDocument(
+        source_path=Path("manual.pdf"),
+        marked=True,
+        language=None,
+        role_map=(("Zed", "P"), ("Heading2", "P")),
+        children=(
+            StructureElement(
+                "Sect",
+                "section",
+                children=(
+                    StructureElement(
+                        "Heading2",
+                        "paragraph",
+                        title="Menu title",
+                        children=(ContentFragment(0, 1, ("Set", "tings")),),
+                    ),
+                    StructureElement(
+                        "H1", "heading", 1,
+                        children=(ContentFragment(0, 2, ("Real heading",)),),
+                    ),
+                    StructureElement(
+                        "Cover_Title", "paragraph",
+                        children=(ContentFragment(0, 3, ("Cover",)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Set tings Real heading Cover", xml_round_trip_ok=True
+    )
+
+    assert report.source_path == Path("manual.pdf")
+    assert report.language is None
+    assert report.marked is True
+    assert report.role_map == (("Heading2", "P"), ("Zed", "P"))
+    assert report.source_role_counts == {
+        "Cover_Title": 1, "H1": 1, "Heading2": 1, "Sect": 1,
+    }
+    assert report.heading_hierarchy == (
+        {
+            "structure_path": "/section[0]/paragraph[0]",
+            "source_role": "Heading2", "semantic_role": "paragraph",
+            "level": 2, "joined_text": "Set tings", "title": "Menu title",
+            "classification": "source_role_candidate",
+        },
+        {
+            "structure_path": "/section[0]/heading[1]",
+            "source_role": "H1", "semantic_role": "heading",
+            "level": 1, "joined_text": "Real heading", "title": None,
+            "classification": "heading",
+        },
+        {
+            "structure_path": "/section[0]/paragraph[2]",
+            "source_role": "Cover_Title", "semantic_role": "paragraph",
+            "level": None, "joined_text": "Cover", "title": None,
+            "classification": "source_role_candidate",
+        },
+    )
+    assert report.metrics["heading_count"] == 1
+
+
+def test_heading_hierarchy_preserves_document_order_for_nested_headings() -> None:
+    document = _document(
+        StructureElement(
+            "H1",
+            "heading",
+            1,
+            children=(
+                ContentFragment(0, 1, ("Parent",)),
+                StructureElement(
+                    "H2", "heading", 2,
+                    children=(ContentFragment(0, 2, ("Child",)),),
+                ),
+            ),
+        )
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Parent Child", xml_round_trip_ok=True
+    )
+
+    assert [item["source_role"] for item in report.heading_hierarchy] == [
+        "H1", "H2"
+    ]
+    assert [item["structure_path"] for item in report.heading_hierarchy] == [
+        "/heading[0]", "/heading[0]/heading[1]"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("code", "metric"),
+    [("unresolved_mcid", "unresolved_mcid_count"),
+     ("unresolved_page_reference", "unresolved_page_reference_count"),
+     ("unsupported_objr", "unsupported_objr_count")],
+)
+def test_each_unresolved_reference_code_fails_resolved_references_gate(
+    code: str, metric: str
+) -> None:
+    diagnostic = Diagnostic("warning", code, "reference issue", {"object_ref": "1 0 R"})
+    document = _passing_document()
+    object.__setattr__(document, "diagnostics", (diagnostic,))
+    report = QualityEvaluator().evaluate(document, "Heading Body", xml_round_trip_ok=True)
+    assert report.metrics[metric] == 1
+    assert report.metrics["unresolved_reference_count"] == 1
+    assert report.hard_gates["resolved_references"] is False
+    assert report.status == "fail"
+
+
+def test_special_character_gate_ignores_absent_baseline_characters() -> None:
+    report = QualityEvaluator().evaluate(
+        _passing_document("A/B"), "Heading A/B", xml_round_trip_ok=True
+    )
+    assert report.metrics["special_characters"]["\u2192"] == {
+        "tagged": 0, "baseline": 0, "preserved": True,
+    }
+    assert report.hard_gates["special_characters_preserved"] is True
+
+
+@pytest.mark.parametrize("character", tuple(">\u2192/&:[]()"))
+def test_special_character_deficit_fails_preservation_gate(character: str) -> None:
+    report = QualityEvaluator().evaluate(
+        _passing_document("Body"), f"Heading Body {character}", xml_round_trip_ok=True
+    )
+    assert report.metrics["special_characters"][character]["preserved"] is False
+    assert report.hard_gates["special_characters_preserved"] is False
     assert report.status == "fail"

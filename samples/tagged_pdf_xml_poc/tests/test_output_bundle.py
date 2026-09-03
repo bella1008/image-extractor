@@ -91,9 +91,40 @@ def test_json_report_writer_preserves_dataclass_order_unicode_paths_and_controls
         "hard_gates",
         "diagnostics",
         "join_decisions",
+        "source_path",
+        "language",
+        "marked",
+        "role_map",
+        "source_role_counts",
+        "heading_hierarchy",
     ]
     assert parsed["metrics"]["path"] == str(Path("근거/화면.png"))
     assert parsed["diagnostics"][0]["context"] == {"page": 3}
+
+
+def test_json_report_writer_serializes_audit_metadata_exactly(tmp_path: Path) -> None:
+    report = QualityReport(
+        "fail", {}, {}, (), (),
+        source_path=Path("manual.pdf"),
+        language=None,
+        marked=True,
+        role_map=(("Heading2", "P"),),
+        source_role_counts={"Heading2": 2},
+        heading_hierarchy=({"structure_path": "/paragraph[0]"},),
+    )
+    target = tmp_path / "report.json"
+
+    JsonReportWriter().write(report, target)
+
+    parsed = json.loads(target.read_text(encoding="utf-8"))
+    assert parsed["source_path"] == "manual.pdf"
+    assert parsed["language"] is None
+    assert parsed["marked"] is True
+    assert parsed["role_map"] == [["Heading2", "P"]]
+    assert parsed["source_role_counts"] == {"Heading2": 2}
+    assert parsed["heading_hierarchy"] == [
+        {"structure_path": "/paragraph[0]"}
+    ]
 
 
 def test_json_report_writer_fails_clearly_for_unsupported_context_value(

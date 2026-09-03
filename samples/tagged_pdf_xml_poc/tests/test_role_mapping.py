@@ -19,6 +19,21 @@ def test_maps_generic_heading_and_title() -> None:
     assert map_role("Title", {}) == ("heading", 1)
 
 
+@pytest.mark.parametrize("source_role", ["H0", "H7", "H8", "H9"])
+def test_nonstandard_numbered_headings_are_unknown(source_role: str) -> None:
+    assert map_role(source_role, {}) == ("unknown", None)
+
+
+@pytest.mark.parametrize("mapped_role", ["H0", "H7", "H8", "H9"])
+def test_role_map_cannot_promote_nonstandard_numbered_headings(
+    mapped_role: str,
+) -> None:
+    assert map_role("CustomHeading", {"CustomHeading": mapped_role}) == (
+        "unknown",
+        None,
+    )
+
+
 @pytest.mark.parametrize(
     ("source_role", "semantic_role"),
     [

@@ -145,6 +145,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
     assert report.metrics["heading_count"] == 0
     assert report.hard_gates["has_heading"] is False
+    assert report.hard_gates["resolved_references"] is True
+    assert report.hard_gates["special_characters_preserved"] is False
     assert report.status == "fail"
     assert validation.semantic_join_decisions == report.join_decisions
 
@@ -158,9 +160,38 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         element.attrib["source-role"] for element in raw_root.iter("element")
     }
     assert expected_custom_headings <= raw_source_roles
-    assert report_data["metrics"]["fragment_count"] > 0
+    assert report_data["metrics"]["element_count"] == 1_842
+    assert report_data["metrics"]["fragment_count"] == 1_938
+    assert report_data["metrics"]["heading_count"] == 0
+    assert report_data["metrics"]["body_count"] == 1_410
+    assert report_data["metrics"]["unknown_role_count"] == 0
     assert report_data["metrics"]["unresolved_mcid_count"] == 0
+    assert report_data["metrics"]["unresolved_page_reference_count"] == 0
+    assert report_data["metrics"]["unsupported_objr_count"] == 0
+    assert report_data["metrics"]["unresolved_reference_count"] == 0
     assert report_data["join_decisions"] == list(report.join_decisions)
+    assert report_data["source_path"] == str(PDF)
+    assert report_data["language"] == document.language == "ko"
+    assert report_data["marked"] is True
+    assert report_data["role_map"] == [list(item) for item in document.role_map]
+    assert report_data["source_role_counts"] == dict(sorted(source_roles.items()))
+    heading_candidates = {
+        entry["source_role"]
+        for entry in report_data["heading_hierarchy"]
+        if entry["classification"] == "source_role_candidate"
+    }
+    assert expected_custom_headings <= heading_candidates
+    assert len(report_data["heading_hierarchy"]) == 34
+    assert all(
+        entry["semantic_role"] == "paragraph"
+        for entry in report_data["heading_hierarchy"]
+    )
+    special = report_data["metrics"]["special_characters"]
+    assert special[">"] == {"tagged": 54, "baseline": 54, "preserved": True}
+    assert special["/"] == {"tagged": 69, "baseline": 72, "preserved": False}
+    assert special[":"] == {"tagged": 56, "baseline": 60, "preserved": False}
+    assert special["("] == {"tagged": 80, "baseline": 83, "preserved": False}
+    assert special[")"] == {"tagged": 79, "baseline": 83, "preserved": False}
 
     normalized_paragraphs = {
         re.sub(

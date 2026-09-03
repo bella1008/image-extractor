@@ -57,6 +57,12 @@ class QualityReport:
     hard_gates: dict[str, bool]
     diagnostics: tuple[Diagnostic, ...]
     join_decisions: tuple[dict[str, Any], ...] = ()
+    source_path: Path | None = None
+    language: str | None = None
+    marked: bool | None = None
+    role_map: tuple[tuple[str, str], ...] = ()
+    source_role_counts: dict[str, int] = field(default_factory=dict)
+    heading_hierarchy: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

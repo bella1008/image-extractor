@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+import sys
 import unicodedata
 from bisect import bisect_left
+from collections import Counter
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
 from typing import Any
 
 from tagged_pdf_extractor.domain.models import (
@@ -36,9 +37,34 @@ _BODY_ROLES = frozenset(
 )
 _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
-_EXACT_COMPARISON_THRESHOLD = 8_192
-_BIT_PARALLEL_MAX_UNIQUE_CHARACTERS = 2_048
-_BIT_PARALLEL_MAX_MASK_BYTES = 8 * 1024 * 1024
+_BIT_MASK_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
+_SPARSE_MATCH_PAIR_BUDGET = 10_000_000
+
+
+class QualityEvaluationLimitError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        baseline_length: int,
+        tagged_length: int,
+        mask_estimate: int,
+        mask_budget: int,
+        match_pair_estimate: int,
+        match_pair_budget: int,
+    ) -> None:
+        self.baseline_length = baseline_length
+        self.tagged_length = tagged_length
+        self.mask_estimate = mask_estimate
+        self.mask_budget = mask_budget
+        self.match_pair_estimate = match_pair_estimate
+        self.match_pair_budget = match_pair_budget
+        super().__init__(
+            "Exact LCS resource limits exceeded: "
+            f"baseline_length={baseline_length}, tagged_length={tagged_length}, "
+            f"mask_estimate={mask_estimate}, mask_budget={mask_budget}, "
+            f"match_pair_estimate={match_pair_estimate}, "
+            f"match_pair_budget={match_pair_budget}"
+        )
 
 
 def _is_xml_10_character(character: str) -> bool:
@@ -219,90 +245,119 @@ class QualityEvaluator:
     def _character_match_ratio(
         tagged_text: str, baseline_text: str
     ) -> _Comparison:
-        if not baseline_text:
-            return _Comparison(
-                ratio=1.0 if not tagged_text else 0.0,
-                mode="exact_sequence_matcher",
-                parameters={
-                    "autojunk": False,
-                    "exact_threshold": _EXACT_COMPARISON_THRESHOLD,
-                },
-            )
-        if max(len(baseline_text), len(tagged_text)) > _EXACT_COMPARISON_THRESHOLD:
-            matched, mode, parameters = QualityEvaluator._large_lcs_length(
-                baseline_text, tagged_text
-            )
-            return _Comparison(
-                ratio=matched / len(baseline_text),
-                mode=mode,
-                parameters=parameters,
-            )
-        matched = sum(
-            block.size
-            for block in SequenceMatcher(
-                None, baseline_text, tagged_text, autojunk=False
-            ).get_matching_blocks()
+        matched, mode, parameters = QualityEvaluator._exact_lcs_length(
+            baseline_text, tagged_text
         )
         return _Comparison(
-            ratio=matched / len(baseline_text),
-            mode="exact_sequence_matcher",
-            parameters={
-                "autojunk": False,
-                "exact_threshold": _EXACT_COMPARISON_THRESHOLD,
-            },
+            ratio=(
+                matched / len(baseline_text)
+                if baseline_text
+                else 1.0 if not tagged_text else 0.0
+            ),
+            mode=mode,
+            parameters=parameters,
         )
 
     @staticmethod
-    def _large_lcs_length(
+    def _exact_lcs_length(
         baseline_text: str, tagged_text: str
     ) -> tuple[int, str, dict[str, Any]]:
-        """Return exact LCS coverage without unbounded SequenceMatcher work.
+        """Select a resource-bounded exact LCS backend for every input size.
 
         Full-document ``SequenceMatcher(autojunk=False)`` took about 224 seconds
         on the POC sample, while bounded alignment windows proved inexact after
-        insertions and deletions. Large inputs therefore use exact LCS
-        algorithms only: a bigint bitset when its mask table is bounded, or
-        sparse Hunt-Szymanski/LIS for high-cardinality text.
+        insertions and deletions. A bigint bitset is used when its measured mask
+        estimate fits the memory budget. Otherwise exact sparse
+        Hunt-Szymanski/LIS is used only when its match-pair operation count fits
+        a fixed budget; no approximate fallback is permitted.
         """
         if len(baseline_text) <= len(tagged_text):
             indexed_text, iterated_text = baseline_text, tagged_text
         else:
             indexed_text, iterated_text = tagged_text, baseline_text
 
-        unique_character_count = len(set(indexed_text))
-        bytes_per_mask = (len(indexed_text) + 7) // 8 + 32
-        estimated_mask_bytes = unique_character_count * bytes_per_mask
+        memory = QualityEvaluator._estimate_bit_mask_memory(indexed_text)
+        indexed_counts = Counter(indexed_text)
+        iterated_counts = Counter(iterated_text)
+        match_pair_count = sum(
+            count * iterated_counts.get(character, 0)
+            for character, count in indexed_counts.items()
+        )
+        del indexed_counts, iterated_counts
+
         common_parameters = {
-            "exact_threshold": _EXACT_COMPARISON_THRESHOLD,
             "indexed_dimension": "shorter",
             "indexed_length": len(indexed_text),
             "iterated_length": len(iterated_text),
-            "unique_character_count": unique_character_count,
-            "estimated_mask_bytes": estimated_mask_bytes,
-            "max_unique_characters": _BIT_PARALLEL_MAX_UNIQUE_CHARACTERS,
-            "max_mask_bytes": _BIT_PARALLEL_MAX_MASK_BYTES,
+            **memory,
+            "mask_memory_budget_bytes": _BIT_MASK_MEMORY_BUDGET_BYTES,
+            "match_pair_count": match_pair_count,
+            "sparse_match_pair_budget": _SPARSE_MATCH_PAIR_BUDGET,
         }
-        if (
-            unique_character_count <= _BIT_PARALLEL_MAX_UNIQUE_CHARACTERS
-            and estimated_mask_bytes <= _BIT_PARALLEL_MAX_MASK_BYTES
-        ):
+        if memory["estimated_mask_bytes"] <= _BIT_MASK_MEMORY_BUDGET_BYTES:
             return (
                 QualityEvaluator._bit_parallel_lcs(indexed_text, iterated_text),
                 "bit_parallel_lcs",
                 {**common_parameters, "bitset_dimension": "shorter"},
             )
-        return (
-            QualityEvaluator._sparse_lcs(indexed_text, iterated_text),
-            "sparse_lcs",
-            {**common_parameters, "fallback_reason": "bit_mask_memory_bound"},
+        if match_pair_count <= _SPARSE_MATCH_PAIR_BUDGET:
+            return (
+                QualityEvaluator._sparse_lcs(indexed_text, iterated_text),
+                "sparse_lcs",
+                {**common_parameters, "fallback_reason": "bit_mask_memory_bound"},
+            )
+        raise QualityEvaluationLimitError(
+            baseline_length=len(baseline_text),
+            tagged_length=len(tagged_text),
+            mask_estimate=memory["estimated_mask_bytes"],
+            mask_budget=_BIT_MASK_MEMORY_BUDGET_BYTES,
+            match_pair_estimate=match_pair_count,
+            match_pair_budget=_SPARSE_MATCH_PAIR_BUDGET,
         )
 
     @staticmethod
-    def _bit_parallel_lcs(indexed_text: str, iterated_text: str) -> int:
+    def _estimate_bit_mask_memory(indexed_text: str) -> dict[str, int]:
+        """Measure the final mask table without retaining prepass state.
+
+        Each mask's highest set bit is its character's final occurrence, so a
+        one-bit integer at that position has the same runtime size as the final
+        mask. ``sys.getsizeof(max_positions)`` supplies the dictionary table
+        size for the same keys/cardinality. This prepass dictionary is released
+        when the function returns, before the real masks are allocated.
+        """
+        max_positions: dict[str, int] = {}
+        for position, character in enumerate(indexed_text):
+            max_positions[character] = position
+        dictionary_bytes = sys.getsizeof(max_positions)
+        mask_value_bytes = sum(
+            sys.getsizeof(1 << position) for position in max_positions.values()
+        )
+        mask_storage_bytes = dictionary_bytes + mask_value_bytes
+        # The update expression retains the prior state and ``x`` while
+        # creating shifted/subtraction intermediates. Four maximum-width ints
+        # conservatively cover that concurrent working set.
+        algorithm_working_bytes = 4 * sys.getsizeof(
+            (1 << len(indexed_text)) - 1
+        )
+        return {
+            "unique_character_count": len(max_positions),
+            "mask_dictionary_bytes": dictionary_bytes,
+            "mask_value_bytes": mask_value_bytes,
+            "mask_storage_bytes": mask_storage_bytes,
+            "algorithm_working_bytes": algorithm_working_bytes,
+            "estimated_mask_bytes": mask_storage_bytes + algorithm_working_bytes,
+        }
+
+    @staticmethod
+    def _build_bit_masks(indexed_text: str) -> dict[str, int]:
         masks: dict[str, int] = {}
         for index, character in enumerate(indexed_text):
             masks[character] = masks.get(character, 0) | (1 << index)
+        return masks
 
+    @staticmethod
+    def _bit_parallel_lcs(indexed_text: str, iterated_text: str) -> int:
+        masks = QualityEvaluator._build_bit_masks(indexed_text)
         state = 0
         for character in iterated_text:
             x = masks.get(character, 0) | state

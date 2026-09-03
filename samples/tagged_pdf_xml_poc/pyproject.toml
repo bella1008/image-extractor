@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tagged-pdf-xml-poc"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pypdf>=6,<7",
+    "PyMuPDF>=1.26,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+tagged-pdf-extract = "tagged_pdf_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

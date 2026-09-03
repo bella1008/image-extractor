@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tagged_pdf_extractor.domain.models import QualityReport
+from tagged_pdf_extractor.infrastructure import markdown_writer as markdown_writer_module
 from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 
 
@@ -125,6 +126,45 @@ def test_promotes_only_candidates_in_order_using_absolute_child_indexes(
         "92 0 R",
     ):
         assert metadata not in markdown
+
+
+def test_numeric_level_one_candidate_renders_as_level_two_markdown(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/paragraph[0]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "Numeric heading",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+
+    markdown = _render(
+        tmp_path,
+        "<paragraph><text>Numeric heading</text></paragraph>",
+        report,
+    )
+
+    assert "\n## Numeric heading\n" in markdown
+
+
+def test_joins_fragment_punctuation_without_blanket_spaces(tmp_path: Path) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph><text>Hello</text><span><text>, world</text></span><text>!</text></paragraph>
+        <paragraph><text>( &gt; left directional button &gt; Settings &gt; Support &gt; Tips and User Guides &gt; Open User Guide</text><span><text>)</text></span></paragraph>
+        """,
+    )
+
+    assert "Hello, world!" in markdown
+    assert "Hello , world !" not in markdown
+    assert "( > left directional button > Settings > Support > Tips and User Guides > Open User Guide)" in markdown
+    assert "Open User Guide )" not in markdown
 
 
 def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(
@@ -259,3 +299,39 @@ def test_writes_utf8_with_lf_line_endings(tmp_path: Path) -> None:
     assert "한글.pdf".encode() in data
     assert b"\r" not in data
     assert b"\n" in data
+
+
+def test_atomic_publication_replaces_from_temporary_sibling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    output = tmp_path / "review" / "semantic_document.md"
+    _write_xml(semantic, "<paragraph><text>Published</text></paragraph>")
+    replace_calls: list[tuple[Path, Path]] = []
+    real_replace = markdown_writer_module.os.replace
+
+    def record_replace(source: str | Path, destination: str | Path) -> None:
+        temporary = Path(source)
+        final = Path(destination)
+        assert temporary.parent == output.parent
+        assert temporary.name.startswith(f".{output.name}.")
+        assert temporary.name.endswith(".tmp")
+        assert temporary.exists()
+        replace_calls.append((temporary, final))
+        real_replace(temporary, final)
+
+    monkeypatch.setattr(markdown_writer_module.os, "replace", record_replace)
+
+    MarkdownDocumentWriter().write(
+        semantic,
+        _report(),
+        output,
+        source_name="manual.pdf",
+    )
+
+    assert len(replace_calls) == 1
+    temporary, final = replace_calls[0]
+    assert final == output
+    assert not temporary.exists()
+    assert output.read_text(encoding="utf-8").endswith("Published\n")

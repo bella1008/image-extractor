@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import QualityReport
+from tagged_pdf_extractor.domain.text_joining import join_text_parts
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
@@ -149,7 +151,7 @@ class MarkdownDocumentWriter:
             if child.tag == "list":
                 nested_lists.append(child)
             elif child.tag == "text":
-                text_parts.append(cls._text_value(child))
+                text_parts.append(cls._visible_text(child))
             else:
                 cls._collect_list_item(child, text_parts, nested_lists)
 
@@ -216,28 +218,32 @@ class MarkdownDocumentWriter:
     @classmethod
     def _element_text(cls, element: ET.Element) -> str:
         return cls._join_text_parts(
-            cls._text_value(descendant) for descendant in element.iter("text")
+            cls._visible_text(descendant) for descendant in element.iter("text")
         )
 
     @classmethod
-    def _join_text_parts(cls, parts: object) -> str:
+    def _join_text_parts(cls, parts: Iterable[str]) -> str:
         normalized = [
-            value
+            _WHITESPACE.sub(" ", part)
             for part in parts
-            if (value := cls._normalize_whitespace(str(part)))
+            if part and part.strip()
         ]
-        return " ".join(normalized)
+        joined, _ = join_text_parts(tuple(normalized))
+        return joined.strip()
 
     @classmethod
     def _text_value(cls, element: ET.Element) -> str:
+        return cls._normalize_whitespace(cls._visible_text(element))
+
+    @classmethod
+    def _visible_text(cls, element: ET.Element) -> str:
         decoded = decode_data_element(element)
-        visible = "".join(
+        return "".join(
             character
             if cls._is_xml_character(character)
             else f"[CONTROL U+{ord(character):04X}]"
             for character in decoded
         )
-        return cls._normalize_whitespace(visible)
 
     @staticmethod
     def _normalize_whitespace(value: str) -> str:

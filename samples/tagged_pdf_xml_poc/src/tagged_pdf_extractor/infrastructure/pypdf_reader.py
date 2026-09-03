@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader
+from pypdf.generic import NullObject
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
@@ -27,15 +28,32 @@ class TaggedPdfReader:
 
     @staticmethod
     def resolve(value: Any) -> Any:
-        get_object = getattr(value, "get_object", None)
-        if not callable(get_object):
-            return value
-        try:
-            return get_object()
-        except Exception as exc:
-            reference = TaggedPdfReader.object_ref(value)
-            subject = reference or type(value).__name__
-            raise TaggedPdfError(f"Failed to dereference {subject}: {exc}") from exc
+        current = value
+        seen_objects: set[int] = set()
+        seen_references: set[str] = set()
+        while True:
+            if current is None or isinstance(current, NullObject):
+                return None
+            get_object = getattr(current, "get_object", None)
+            if not callable(get_object):
+                return current
+            reference = TaggedPdfReader.object_ref(current)
+            try:
+                resolved = get_object()
+            except Exception as exc:
+                subject = reference or type(current).__name__
+                raise TaggedPdfError(f"Failed to dereference {subject}: {exc}") from exc
+            if resolved is current:
+                return current
+            if id(current) in seen_objects or (
+                reference is not None and reference in seen_references
+            ):
+                subject = reference or type(current).__name__
+                raise TaggedPdfError(f"Dereference cycle detected at {subject}")
+            seen_objects.add(id(current))
+            if reference is not None:
+                seen_references.add(reference)
+            current = resolved
 
     @staticmethod
     def object_ref(value: Any) -> str | None:
@@ -73,10 +91,12 @@ class TaggedPdfReader:
             if (reference := self.object_ref(page)) is not None
         }
         mcid_text: dict[int, dict[int, tuple[str, ...]]] = {}
+        seen_mcids: dict[int, frozenset[int]] = {}
         diagnostics: list[Diagnostic] = []
         for index, page in enumerate(pages):
             result = self.collector.collect(page, index)
             mcid_text[index] = result.parts_by_mcid
+            seen_mcids[index] = result.seen_mcids
             diagnostics.extend(result.diagnostics)
 
         role_map = self._read_role_map(struct_root.get("/RoleMap"))
@@ -85,6 +105,7 @@ class TaggedPdfReader:
             inherited_page_index=None,
             page_indexes=page_indexes,
             mcid_text=mcid_text,
+            seen_mcids=seen_mcids,
             role_map=role_map,
             diagnostics=diagnostics,
             active_refs=set(),
@@ -114,6 +135,7 @@ class TaggedPdfReader:
         inherited_page_index: int | None,
         page_indexes: dict[str, int],
         mcid_text: dict[int, dict[int, tuple[str, ...]]],
+        seen_mcids: dict[int, frozenset[int]],
         role_map: dict[str, str],
         diagnostics: list[Diagnostic],
         active_refs: set[str],
@@ -134,6 +156,7 @@ class TaggedPdfReader:
                             inherited_page_index,
                             page_indexes,
                             mcid_text,
+                            seen_mcids,
                             role_map,
                             diagnostics,
                             active_refs,
@@ -148,6 +171,7 @@ class TaggedPdfReader:
             inherited_page_index,
             page_indexes,
             mcid_text,
+            seen_mcids,
             role_map,
             diagnostics,
             active_refs,
@@ -159,6 +183,7 @@ class TaggedPdfReader:
         inherited_page_index: int | None,
         page_indexes: dict[str, int],
         mcid_text: dict[int, dict[int, tuple[str, ...]]],
+        seen_mcids: dict[int, frozenset[int]],
         role_map: dict[str, str],
         diagnostics: list[Diagnostic],
         active_refs: set[str],
@@ -177,6 +202,7 @@ class TaggedPdfReader:
                             inherited_page_index,
                             page_indexes,
                             mcid_text,
+                            seen_mcids,
                             role_map,
                             diagnostics,
                             active_refs,
@@ -191,6 +217,7 @@ class TaggedPdfReader:
                         int(resolved),
                         reference,
                         mcid_text,
+                        seen_mcids,
                         diagnostics,
                     )
                 ]
@@ -215,22 +242,59 @@ class TaggedPdfReader:
 
                 if type_name == "MCR" or "/MCID" in resolved:
                     page_index = self._page_index(
-                        resolved.get("/Pg"), inherited_page_index, page_indexes
+                        resolved.get("/Pg"),
+                        inherited_page_index,
+                        page_indexes,
+                        diagnostics,
+                        reference,
                     )
                     mcid = self._mcid(resolved.get("/MCID"))
+                    raw_stream = resolved.get("/Stm")
+                    stream = self.resolve(raw_stream)
+                    if stream is not None:
+                        stream_reference = (
+                            self.object_ref(raw_stream) or self.object_ref(stream)
+                        )
+                        stored_page_index = self._diagnostic_page_index(page_index)
+                        diagnostics.append(
+                            Diagnostic(
+                                severity="warning",
+                                code="unsupported_stream_mcr",
+                                message="Stream-owned MCR is unsupported",
+                                context={
+                                    "page_index": stored_page_index,
+                                    "mcid": mcid,
+                                    "object_ref": reference,
+                                    "stream_object_ref": stream_reference,
+                                },
+                            )
+                        )
+                        return [
+                            ContentFragment(
+                                page_index=stored_page_index,
+                                mcid=mcid,
+                                text_parts=(),
+                                object_ref=reference,
+                            )
+                        ]
                     return [
                         self._content_fragment(
                             page_index,
                             mcid,
                             reference,
                             mcid_text,
+                            seen_mcids,
                             diagnostics,
                         )
                     ]
 
                 if "/S" in resolved:
                     page_index = self._page_index(
-                        resolved.get("/Pg"), inherited_page_index, page_indexes
+                        resolved.get("/Pg"),
+                        inherited_page_index,
+                        page_indexes,
+                        diagnostics,
+                        reference,
                     )
                     source_role = self._name(resolved.get("/S")) or ""
                     semantic_role, heading_level = map_role(source_role, role_map)
@@ -239,6 +303,7 @@ class TaggedPdfReader:
                         page_index,
                         page_indexes,
                         mcid_text,
+                        seen_mcids,
                         role_map,
                         diagnostics,
                         active_refs,
@@ -286,12 +351,19 @@ class TaggedPdfReader:
         mcid: int | None,
         reference: str | None,
         mcid_text: dict[int, dict[int, tuple[str, ...]]],
+        seen_mcids: dict[int, frozenset[int]],
         diagnostics: list[Diagnostic],
     ) -> ContentFragment:
         stored_page_index = self._diagnostic_page_index(page_index)
         page_parts = mcid_text.get(page_index, {}) if page_index is not None else {}
         if mcid is not None and mcid in page_parts:
             text_parts = page_parts[mcid]
+        elif (
+            page_index is not None
+            and mcid is not None
+            and mcid in seen_mcids.get(page_index, frozenset())
+        ):
+            text_parts = ()
         else:
             text_parts = ()
             diagnostics.append(
@@ -318,49 +390,120 @@ class TaggedPdfReader:
         page: Any,
         inherited_page_index: int | None,
         page_indexes: dict[str, int],
+        diagnostics: list[Diagnostic],
+        owner_reference: str | None,
     ) -> int | None:
         if page is None:
             return inherited_page_index
         reference = self.object_ref(page)
         resolved_page = self.resolve(page)
+        if resolved_page is None:
+            return inherited_page_index
         reference = self.object_ref(resolved_page) or reference
-        return page_indexes.get(reference) if reference is not None else None
+        if reference is not None and reference in page_indexes:
+            return page_indexes[reference]
+        diagnostics.append(
+            Diagnostic(
+                severity="warning",
+                code="unresolved_page_reference",
+                message="Page reference is not present in the PDF page tree",
+                context={
+                    "page_object_ref": reference,
+                    "object_ref": owner_reference,
+                },
+            )
+        )
+        return None
 
     def _attributes(self, value: Any) -> tuple[tuple[str, str], ...]:
-        attributes = self.resolve(value)
-        if attributes is None:
-            return ()
-        if isinstance(attributes, Mapping):
-            pairs = [
-                (str(self.resolve(key)), self._stable_value(item))
-                for key, item in attributes.items()
-            ]
-            return tuple(sorted(pairs))
-        if self._is_kid_sequence(attributes):
-            pairs: list[tuple[str, str]] = []
-            for item in attributes:
-                resolved_item = self.resolve(item)
-                if isinstance(resolved_item, Mapping):
-                    pairs.extend(
-                        (str(self.resolve(key)), self._stable_value(nested_value))
-                        for key, nested_value in resolved_item.items()
-                    )
-                else:
-                    pairs.append(("/A", self._stable_value(resolved_item)))
-            return tuple(sorted(pairs))
-        return (("/A", self._stable_value(attributes)),)
+        active_refs: set[str] = set()
+        reference = self.object_ref(value)
+        self._enter_attribute_reference(reference, active_refs)
+        try:
+            attributes = self.resolve(value)
+            if attributes is None:
+                return ()
+            if isinstance(attributes, Mapping):
+                return self._attribute_mapping_pairs(attributes, "", active_refs)
+            if self._is_kid_sequence(attributes):
+                pairs: list[tuple[str, str]] = []
+                for index, item in enumerate(attributes):
+                    item_reference = self.object_ref(item)
+                    self._enter_attribute_reference(item_reference, active_refs)
+                    try:
+                        resolved_item = self.resolve(item)
+                        prefix = f"[{index}]"
+                        if isinstance(resolved_item, Mapping):
+                            pairs.extend(
+                                self._attribute_mapping_pairs(
+                                    resolved_item, prefix, active_refs
+                                )
+                            )
+                        else:
+                            pairs.append(
+                                (
+                                    f"{prefix}/A",
+                                    self._stable_resolved_value(
+                                        resolved_item, active_refs
+                                    ),
+                                )
+                            )
+                    finally:
+                        if item_reference is not None:
+                            active_refs.remove(item_reference)
+                return tuple(pairs)
+            return (("/A", self._stable_resolved_value(attributes, active_refs)),)
+        finally:
+            if reference is not None:
+                active_refs.remove(reference)
 
-    def _stable_value(self, value: Any) -> str:
-        resolved = self.resolve(value)
+    def _attribute_mapping_pairs(
+        self,
+        mapping: Mapping[Any, Any],
+        prefix: str,
+        active_refs: set[str],
+    ) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (
+                f"{prefix}{self.resolve(key)}",
+                self._stable_value(item, active_refs),
+            )
+            for key, item in mapping.items()
+        )
+
+    def _stable_value(self, value: Any, active_refs: set[str]) -> str:
+        reference = self.object_ref(value)
+        self._enter_attribute_reference(reference, active_refs)
+        try:
+            return self._stable_resolved_value(self.resolve(value), active_refs)
+        finally:
+            if reference is not None:
+                active_refs.remove(reference)
+
+    def _stable_resolved_value(
+        self, resolved: Any, active_refs: set[str]
+    ) -> str:
         if isinstance(resolved, Mapping):
-            pairs = sorted(
-                (str(self.resolve(key)), self._stable_value(item))
+            pairs = (
+                (str(self.resolve(key)), self._stable_value(item, active_refs))
                 for key, item in resolved.items()
             )
             return "{" + ", ".join(f"{key}: {item}" for key, item in pairs) + "}"
         if self._is_kid_sequence(resolved):
-            return "[" + ", ".join(self._stable_value(item) for item in resolved) + "]"
+            return "[" + ", ".join(
+                self._stable_value(item, active_refs) for item in resolved
+            ) + "]"
         return str(resolved)
+
+    @staticmethod
+    def _enter_attribute_reference(
+        reference: str | None, active_refs: set[str]
+    ) -> None:
+        if reference is None:
+            return
+        if reference in active_refs:
+            raise TaggedPdfError(f"Attribute cycle detected at {reference}")
+        active_refs.add(reference)
 
     def _optional_string(self, value: Any) -> str | None:
         if value is None:

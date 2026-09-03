@@ -98,6 +98,22 @@ def test_collects_direct_mcid_from_bmc_properties() -> None:
     assert result.diagnostics == ()
 
 
+def test_records_valid_mcid_even_when_it_has_no_text() -> None:
+    class NonTextPage:
+        def extract_text(self, *, visitor_operand_before, visitor_text):
+            visitor_operand_before(b"BMC", ["/Figure", {"/MCID": 5}], None, None)
+            visitor_operand_before(b"EMC", [], None, None)
+            visitor_operand_before(b"BDC", ["/Span", {"/MCID": 6}], None, None)
+            visitor_operand_before(b"EMC", [], None, None)
+            return ""
+
+    result = McidTextCollector().collect(NonTextPage(), page_index=0)
+
+    assert result.parts_by_mcid == {}
+    assert result.seen_mcids == frozenset({5, 6})
+    assert result.diagnostics == ()
+
+
 def test_resolves_mcid_from_named_page_property_list() -> None:
     class NamedPropertyPage(dict):
         def __init__(self) -> None:

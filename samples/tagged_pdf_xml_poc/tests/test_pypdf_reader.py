@@ -8,9 +8,11 @@ from pypdf import PdfWriter
 from pypdf.generic import (
     ArrayObject,
     BooleanObject,
+    DecodedStreamObject,
     DictionaryObject,
     IndirectObject,
     NameObject,
+    NullObject,
     NumberObject,
     TextStringObject,
 )
@@ -38,15 +40,21 @@ class RecordingCollector:
         self,
         parts_by_page: dict[int, dict[int, tuple[str, ...]]] | None = None,
         diagnostics_by_page: dict[int, tuple[Diagnostic, ...]] | None = None,
+        seen_mcids_by_page: dict[int, frozenset[int]] | None = None,
     ) -> None:
         self.parts_by_page = parts_by_page or {}
         self.diagnostics_by_page = diagnostics_by_page or {}
+        self.seen_mcids_by_page = seen_mcids_by_page or {}
         self.calls: list[int] = []
 
     def collect(self, _page: Any, page_index: int) -> McidTextResult:
         self.calls.append(page_index)
+        parts_by_mcid = self.parts_by_page.get(page_index, {})
         return McidTextResult(
-            parts_by_mcid=self.parts_by_page.get(page_index, {}),
+            parts_by_mcid=parts_by_mcid,
+            seen_mcids=self.seen_mcids_by_page.get(
+                page_index, frozenset(parts_by_mcid)
+            ),
             diagnostics=self.diagnostics_by_page.get(page_index, ()),
         )
 
@@ -119,6 +127,97 @@ def test_rejects_structure_tree_reference_that_resolves_to_none(
         TaggedPdfReader().read(tmp_path / "null-structure-tree.pdf")
 
     assert str(exc_info.value) == "PDF has no /StructTreeRoot"
+
+
+def test_rejects_real_null_structure_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": NullObject()}}
+        pages: list[Any] = []
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    with pytest.raises(TaggedPdfError) as exc_info:
+        TaggedPdfReader().read(tmp_path / "null-object-structure-tree.pdf")
+
+    assert str(exc_info.value) == "PDF has no /StructTreeRoot"
+
+
+def test_real_null_objects_are_absent_catalog_and_structure_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {
+        "/S": NameObject("/P"),
+        "/T": NullObject(),
+        "/Lang": NullObject(),
+        "/Alt": NullObject(),
+        "/ActualText": NullObject(),
+        "/A": NullObject(),
+    }
+
+    class FakeReader:
+        trailer = {
+            "/Root": {
+                "/MarkInfo": NullObject(),
+                "/Lang": NullObject(),
+                "/StructTreeRoot": {"/K": [element]},
+            }
+        }
+        pages: list[Any] = []
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    result = TaggedPdfReader(RecordingCollector()).read(tmp_path / "nulls.pdf")
+
+    assert result.marked is False
+    assert result.language is None
+    structure = result.children[0]
+    assert isinstance(structure, StructureElement)
+    assert structure.title is None
+    assert structure.language is None
+    assert structure.alternate_text is None
+    assert structure.actual_text is None
+    assert structure.attributes == ()
+
+
+def test_resolve_follows_chained_references_until_stable_object() -> None:
+    terminal = {"resolved": True}
+
+    class Reference:
+        def __init__(self, target: Any) -> None:
+            self.target = target
+
+        def get_object(self):
+            return self.target
+
+    assert TaggedPdfReader.resolve(Reference(Reference(terminal))) is terminal
+
+
+def test_resolve_rejects_dereference_cycle() -> None:
+    class Reference:
+        idnum: int
+        generation = 0
+        target: Any
+
+        def get_object(self):
+            return self.target
+
+    first = Reference()
+    first.idnum = 21
+    second = Reference()
+    second.idnum = 22
+    first.target = second
+    second.target = first
+
+    with pytest.raises(TaggedPdfError, match=r"(?i)dereference cycle.*21 0 R"):
+        TaggedPdfReader.resolve(first)
 
 
 def test_reads_pypdf_false_marked_value_as_false(tmp_path: Path) -> None:
@@ -284,8 +383,8 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
     assert heading.alternate_text == "Alternative"
     assert heading.actual_text == "Actual"
     assert heading.attributes == (
-        ("/O", "/Layout"),
         ("/Placement", "/Block"),
+        ("/O", "/Layout"),
     )
     assert heading.object_ref is not None
 
@@ -317,6 +416,74 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
         "value_repr": "'unsupported kid'",
         "object_ref": None,
     }
+
+
+def test_attribute_array_preserves_mapping_grouping_and_iteration_order(
+    tmp_path: Path,
+) -> None:
+    def structure(writer: PdfWriter, _pages: list[Any]):
+        element = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/P"),
+                    NameObject("/A"): ArrayObject(
+                        [
+                            DictionaryObject(
+                                {
+                                    NameObject("/O"): NameObject("/Layout"),
+                                    NameObject("/Z"): TextStringObject("first"),
+                                }
+                            ),
+                            DictionaryObject(
+                                {
+                                    NameObject("/R"): NumberObject(2),
+                                    NameObject("/O"): NameObject("/Table"),
+                                }
+                            ),
+                        ]
+                    ),
+                }
+            )
+        )
+        return ArrayObject([element]), None
+
+    pdf_path = tmp_path / "attribute-order.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+
+    result = TaggedPdfReader(RecordingCollector()).read(pdf_path)
+
+    element = result.children[0]
+    assert isinstance(element, StructureElement)
+    assert element.attributes == (
+        ("[0]/O", "/Layout"),
+        ("[0]/Z", "first"),
+        ("[1]/R", "2"),
+        ("[1]/O", "/Table"),
+    )
+
+
+def test_indirect_attribute_cycle_raises_tagged_pdf_error(tmp_path: Path) -> None:
+    def structure(writer: PdfWriter, _pages: list[Any]):
+        attributes = DictionaryObject()
+        attributes_ref = writer._add_object(attributes)
+        attributes[NameObject("/Loop")] = attributes_ref
+        element = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/P"),
+                    NameObject("/A"): attributes_ref,
+                }
+            )
+        )
+        return ArrayObject([element]), None
+
+    pdf_path = tmp_path / "attribute-cycle.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+
+    with pytest.raises(
+        TaggedPdfError, match=r"(?i)attribute cycle.*\d+ 0 R"
+    ):
+        TaggedPdfReader(RecordingCollector()).read(pdf_path)
 
 
 def test_preserves_unresolved_fragments_with_contextual_diagnostics(
@@ -378,6 +545,7 @@ def test_preserves_unresolved_fragments_with_contextual_diagnostics(
 
     assert [item.code for item in result.diagnostics] == [
         "unresolved_mcid",
+        "unresolved_page_reference",
         "unresolved_mcid",
         "unresolved_mcid",
     ]
@@ -386,16 +554,138 @@ def test_preserves_unresolved_fragments_with_contextual_diagnostics(
         "mcid": 404,
         "object_ref": None,
     }
-    assert result.diagnostics[1].context == {
+    assert result.diagnostics[2].context == {
         "page_index": -1,
         "mcid": 7,
         "object_ref": unresolved_page.object_ref,
     }
-    assert result.diagnostics[2].context == {
+    assert result.diagnostics[3].context == {
         "page_index": 0,
         "mcid": None,
         "object_ref": missing_mcid.object_ref,
     }
+
+
+def test_unresolved_page_reference_reports_page_and_owner_refs(
+    tmp_path: Path,
+) -> None:
+    expected_refs: dict[str, str | None] = {}
+
+    def structure(writer: PdfWriter, _pages: list[Any]):
+        orphan_page = writer._add_object(
+            DictionaryObject({NameObject("/Type"): NameObject("/Page")})
+        )
+        mcr = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/Type"): NameObject("/MCR"),
+                    NameObject("/Pg"): orphan_page,
+                    NameObject("/MCID"): NumberObject(7),
+                }
+            )
+        )
+        expected_refs["page"] = TaggedPdfReader.object_ref(orphan_page)
+        expected_refs["owner"] = TaggedPdfReader.object_ref(mcr)
+        return ArrayObject([mcr]), None
+
+    pdf_path = tmp_path / "unresolved-page.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+
+    result = TaggedPdfReader(RecordingCollector()).read(pdf_path)
+
+    fragment = result.children[0]
+    assert isinstance(fragment, ContentFragment)
+    assert fragment.page_index == -1
+    assert fragment.object_ref == expected_refs["owner"]
+    assert [diagnostic.code for diagnostic in result.diagnostics] == [
+        "unresolved_page_reference",
+        "unresolved_mcid",
+    ]
+    assert result.diagnostics[0].context == {
+        "page_object_ref": expected_refs["page"],
+        "object_ref": expected_refs["owner"],
+    }
+
+
+def test_seen_empty_mcid_is_not_unresolved_but_missing_mcid_is(
+    tmp_path: Path,
+) -> None:
+    def structure(writer: PdfWriter, pages: list[Any]):
+        container = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/S"): NameObject("/P"),
+                    NameObject("/Pg"): pages[0].indirect_reference,
+                    NameObject("/K"): ArrayObject(
+                        [NumberObject(5), NumberObject(99)]
+                    ),
+                }
+            )
+        )
+        return ArrayObject([container]), None
+
+    pdf_path = tmp_path / "seen-empty-mcid.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+    collector = RecordingCollector(seen_mcids_by_page={0: frozenset({5})})
+
+    result = TaggedPdfReader(collector).read(pdf_path)
+
+    container = result.children[0]
+    assert isinstance(container, StructureElement)
+    assert container.children == (
+        ContentFragment(0, 5, ()),
+        ContentFragment(0, 99, ()),
+    )
+    assert [diagnostic.code for diagnostic in result.diagnostics] == [
+        "unresolved_mcid"
+    ]
+    assert result.diagnostics[0].context["mcid"] == 99
+
+
+def test_stream_owned_mcr_is_preserved_without_page_text_lookup(
+    tmp_path: Path,
+) -> None:
+    expected_refs: dict[str, str | None] = {}
+
+    def structure(writer: PdfWriter, pages: list[Any]):
+        stream = DecodedStreamObject()
+        stream.set_data(b"")
+        stream_ref = writer._add_object(stream)
+        mcr = writer._add_object(
+            DictionaryObject(
+                {
+                    NameObject("/Type"): NameObject("/MCR"),
+                    NameObject("/Pg"): pages[0].indirect_reference,
+                    NameObject("/MCID"): NumberObject(7),
+                    NameObject("/Stm"): stream_ref,
+                }
+            )
+        )
+        expected_refs["stream"] = TaggedPdfReader.object_ref(stream_ref)
+        return ArrayObject([mcr]), None
+
+    pdf_path = tmp_path / "stream-mcr.pdf"
+    _write_tagged_pdf(pdf_path, structure, page_count=1)
+    collector = RecordingCollector({0: {7: ("Wrong page text",)}})
+
+    result = TaggedPdfReader(collector).read(pdf_path)
+
+    fragment = result.children[0]
+    assert isinstance(fragment, ContentFragment)
+    assert fragment.page_index == 0
+    assert fragment.mcid == 7
+    assert fragment.text_parts == ()
+    assert fragment.object_ref is not None
+    assert len(result.diagnostics) == 1
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.code == "unsupported_stream_mcr"
+    assert diagnostic.context == {
+        "page_index": 0,
+        "mcid": 7,
+        "object_ref": fragment.object_ref,
+        "stream_object_ref": expected_refs["stream"],
+    }
+    assert diagnostic.context["stream_object_ref"].endswith(" R")
 
 
 def test_repeated_indirect_reference_is_allowed_outside_active_path(

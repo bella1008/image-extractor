@@ -72,6 +72,7 @@ def _page_with_marked_content_flushes(page: Any) -> Any:
 @dataclass(frozen=True)
 class McidTextResult:
     parts_by_mcid: dict[int, tuple[str, ...]]
+    seen_mcids: frozenset[int]
     diagnostics: tuple[Diagnostic, ...]
 
 
@@ -80,6 +81,7 @@ class McidTextCollector:
         extraction_page = _page_with_marked_content_flushes(page)
         stack: list[int | None] = []
         parts: dict[int, list[str]] = {}
+        seen_mcids: set[int] = set()
         diagnostics: list[Diagnostic] = []
 
         def before(operator: Any, operands: Any, _cm: Any, _tm: Any) -> None:
@@ -93,6 +95,7 @@ class McidTextCollector:
                             raw_mcid, bool
                         ):
                             mcid = int(raw_mcid)
+                            seen_mcids.add(mcid)
                         else:
                             diagnostics.append(
                                 Diagnostic(
@@ -157,5 +160,6 @@ class McidTextCollector:
             )
         return McidTextResult(
             parts_by_mcid={mcid: tuple(values) for mcid, values in parts.items()},
+            seen_mcids=frozenset(seen_mcids),
             diagnostics=tuple(diagnostics),
         )

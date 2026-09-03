@@ -132,6 +132,59 @@ def test_cli_reports_when_outputs_were_committed_before_cleanup_error(
     assert str(artifacts.report_json) in captured.err
 
 
+def test_cli_returns_two_for_nested_output_transaction_exception_group(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from tagged_pdf_extractor import cli
+
+    transaction_error = ExceptionGroup(
+        "publication failed",
+        [
+            OSError("replace failed"),
+            ExceptionGroup(
+                "rollback failed",
+                [ValueError("invalid marker"), RuntimeError("cleanup failed")],
+            ),
+        ],
+    )
+
+    def fail(self, pdf: Path, output: Path, overwrite: bool = False):
+        raise transaction_error
+
+    monkeypatch.setattr(cli.ExtractDocument, "run", fail)
+
+    assert cli.main(["manual.pdf", "--output", "out"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "output transaction failed" in captured.err
+    assert "OSError: replace failed" in captured.err
+    assert "ValueError: invalid marker" in captured.err
+    assert "RuntimeError: cleanup failed" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.err.count("\n") == 1
+
+
+def test_cli_does_not_swallow_base_exception_group_with_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tagged_pdf_extractor import cli
+
+    transaction_interrupt = BaseExceptionGroup(
+        "publication interrupted",
+        [OSError("replace failed"), KeyboardInterrupt()],
+    )
+
+    def interrupt(self, pdf: Path, output: Path, overwrite: bool = False):
+        raise transaction_interrupt
+
+    monkeypatch.setattr(cli.ExtractDocument, "run", interrupt)
+
+    with pytest.raises(BaseExceptionGroup) as captured:
+        cli.main(["manual.pdf", "--output", "out"])
+    assert captured.value is transaction_interrupt
+
+
 def test_cli_does_not_swallow_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -144,4 +197,3 @@ def test_cli_does_not_swallow_keyboard_interrupt(
 
     with pytest.raises(KeyboardInterrupt):
         cli.main(["manual.pdf", "--output", "out"])
-

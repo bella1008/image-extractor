@@ -74,6 +74,23 @@ def _build_use_case() -> ExtractDocument:
     )
 
 
+def _format_exception_group(group: ExceptionGroup[Exception]) -> str:
+    leaves: list[str] = []
+
+    def collect(error: Exception) -> None:
+        if isinstance(error, ExceptionGroup):
+            for nested in error.exceptions:
+                collect(nested)
+            return
+        message = " ".join(str(error).split())
+        leaves.append(
+            f"{type(error).__name__}: {message}" if message else type(error).__name__
+        )
+
+    collect(group)
+    return " | ".join(leaves)
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_utf8(sys.stdout)
     _configure_utf8(sys.stderr)
@@ -83,6 +100,12 @@ def main(argv: list[str] | None = None) -> int:
         _, report, artifacts = _build_use_case().run(
             args.pdf, args.output, args.overwrite
         )
+    except ExceptionGroup as exc:
+        print(
+            f"error: output transaction failed: {_format_exception_group(exc)}",
+            file=sys.stderr,
+        )
+        return 2
     except _EXPECTED_ERRORS as exc:
         if getattr(exc, "published", False):
             committed_artifacts = getattr(exc, "artifacts", None)

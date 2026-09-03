@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -11,6 +12,7 @@ from tagged_pdf_extractor.domain.models import ContentFragment, StructureElement
 from tagged_pdf_extractor.infrastructure.output_bundle import OutputBundleWriter
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import PyMuPdfBaselineReader
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
+from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
 _DEFAULT_PDF = Path(
@@ -68,7 +70,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     output = tmp_path / "result"
     artifacts = OutputBundleWriter().write(document, report, output)
     raw_root = ET.parse(artifacts.raw_xml).getroot()
-    ET.parse(artifacts.semantic_xml)
+    semantic_root = ET.parse(artifacts.semantic_xml).getroot()
     report_data = json.loads(artifacts.report_json.read_text(encoding="utf-8"))
 
     raw_source_roles = {
@@ -78,3 +80,16 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["metrics"]["fragment_count"] > 0
     assert report_data["metrics"]["unresolved_mcid_count"] == 0
     assert report_data["join_decisions"] == list(report.join_decisions)
+
+    normalized_paragraphs = {
+        re.sub(
+            r"\s+",
+            " ",
+            "".join(decode_data_element(text) for text in element.iter("text")),
+        ).strip()
+        for element in semantic_root.iter("paragraph")
+    }
+    assert (
+        "( > left directional button > Settings > Support > Tips and User "
+        "Guides > Open User Guide)"
+    ) in normalized_paragraphs

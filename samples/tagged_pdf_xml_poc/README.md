@@ -10,6 +10,8 @@
 - `semantic_document.xml`: 표준 역할명과 보수적으로 연결한 텍스트
 - `extraction_report.json`: 구조·문자 보존·품질 게이트·텍스트 연결 판단 기록
 
+`outputs/`는 저장소의 `.gitignore` 대상입니다. 실제 산출물은 로컬에 생성되며 커밋하지 않습니다. 동일한 PDF와 명령으로 언제든 재현할 수 있습니다.
+
 XML-to-Markdown, OCR, UI, 체크리스트 평가, 언어/바이어별 보정 규칙은 1차 범위에서 제외합니다.
 
 ## 설치 및 실행
@@ -82,7 +84,7 @@ lone surrogate가 포함된 경우 `base64-utf8-surrogatepass`가 사용될 수 
 영문 OSD 경로는 다음처럼 계층과 특수문자를 유지했습니다.
 
 ```text
-( > left directional button > Settings > Support > Tips and User Guides > Open User Guide )
+( > left directional button > Settings > Support > Tips and User Guides > Open User Guide)
 ```
 
 문장 연결도 다음 영문 예시에서는 끊김 없이 복원됐습니다.

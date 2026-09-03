@@ -37,7 +37,7 @@ _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
 _EXACT_COMPARISON_THRESHOLD = 8_192
 _COMPARISON_CHUNK_SIZE = 2_048
-_COMPARISON_WINDOW_MARGIN = 256
+_COMPARISON_WINDOW_MARGIN = 0
 
 
 def _is_xml_10_character(character: str) -> bool:
@@ -56,6 +56,7 @@ class _Traversal:
     fragment_count: int = 0
     heading_count: int = 0
     body_count: int = 0
+    body_role_node_count: int = 0
     unknown_role_count: int = 0
     empty_element_count: int = 0
     tagged_fragments: list[str] = field(default_factory=list)
@@ -120,6 +121,7 @@ class QualityEvaluator:
             "fragment_count": traversal.fragment_count,
             "heading_count": traversal.heading_count,
             "body_count": traversal.body_count,
+            "body_role_node_count": traversal.body_role_node_count,
             "unknown_role_count": traversal.unknown_role_count,
             "empty_element_count": traversal.empty_element_count,
             "unresolved_mcid_count": len(unresolved),
@@ -178,11 +180,13 @@ class QualityEvaluator:
 
             traversal.element_count += 1
             traversal.heading_count += child.semantic_role == "heading"
-            traversal.body_count += child.semantic_role in _BODY_ROLES
+            is_body_role = child.semantic_role in _BODY_ROLES
+            traversal.body_role_node_count += is_body_role
             traversal.unknown_role_count += child.semantic_role == "unknown"
             self._count_element_text_fields(child, traversal)
             element_path = f"{parent_path}/{child.semantic_role}[{child_index}]"
             element_has_text = self._walk(child.children, element_path, traversal)
+            traversal.body_count += is_body_role and element_has_text
             traversal.empty_element_count += not element_has_text
             has_descendant_text = has_descendant_text or element_has_text
         return has_descendant_text
@@ -221,7 +225,7 @@ class QualityEvaluator:
             )
             return (
                 matched / len(baseline_text),
-                "chunked_window",
+                "chunked_monotonic",
                 _COMPARISON_CHUNK_SIZE,
                 _COMPARISON_WINDOW_MARGIN,
             )
@@ -236,31 +240,22 @@ class QualityEvaluator:
     @staticmethod
     def _chunked_matched_size(baseline_text: str, tagged_text: str) -> int:
         matched = 0
+        baseline_length = len(baseline_text)
         tagged_length = len(tagged_text)
-        maximum_window_size = _COMPARISON_CHUNK_SIZE + (
-            2 * _COMPARISON_WINDOW_MARGIN
-        )
-        for start in range(0, len(baseline_text), _COMPARISON_CHUNK_SIZE):
-            baseline_chunk = baseline_text[start : start + _COMPARISON_CHUNK_SIZE]
-            midpoint = start + (len(baseline_chunk) / 2)
-            predicted_midpoint = round(
-                midpoint * tagged_length / len(baseline_text)
-            )
-            window_size = min(tagged_length, maximum_window_size)
-            window_start = max(
-                0,
-                min(
-                    predicted_midpoint - (window_size // 2),
-                    tagged_length - window_size,
-                ),
-            )
-            tagged_window = tagged_text[
-                window_start : window_start + window_size
-            ]
+        chunk_count = (
+            max(baseline_length, tagged_length) + _COMPARISON_CHUNK_SIZE - 1
+        ) // _COMPARISON_CHUNK_SIZE
+        for chunk_index in range(chunk_count):
+            baseline_start = chunk_index * baseline_length // chunk_count
+            baseline_end = (chunk_index + 1) * baseline_length // chunk_count
+            tagged_start = chunk_index * tagged_length // chunk_count
+            tagged_end = (chunk_index + 1) * tagged_length // chunk_count
+            baseline_chunk = baseline_text[baseline_start:baseline_end]
+            tagged_chunk = tagged_text[tagged_start:tagged_end]
             matched += sum(
                 block.size
                 for block in SequenceMatcher(
-                    None, baseline_chunk, tagged_window, autojunk=False
+                    None, baseline_chunk, tagged_chunk, autojunk=False
                 ).get_matching_blocks()
             )
         return matched

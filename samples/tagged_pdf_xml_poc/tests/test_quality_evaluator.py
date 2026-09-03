@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from difflib import SequenceMatcher
 
-import fitz
+import pymupdf
 
 from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.domain.models import (
@@ -15,6 +15,7 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
     PyMuPdfBaselineReader,
 )
+import tagged_pdf_extractor.infrastructure.pymupdf_baseline as baseline_module
 
 
 SPECIAL_CHARACTERS = ">→/&:[]()"
@@ -52,8 +53,9 @@ def _passing_document(text: str = "Body") -> TaggedDocument:
 
 
 def test_pymupdf_baseline_joins_page_text_with_newline(tmp_path: Path) -> None:
+    assert baseline_module.pymupdf is pymupdf
     pdf_path = tmp_path / "two-pages.pdf"
-    document = fitz.open()
+    document = pymupdf.open()
     first = document.new_page()
     first.insert_text((72, 72), "First page")
     second = document.new_page()
@@ -61,7 +63,7 @@ def test_pymupdf_baseline_joins_page_text_with_newline(tmp_path: Path) -> None:
     document.save(pdf_path)
     document.close()
 
-    with fitz.open(pdf_path) as expected_document:
+    with pymupdf.open(pdf_path) as expected_document:
         expected = "\n".join(page.get_text("text") for page in expected_document)
 
     assert PyMuPdfBaselineReader().read_text(pdf_path) == expected
@@ -224,20 +226,72 @@ def test_large_character_comparison_is_deterministic_and_auditable() -> None:
     assert first.metrics["character_match_ratio"] == second.metrics[
         "character_match_ratio"
     ]
-    assert first.metrics["character_match_metric_mode"] == "chunked_window"
+    assert first.metrics["character_match_metric_mode"] == "chunked_monotonic"
     assert first.metrics["character_match_chunk_size"] > 0
-    assert first.metrics["character_match_window_margin"] >= 0
+    assert first.metrics["character_match_window_margin"] == 0
+
+
+def test_repeated_text_severe_deletion_cannot_reuse_tagged_characters() -> None:
+    baseline = "x" * 8_193
+    tagged = "x" * 2_048
+    document = _document(
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(ContentFragment(0, 1, (tagged,)),),
+        )
+    )
+
+    report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
+
+    assert report.metrics["character_match_ratio"] == 2_048 / 8_193
+    assert report.metrics["character_match_ratio"] <= len(tagged) / len(baseline)
+
+
+def test_chunked_comparison_handles_insertion_across_chunk_boundary() -> None:
+    baseline = "".join(f"{index:05d}|" for index in range(1_600))
+    tagged = baseline[:2_048] + "INSERTED" + baseline[2_048:]
+    document = _document(
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(ContentFragment(0, 1, (tagged,)),),
+        )
+    )
+
+    report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
+
+    assert 0.99 < report.metrics["character_match_ratio"] <= 1.0
+    assert report.metrics["character_match_metric_mode"] == "chunked_monotonic"
+
+
+def test_chunked_comparison_handles_deletion_across_chunk_boundary() -> None:
+    baseline = "".join(f"{index:05d}|" for index in range(1_600))
+    tagged = baseline[:2_040] + baseline[2_056:]
+    document = _document(
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(ContentFragment(0, 1, (tagged,)),),
+        )
+    )
+
+    report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
+    maximum_ratio = len(tagged) / len(baseline)
+
+    assert maximum_ratio - 0.01 < report.metrics["character_match_ratio"]
+    assert report.metrics["character_match_ratio"] <= maximum_ratio
 
 
 def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> None:
     import tagged_pdf_extractor.application.evaluate_quality as quality_module
 
-    calls: list[tuple[int, int, bool]] = []
+    calls: list[tuple[str, str, bool]] = []
 
     class FakeMatcher:
         def __init__(self, isjunk, baseline, tagged, autojunk):
             assert isjunk is None
-            calls.append((len(baseline), len(tagged), autojunk))
+            calls.append((baseline, tagged, autojunk))
 
         def get_matching_blocks(self):
             return (type("Block", (), {"size": 1})(),)
@@ -253,17 +307,18 @@ def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> Non
 
     assert len(calls) > 1
     assert all(autojunk is False for _, _, autojunk in calls)
-    assert max(baseline_length for baseline_length, _, _ in calls) <= (
+    assert max(len(baseline) for baseline, _, _ in calls) <= (
         quality_module._COMPARISON_CHUNK_SIZE
     )
-    assert max(tagged_length for _, tagged_length, _ in calls) <= (
+    assert max(len(tagged) for _, tagged, _ in calls) <= (
         quality_module._COMPARISON_CHUNK_SIZE
-        + 2 * quality_module._COMPARISON_WINDOW_MARGIN
     )
-    assert report.metrics["character_match_metric_mode"] == "chunked_window"
+    assert "".join(baseline for baseline, _, _ in calls) == f"Heading {long_text}"
+    assert "".join(tagged for _, tagged, _ in calls) == f"Heading {long_text}"
+    assert report.metrics["character_match_metric_mode"] == "chunked_monotonic"
 
 
-def test_empty_figure_is_empty_body_structure_but_not_unresolved() -> None:
+def test_empty_figure_is_empty_but_does_not_satisfy_body_gate() -> None:
     document = _document(
         StructureElement(
             "H1",
@@ -278,10 +333,12 @@ def test_empty_figure_is_empty_body_structure_but_not_unresolved() -> None:
         document, "Heading", xml_round_trip_ok=True
     )
 
-    assert report.metrics["body_count"] == 1
+    assert report.metrics["body_count"] == 0
+    assert report.metrics["body_role_node_count"] == 1
     assert report.metrics["empty_element_count"] == 1
     assert report.metrics["unresolved_mcid_count"] == 0
-    assert report.hard_gates["has_body"] is True
+    assert report.hard_gates["has_body"] is False
+    assert report.status == "fail"
 
 
 def test_unresolved_mcid_gate_requires_useful_page_and_mcid_context() -> None:

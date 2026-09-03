@@ -344,6 +344,64 @@ def test_keyboard_interrupt_after_lock_rename_cleans_owned_final_lock(
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
+def test_keyboard_interrupt_after_acquire_lock_returns_cleans_owned_final_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    original = OutputBundleWriter._acquire_lock
+
+    def acquire_then_interrupt(
+        candidate_path: Path, lock_path: Path, transaction_token: str
+    ) -> None:
+        original(candidate_path, lock_path, transaction_token)
+        raise KeyboardInterrupt("after acquire return")
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_acquire_lock",
+        staticmethod(acquire_then_interrupt),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt, match="after acquire return"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert not (tmp_path / ".result.lock").exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_interrupt_after_acquire_does_not_remove_foreign_token_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    lock = tmp_path / ".result.lock"
+    original = OutputBundleWriter._acquire_lock
+
+    def acquire_change_owner_then_interrupt(
+        candidate_path: Path, lock_path: Path, transaction_token: str
+    ) -> None:
+        original(candidate_path, lock_path, transaction_token)
+        (lock_path / ".owner-token").write_text(
+            "foreign-token\n", encoding="ascii"
+        )
+        raise KeyboardInterrupt("after foreign takeover")
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_acquire_lock",
+        staticmethod(acquire_change_owner_then_interrupt),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt, match="after foreign takeover"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert (lock / ".owner-token").read_text(encoding="ascii") == "foreign-token\n"
+    assert list(tmp_path.glob(".result.lock-candidate-*")) == []
+
+
 def test_competing_owned_lock_remains_and_own_candidate_is_cleaned(
     tmp_path: Path,
 ) -> None:

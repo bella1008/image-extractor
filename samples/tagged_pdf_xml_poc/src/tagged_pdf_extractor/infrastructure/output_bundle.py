@@ -305,48 +305,9 @@ class OutputBundleWriter:
         lock_candidate = parent / (
             f".{output_dir.name}.lock-candidate-{transaction_token}"
         )
-        try:
-            self._create_lock_candidate(lock_candidate)
-            self._write_lock_owner_marker(lock_candidate, transaction_token)
-            try:
-                os.rename(lock_candidate, lock_path)
-            except FileExistsError as exc:
-                raise OutputBusyError(lock_path) from exc
-        except BaseException as exc:
-            acquisition_cleanup_failures: list[tuple[Path, BaseException]] = []
-            self._capture_cleanup(
-                lock_candidate,
-                lambda path: self._remove_lock_candidate_if_owned(
-                    path, transaction_token
-                ),
-                acquisition_cleanup_failures,
-            )
-            self._capture_cleanup(
-                lock_path,
-                lambda path: self._remove_lock_if_owned(path, transaction_token),
-                acquisition_cleanup_failures,
-            )
-            if acquisition_cleanup_failures:
-                members = (exc,) + tuple(
-                    error for _, error in acquisition_cleanup_failures
-                )
-                if all(isinstance(member, Exception) for member in members):
-                    raise BundleTransactionError(
-                        exc,
-                        tuple(acquisition_cleanup_failures),
-                        published=False,
-                        artifacts=artifacts,
-                    ) from exc
-                raise BundleTransactionBaseExceptionGroup(
-                    exc,
-                    tuple(acquisition_cleanup_failures),
-                    published=False,
-                    artifacts=artifacts,
-                ) from exc
-            raise
-
         staging: Path | None = None
         backup: Path | None = None
+        acquisition_completed = False
         preserve_backup = False
         preserve_staging = False
         preserve_commit_marker = False
@@ -358,6 +319,10 @@ class OutputBundleWriter:
         primary_traceback = None
         try:
             try:
+                self._acquire_lock(
+                    lock_candidate, lock_path, transaction_token
+                )
+                acquisition_completed = True
                 staging = Path(
                     tempfile.mkdtemp(
                         prefix=f".{output_dir.name}.staging-", dir=parent
@@ -484,10 +449,28 @@ class OutputBundleWriter:
                     cleanup_failures,
                 )
             self._capture_cleanup(
-                lock_path,
-                lambda path: self._remove_owned_lock(path, transaction_token),
+                lock_candidate,
+                lambda path: self._remove_lock_candidate_if_owned(
+                    path, transaction_token
+                ),
                 cleanup_failures,
             )
+            if acquisition_completed:
+                self._capture_cleanup(
+                    lock_path,
+                    lambda path: self._remove_owned_lock(
+                        path, transaction_token
+                    ),
+                    cleanup_failures,
+                )
+            else:
+                self._capture_cleanup(
+                    lock_path,
+                    lambda path: self._remove_lock_if_owned(
+                        path, transaction_token
+                    ),
+                    cleanup_failures,
+                )
 
         if cleanup_failures:
             members = (
@@ -665,6 +648,20 @@ class OutputBundleWriter:
     @staticmethod
     def _lock_owner_text(transaction_token: str) -> str:
         return f"{transaction_token}\n"
+
+    @classmethod
+    def _acquire_lock(
+        cls,
+        candidate_path: Path,
+        lock_path: Path,
+        transaction_token: str,
+    ) -> None:
+        cls._create_lock_candidate(candidate_path)
+        cls._write_lock_owner_marker(candidate_path, transaction_token)
+        try:
+            os.rename(candidate_path, lock_path)
+        except FileExistsError as exc:
+            raise OutputBusyError(lock_path) from exc
 
     @staticmethod
     def _create_lock_candidate(candidate_path: Path) -> None:

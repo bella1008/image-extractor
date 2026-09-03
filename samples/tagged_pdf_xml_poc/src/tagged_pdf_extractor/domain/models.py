@@ -70,3 +70,4 @@ class ExtractionArtifacts:
     raw_xml: Path
     semantic_xml: Path
     report_json: Path
+    semantic_markdown: Path

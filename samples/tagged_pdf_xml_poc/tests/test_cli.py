@@ -15,6 +15,7 @@ def _artifacts(root: Path) -> ExtractionArtifacts:
         root / "raw_structure.xml",
         root / "semantic_document.xml",
         root / "extraction_report.json",
+        root / "semantic_document.md",
     )
 
 

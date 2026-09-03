@@ -67,6 +67,15 @@ def _owned_temporary_paths(parent: Path, output_name: str) -> list[Path]:
     return paths + ([lock] if lock.exists() else [])
 
 
+def test_required_output_names_are_the_four_atomic_artifacts() -> None:
+    assert output_bundle_module.REQUIRED_OUTPUT_NAMES == (
+        "raw_structure.xml",
+        "semantic_document.xml",
+        "extraction_report.json",
+        "semantic_document.md",
+    )
+
+
 def test_json_report_writer_preserves_dataclass_order_unicode_paths_and_controls(
     tmp_path: Path,
 ) -> None:
@@ -191,6 +200,20 @@ def test_refuses_any_existing_required_output_before_writing(tmp_path: Path) -> 
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
+def test_refuses_existing_markdown_without_overwrite(tmp_path: Path) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    existing = output / "semantic_document.md"
+    existing.write_text("old markdown", encoding="utf-8")
+    document = _document(tmp_path)
+
+    with pytest.raises(OutputCollisionError, match="semantic_document.md"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert existing.read_text(encoding="utf-8") == "old markdown"
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
 def test_absent_output_directory_is_published_as_complete_bundle(tmp_path: Path) -> None:
     document = _document(tmp_path)
     report = _report(document)
@@ -198,20 +221,48 @@ def test_absent_output_directory_is_published_as_complete_bundle(tmp_path: Path)
 
     artifacts = OutputBundleWriter().write(document, report, output)
 
-    assert {path.name for path in (artifacts.raw_xml, artifacts.semantic_xml, artifacts.report_json)} == {
+    assert {
+        path.name
+        for path in (
+            artifacts.raw_xml,
+            artifacts.semantic_xml,
+            artifacts.report_json,
+            artifacts.semantic_markdown,
+        )
+    } == {
         "raw_structure.xml",
         "semantic_document.xml",
         "extraction_report.json",
+        "semantic_document.md",
     }
     assert all(path.parent == output and path.is_file() for path in (
         artifacts.raw_xml,
         artifacts.semantic_xml,
         artifacts.report_json,
+        artifacts.semantic_markdown,
     ))
     ET.parse(artifacts.raw_xml)
     ET.parse(artifacts.semantic_xml)
     assert json.loads(artifacts.report_json.read_text(encoding="utf-8"))["status"] == "pass"
+    assert artifacts.semantic_markdown.read_text(encoding="utf-8").strip()
     assert _owned_temporary_paths(output.parent, output.name) == []
+
+
+def test_existing_markdown_is_replaced_with_overwrite(tmp_path: Path) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    markdown = output / "semantic_document.md"
+    markdown.write_text("old markdown", encoding="utf-8")
+    document = _document(tmp_path)
+
+    artifacts = OutputBundleWriter().write(
+        document, _report(document), output, overwrite=True
+    )
+
+    assert artifacts.semantic_markdown == markdown
+    assert markdown.read_text(encoding="utf-8") != "old markdown"
+    assert markdown.read_text(encoding="utf-8").strip()
+    assert _owned_temporary_paths(tmp_path, "result") == []
 
 
 def test_absent_output_uses_no_replace_rename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -564,7 +615,7 @@ def test_existing_and_missing_required_target_matrix(
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
-@pytest.mark.parametrize("fail_publication_number", [1, 2, 3])
+@pytest.mark.parametrize("fail_publication_number", [1, 2, 3, 4])
 def test_mid_publication_os_replace_failure_restores_complete_previous_bundle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -603,7 +654,7 @@ def test_mid_publication_os_replace_failure_restores_complete_previous_bundle(
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
-@pytest.mark.parametrize("fail_publication_number", [1, 2, 3])
+@pytest.mark.parametrize("fail_publication_number", [1, 2, 3, 4])
 def test_keyboard_interrupt_during_publication_restores_all_old_files_and_reraises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -786,6 +837,7 @@ def test_existing_publish_commits_then_wrapper_interrupt_reports_published_and_b
         error.artifacts.raw_xml,
         error.artifacts.semantic_xml,
         error.artifacts.report_json,
+        error.artifacts.semantic_markdown,
     ))
     assert error.backup_path is not None and error.backup_path.exists()
     assert all(
@@ -822,6 +874,7 @@ def test_absent_rename_commits_then_wrapper_interrupt_reports_published(
         error.artifacts.raw_xml,
         error.artifacts.semantic_xml,
         error.artifacts.report_json,
+        error.artifacts.semantic_markdown,
     ))
     assert any(isinstance(item, KeyboardInterrupt) for item in error.exceptions)
     assert _owned_temporary_paths(tmp_path, "result") == []
@@ -1008,6 +1061,7 @@ def test_successful_publication_with_cleanup_failure_reports_committed_artifacts
             error.artifacts.raw_xml,
             error.artifacts.semantic_xml,
             error.artifacts.report_json,
+            error.artifacts.semantic_markdown,
         )
     )
     assert any(".staging-" in path.name for path in error.cleanup_paths)
@@ -1085,6 +1139,7 @@ def test_published_success_then_cleanup_keyboard_interrupt_exposes_artifacts(
             error.artifacts.raw_xml,
             error.artifacts.semantic_xml,
             error.artifacts.report_json,
+            error.artifacts.semantic_markdown,
         )
     )
     assert any(isinstance(item, KeyboardInterrupt) for item in error.cleanup_errors)
@@ -1126,6 +1181,219 @@ def test_join_decision_mismatch_fails_before_publication(tmp_path: Path) -> None
 
     with pytest.raises(ValueError, match="join decisions"):
         OutputBundleWriter().write(document, report, output)
+
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_injected_markdown_writer_receives_semantic_xml_report_and_source_name(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[Path, QualityReport, Path, str]] = []
+
+    class RecordingMarkdownWriter:
+        def write(
+            self,
+            semantic_xml: Path,
+            report: QualityReport,
+            output: Path,
+            *,
+            source_name: str,
+        ) -> None:
+            assert ET.parse(semantic_xml).getroot().tag == "document"
+            calls.append((semantic_xml, report, output, source_name))
+            output.write_text("# custom markdown\n", encoding="utf-8")
+
+    document = _document(tmp_path)
+    report = _report(document)
+    output = tmp_path / "result"
+
+    artifacts = OutputBundleWriter(
+        markdown_writer=RecordingMarkdownWriter()
+    ).write(document, report, output)
+
+    assert len(calls) == 1
+    assert calls[0][1] is report
+    assert calls[0][3] == document.source_path.name
+    assert (
+        artifacts.semantic_markdown.read_text(encoding="utf-8")
+        == "# custom markdown\n"
+    )
+
+
+def test_markdown_writer_failure_before_publication_leaves_outputs_safe(
+    tmp_path: Path,
+) -> None:
+    class FailingMarkdownWriter:
+        def write(self, *args: object, **kwargs: object) -> None:
+            raise OSError("markdown write failed")
+
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+
+    with pytest.raises(OSError, match="markdown write failed"):
+        OutputBundleWriter(markdown_writer=FailingMarkdownWriter()).write(
+            document, _report(document), output
+        )
+
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_markdown_validation_counts_duplicate_candidate_entries_by_heading_line(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        source_path=tmp_path / "source.pdf",
+        marked=True,
+        language="en",
+        role_map=(),
+        children=(
+            StructureElement(
+                "Cover_Title",
+                "heading",
+                children=(ContentFragment(0, 1, ("Repeated",)),),
+            ),
+            StructureElement(
+                "Cover_Title",
+                "heading",
+                children=(ContentFragment(0, 2, ("Repeated",)),),
+            ),
+        ),
+    )
+    base_report = _report(document)
+    report = QualityReport(
+        status=base_report.status,
+        metrics=base_report.metrics,
+        hard_gates=base_report.hard_gates,
+        diagnostics=base_report.diagnostics,
+        join_decisions=base_report.join_decisions,
+        heading_hierarchy=(
+            {
+                "structure_path": "/heading[0]",
+                "source_role": "Cover_Title",
+                "level": None,
+                "joined_text": "Repeated",
+                "classification": "source_role_candidate",
+            },
+            {
+                "structure_path": "/heading[1]",
+                "source_role": "Cover_Title",
+                "level": None,
+                "joined_text": "Repeated",
+                "classification": "source_role_candidate",
+            },
+        ),
+    )
+
+    artifacts = OutputBundleWriter().write(document, report, tmp_path / "result")
+
+    assert artifacts.semantic_markdown.read_text(encoding="utf-8").splitlines().count(
+        "## Repeated"
+    ) == 2
+
+
+def test_markdown_validation_matches_renderer_whitespace_normalization(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        source_path=tmp_path / "source.pdf",
+        marked=True,
+        language="en",
+        role_map=(),
+        children=(
+            StructureElement(
+                "Cover_Title",
+                "heading",
+                children=(ContentFragment(0, 1, (" Repeated   Heading ",)),),
+            ),
+        ),
+    )
+    base_report = _report(document)
+    report = QualityReport(
+        "pass",
+        {},
+        {"xml_round_trip": True},
+        (),
+        base_report.join_decisions,
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "source_role": "Cover_Title",
+                "level": None,
+                "joined_text": " Repeated   Heading ",
+                "structure_path": "/heading[0]",
+            },
+        ),
+    )
+
+    artifacts = OutputBundleWriter().write(document, report, tmp_path / "result")
+
+    assert "## Repeated Heading" in artifacts.semantic_markdown.read_text(
+        encoding="utf-8"
+    ).splitlines()
+
+
+def test_markdown_validation_rejects_missing_duplicate_candidate_before_publication(
+    tmp_path: Path,
+) -> None:
+    class MissingDuplicateMarkdownWriter:
+        def write(
+            self,
+            semantic_xml: Path,
+            report: QualityReport,
+            output: Path,
+            *,
+            source_name: str,
+        ) -> None:
+            output.write_text("## Repeated\n", encoding="utf-8")
+
+    document = TaggedDocument(
+        source_path=tmp_path / "source.pdf",
+        marked=True,
+        language="en",
+        role_map=(),
+        children=(
+            StructureElement(
+                "H1",
+                "heading",
+                1,
+                children=(ContentFragment(0, 1, ("Repeated",)),),
+            ),
+            StructureElement(
+                "H1",
+                "heading",
+                1,
+                children=(ContentFragment(0, 2, ("Repeated",)),),
+            ),
+        ),
+    )
+    base_report = _report(document)
+    report = QualityReport(
+        "pass",
+        {},
+        {"xml_round_trip": True},
+        (),
+        base_report.join_decisions,
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "level": 1,
+                "joined_text": "Repeated",
+            },
+            {
+                "classification": "source_role_candidate",
+                "level": 1,
+                "joined_text": "Repeated",
+            },
+        ),
+    )
+    output = tmp_path / "result"
+
+    with pytest.raises(ValueError, match="Markdown heading candidates"):
+        OutputBundleWriter(markdown_writer=MissingDuplicateMarkdownWriter()).write(
+            document, report, output
+        )
 
     assert not output.exists()
     assert _owned_temporary_paths(tmp_path, "result") == []

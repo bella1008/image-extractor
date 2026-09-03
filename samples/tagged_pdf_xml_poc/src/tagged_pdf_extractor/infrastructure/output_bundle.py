@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import json
+from collections import Counter
+
 import hashlib
+import json
 import os
 import tempfile
 import uuid
@@ -15,6 +17,7 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
+from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
 from tagged_pdf_extractor.ports.output_writer import OutputValidation
 
@@ -22,7 +25,13 @@ from tagged_pdf_extractor.ports.output_writer import OutputValidation
 RAW_XML_NAME = "raw_structure.xml"
 SEMANTIC_XML_NAME = "semantic_document.xml"
 REPORT_JSON_NAME = "extraction_report.json"
-REQUIRED_OUTPUT_NAMES = (RAW_XML_NAME, SEMANTIC_XML_NAME, REPORT_JSON_NAME)
+MARKDOWN_NAME = "semantic_document.md"
+REQUIRED_OUTPUT_NAMES = (
+    RAW_XML_NAME,
+    SEMANTIC_XML_NAME,
+    REPORT_JSON_NAME,
+    MARKDOWN_NAME,
+)
 _COMMIT_MARKER_NAME = ".tagged-pdf-xml-commit"
 _LOCK_OWNER_MARKER_NAME = ".owner-token"
 
@@ -283,9 +292,11 @@ class OutputBundleWriter:
         self,
         xml_writer: XmlDocumentWriter | None = None,
         json_writer: JsonReportWriter | None = None,
+        markdown_writer: MarkdownDocumentWriter | None = None,
     ) -> None:
         self.xml_writer = xml_writer or XmlDocumentWriter()
         self.json_writer = json_writer or JsonReportWriter()
+        self.markdown_writer = markdown_writer or MarkdownDocumentWriter()
 
     def validate(self, document: TaggedDocument) -> OutputValidation:
         with tempfile.TemporaryDirectory(prefix="tagged-pdf-xml-validation-") as temp:
@@ -315,6 +326,7 @@ class OutputBundleWriter:
             raw_xml=output_dir / RAW_XML_NAME,
             semantic_xml=output_dir / SEMANTIC_XML_NAME,
             report_json=output_dir / REPORT_JSON_NAME,
+            semantic_markdown=output_dir / MARKDOWN_NAME,
         )
         transaction_token = uuid.uuid4().hex
         lock_path = parent / f".{output_dir.name}.lock"
@@ -777,6 +789,7 @@ class OutputBundleWriter:
         raw_path = staging / RAW_XML_NAME
         semantic_path = staging / SEMANTIC_XML_NAME
         report_path = staging / REPORT_JSON_NAME
+        markdown_path = staging / MARKDOWN_NAME
 
         self.xml_writer.write_raw(document, raw_path)
         semantic_decisions = self.xml_writer.write_semantic(document, semantic_path)
@@ -785,12 +798,48 @@ class OutputBundleWriter:
                 "semantic XML join decisions do not match report join decisions"
             )
         self.json_writer.write(report, report_path)
+        self.markdown_writer.write(
+            semantic_path,
+            report,
+            markdown_path,
+            source_name=document.source_path.name,
+        )
 
         ET.parse(raw_path)
         ET.parse(semantic_path)
         parsed_report = json.loads(report_path.read_text(encoding="utf-8"))
         if parsed_report != self.json_writer.to_data(report):
             raise ValueError("JSON report round trip mismatch")
+        self._validate_markdown(markdown_path, report)
+
+    @staticmethod
+    def _validate_markdown(path: Path, report: QualityReport) -> None:
+        if not os.path.lexists(path) or not path.is_file() or path.is_symlink():
+            raise ValueError(f"Markdown output is not a regular file: {path}")
+
+        markdown = path.read_text(encoding="utf-8")
+        if not markdown.strip():
+            raise ValueError("Markdown output is empty")
+
+        expected_headings: Counter[str] = Counter()
+        for entry in report.heading_hierarchy:
+            if entry.get("classification") != "source_role_candidate":
+                continue
+            source_level = entry.get("level")
+            level = 1 if source_level is None else max(1, int(source_level))
+            prefix = "#" * min(level + 1, 6)
+            heading_text = entry.get("joined_text")
+            if not isinstance(heading_text, str):
+                raise ValueError("Markdown heading candidate has no joined text")
+            normalized_heading = " ".join(heading_text.split())
+            expected_headings[f"{prefix} {normalized_heading}"] += 1
+
+        markdown_lines = Counter(markdown.splitlines())
+        if any(
+            markdown_lines[heading] != count
+            for heading, count in expected_headings.items()
+        ):
+            raise ValueError("Markdown heading candidates do not match report")
 
     @staticmethod
     def _publish_into_existing(

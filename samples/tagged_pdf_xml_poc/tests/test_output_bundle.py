@@ -16,7 +16,9 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
+    BundleRollbackBaseExceptionGroup,
     BundleRollbackError,
+    BundleTransactionBaseExceptionGroup,
     BundleTransactionError,
     OutputBusyError,
     OutputBundleWriter,
@@ -358,6 +360,111 @@ def test_mid_publication_os_replace_failure_restores_complete_previous_bundle(
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
+@pytest.mark.parametrize("fail_publication_number", [1, 2, 3])
+def test_keyboard_interrupt_during_publication_restores_all_old_files_and_reraises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_publication_number: int,
+) -> None:
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    real_replace = os.replace
+    publication_count = 0
+
+    def interrupt_publication(source: str | Path, destination: str | Path) -> None:
+        nonlocal publication_count
+        source_path = Path(source)
+        destination_path = Path(destination)
+        if ".staging-" in source_path.parent.name and destination_path.parent == output:
+            publication_count += 1
+            if publication_count == fail_publication_number:
+                raise KeyboardInterrupt(f"publication {fail_publication_number} interrupted")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", interrupt_publication)
+
+    with pytest.raises(KeyboardInterrupt, match=f"publication {fail_publication_number} interrupted"):
+        OutputBundleWriter().write(document, _report(document), output, overwrite=True)
+
+    assert {name: (output / name).read_text(encoding="utf-8") for name in old} == old
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_keyboard_interrupt_and_restore_failure_preserve_backup_in_base_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    real_replace = os.replace
+    publication_interrupted = False
+
+    def interrupt_then_fail_restore(source: str | Path, destination: str | Path) -> None:
+        nonlocal publication_interrupted
+        source_path = Path(source)
+        destination_path = Path(destination)
+        if ".staging-" in source_path.parent.name and destination_path.parent == output:
+            publication_interrupted = True
+            raise KeyboardInterrupt("publication interrupted")
+        if publication_interrupted and ".backup-" in source_path.parent.name:
+            raise OSError("restore failed")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", interrupt_then_fail_restore)
+
+    with pytest.raises(BundleRollbackBaseExceptionGroup) as captured:
+        OutputBundleWriter().write(document, _report(document), output, overwrite=True)
+
+    error = captured.value
+    assert isinstance(error.publication_error, KeyboardInterrupt)
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.exceptions)
+    assert any("restore failed" in str(item) for item in error.exceptions)
+    assert error.backup_path.is_absolute()
+    assert set(error.affected_files) == set(output_bundle_module.REQUIRED_OUTPUT_NAMES)
+    assert all(
+        (error.backup_path / name).read_text(encoding="utf-8") == old[name]
+        for name in error.affected_files
+    )
+    assert error.backup_path.exists()
+
+
+def test_system_exit_during_publication_restores_old_files_and_reraises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    real_replace = os.replace
+
+    def exit_during_publication(source: str | Path, destination: str | Path) -> None:
+        source_path = Path(source)
+        if ".staging-" in source_path.parent.name and Path(destination).parent == output:
+            raise SystemExit(17)
+        real_replace(source, destination)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", exit_during_publication)
+
+    with pytest.raises(SystemExit) as captured:
+        OutputBundleWriter().write(document, _report(document), output, overwrite=True)
+
+    assert captured.value.code == 17
+    assert {name: (output / name).read_text(encoding="utf-8") for name in old} == old
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
 def test_restore_failure_preserves_backup_and_surfaces_recovery_details(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -465,6 +572,84 @@ def test_successful_publication_with_cleanup_failure_reports_committed_artifacts
         )
     )
     assert any(".staging-" in path.name for path in error.cleanup_paths)
+
+
+def test_primary_oserror_and_cleanup_keyboard_interrupt_are_both_visible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    document = _document(tmp_path)
+    real_replace = os.replace
+
+    def fail_publication(source: str | Path, destination: str | Path) -> None:
+        source_path = Path(source)
+        if ".staging-" in source_path.parent.name and Path(destination).parent == output:
+            raise OSError("primary publication failure")
+        real_replace(source, destination)
+
+    original_cleanup = OutputBundleWriter._remove_owned_directory
+
+    def interrupt_staging_cleanup(directory: Path) -> None:
+        if ".staging-" in directory.name:
+            raise KeyboardInterrupt("cleanup interrupted")
+        original_cleanup(directory)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", fail_publication)
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_remove_owned_directory",
+        staticmethod(interrupt_staging_cleanup),
+    )
+
+    with pytest.raises(BundleTransactionBaseExceptionGroup) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    error = captured.value
+    assert isinstance(error.primary_error, OSError)
+    assert "primary publication failure" in str(error.primary_error)
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.cleanup_errors)
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.exceptions)
+    assert error.published is False
+    assert all(path.exists() for path in error.cleanup_paths)
+
+
+def test_published_success_then_cleanup_keyboard_interrupt_exposes_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    original_cleanup = OutputBundleWriter._remove_owned_directory
+
+    def interrupt_staging_cleanup(directory: Path) -> None:
+        if ".staging-" in directory.name:
+            raise KeyboardInterrupt("post-publication cleanup interrupted")
+        original_cleanup(directory)
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_remove_owned_directory",
+        staticmethod(interrupt_staging_cleanup),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(BundleTransactionBaseExceptionGroup) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    error = captured.value
+    assert error.primary_error is None
+    assert error.published is True
+    assert error.artifacts is not None
+    assert all(
+        path.is_file()
+        for path in (
+            error.artifacts.raw_xml,
+            error.artifacts.semantic_xml,
+            error.artifacts.report_json,
+        )
+    )
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.cleanup_errors)
+    assert all(path.exists() for path in error.cleanup_paths)
 
 
 def test_failed_publication_into_existing_empty_directory_removes_new_outputs(

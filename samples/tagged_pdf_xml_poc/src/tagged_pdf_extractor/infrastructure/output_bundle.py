@@ -41,8 +41,8 @@ class OutputBusyError(RuntimeError):
 class BundleRollbackError(RuntimeError):
     def __init__(
         self,
-        publication_error: Exception,
-        restoration_errors: tuple[Exception, ...],
+        publication_error: BaseException,
+        restoration_errors: tuple[BaseException, ...],
         backup_path: Path,
         affected_files: tuple[str, ...],
     ) -> None:
@@ -58,11 +58,53 @@ class BundleRollbackError(RuntimeError):
         )
 
 
+class BundleRollbackBaseExceptionGroup(BaseExceptionGroup):
+    def __new__(
+        cls,
+        publication_error: BaseException,
+        restoration_errors: tuple[BaseException, ...],
+        backup_path: Path,
+        affected_files: tuple[str, ...],
+    ) -> BundleRollbackBaseExceptionGroup:
+        resolved_backup = backup_path.resolve()
+        affected = ", ".join(affected_files) or "unknown"
+        instance = super().__new__(
+            cls,
+            "bundle publication and rollback failed; "
+            f"backup preserved at {resolved_backup}; affected files: {affected}",
+            (publication_error, *restoration_errors),
+        )
+        instance.publication_error = publication_error
+        instance.restoration_errors = restoration_errors
+        instance.backup_path = resolved_backup
+        instance.affected_files = affected_files
+        return instance
+
+    def __init__(
+        self,
+        publication_error: BaseException,
+        restoration_errors: tuple[BaseException, ...],
+        backup_path: Path,
+        affected_files: tuple[str, ...],
+    ) -> None:
+        pass
+
+    def derive(
+        self, exceptions: tuple[BaseException, ...]
+    ) -> BaseExceptionGroup:
+        derived = BaseExceptionGroup(self.message, exceptions)
+        derived.publication_error = self.publication_error
+        derived.restoration_errors = self.restoration_errors
+        derived.backup_path = self.backup_path
+        derived.affected_files = self.affected_files
+        return derived
+
+
 class BundleTransactionError(RuntimeError):
     def __init__(
         self,
         primary_error: BaseException | None,
-        cleanup_failures: tuple[tuple[Path, Exception], ...],
+        cleanup_failures: tuple[tuple[Path, BaseException], ...],
         *,
         published: bool,
         artifacts: ExtractionArtifacts,
@@ -79,6 +121,58 @@ class BundleTransactionError(RuntimeError):
             f"bundle transaction cleanup failed ({state}); primary={primary}; "
             f"preserved paths: {paths}"
         )
+
+
+class BundleTransactionBaseExceptionGroup(BaseExceptionGroup):
+    def __new__(
+        cls,
+        primary_error: BaseException | None,
+        cleanup_failures: tuple[tuple[Path, BaseException], ...],
+        *,
+        published: bool,
+        artifacts: ExtractionArtifacts,
+    ) -> BundleTransactionBaseExceptionGroup:
+        cleanup_errors = tuple(error for _, error in cleanup_failures)
+        members = (
+            ((primary_error,) if primary_error is not None else ())
+            + cleanup_errors
+        )
+        cleanup_paths = tuple(path.resolve() for path, _ in cleanup_failures)
+        state = "published" if published else "not published"
+        paths = ", ".join(str(path) for path in cleanup_paths)
+        instance = super().__new__(
+            cls,
+            f"bundle transaction cleanup interrupted ({state}); "
+            f"preserved paths: {paths}",
+            members,
+        )
+        instance.primary_error = primary_error
+        instance.cleanup_errors = cleanup_errors
+        instance.cleanup_paths = cleanup_paths
+        instance.published = published
+        instance.artifacts = artifacts if published else None
+        return instance
+
+    def __init__(
+        self,
+        primary_error: BaseException | None,
+        cleanup_failures: tuple[tuple[Path, BaseException], ...],
+        *,
+        published: bool,
+        artifacts: ExtractionArtifacts,
+    ) -> None:
+        pass
+
+    def derive(
+        self, exceptions: tuple[BaseException, ...]
+    ) -> BaseExceptionGroup:
+        derived = BaseExceptionGroup(self.message, exceptions)
+        derived.primary_error = self.primary_error
+        derived.cleanup_errors = self.cleanup_errors
+        derived.cleanup_paths = self.cleanup_paths
+        derived.published = self.published
+        derived.artifacts = self.artifacts
+        return derived
 
 
 class OutputBundleWriter:
@@ -158,9 +252,11 @@ class OutputBundleWriter:
         except BaseException as exc:
             primary_error = exc
             primary_traceback = exc.__traceback__
-            preserve_backup = isinstance(exc, BundleRollbackError)
+            preserve_backup = backup is not None and any(
+                os.path.lexists(backup / name) for name in REQUIRED_OUTPUT_NAMES
+            )
 
-        cleanup_failures: list[tuple[Path, Exception]] = []
+        cleanup_failures: list[tuple[Path, BaseException]] = []
         if staging is not None:
             self._capture_cleanup(
                 staging, self._remove_owned_directory, cleanup_failures
@@ -176,7 +272,18 @@ class OutputBundleWriter:
         )
 
         if cleanup_failures:
-            raise BundleTransactionError(
+            members = (
+                ((primary_error,) if primary_error is not None else ())
+                + tuple(error for _, error in cleanup_failures)
+            )
+            if all(isinstance(member, Exception) for member in members):
+                raise BundleTransactionError(
+                    primary_error,
+                    tuple(cleanup_failures),
+                    published=published,
+                    artifacts=artifacts,
+                ) from primary_error
+            raise BundleTransactionBaseExceptionGroup(
                 primary_error,
                 tuple(cleanup_failures),
                 published=published,
@@ -232,11 +339,11 @@ class OutputBundleWriter:
     def _capture_cleanup(
         path: Path,
         cleanup: Callable[[Path], None],
-        failures: list[tuple[Path, Exception]],
+        failures: list[tuple[Path, BaseException]],
     ) -> None:
         try:
             cleanup(path)
-        except Exception as exc:
+        except BaseException as exc:
             failures.append((path, exc))
 
     def _write_and_validate_staging(
@@ -280,34 +387,47 @@ class OutputBundleWriter:
             for name in REQUIRED_OUTPUT_NAMES:
                 os.replace(staging / name, output_dir / name)
                 published.append(name)
-        except Exception as publication_error:
-            removal_errors: list[Exception] = []
+        except BaseException as publication_error:
+            removal_errors: list[BaseException] = []
             for name in reversed(published):
                 try:
                     (output_dir / name).unlink(missing_ok=True)
-                except Exception as exc:
+                except BaseException as exc:
                     removal_errors.append(exc)
-            restoration_errors: list[Exception] = []
+            restoration_errors: list[BaseException] = []
             for name in reversed(backed_up):
                 try:
                     os.replace(backup / name, output_dir / name)
-                except Exception as exc:
+                except BaseException as exc:
                     restoration_errors.append(exc)
             if restoration_errors:
                 affected_files = tuple(
                     name for name in backed_up if (backup / name).exists()
                 )
-                raise BundleRollbackError(
+                members = (publication_error, *restoration_errors)
+                if all(isinstance(member, Exception) for member in members):
+                    raise BundleRollbackError(
+                        publication_error,
+                        tuple(restoration_errors),
+                        backup,
+                        affected_files,
+                    ) from publication_error
+                raise BundleRollbackBaseExceptionGroup(
                     publication_error,
                     tuple(restoration_errors),
                     backup,
                     affected_files,
                 ) from publication_error
             if removal_errors:
-                raise ExceptionGroup(
-                    "bundle publication and rollback failed",
-                    [publication_error, *removal_errors],
+                members = [publication_error, *removal_errors]
+                group_type = (
+                    ExceptionGroup
+                    if all(isinstance(member, Exception) for member in members)
+                    else BaseExceptionGroup
                 )
+                raise group_type(
+                    "bundle publication and rollback failed", members
+                ) from publication_error
             raise
 
     @staticmethod

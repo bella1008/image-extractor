@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Callable
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import (
@@ -26,6 +27,17 @@ class OutputCollisionError(FileExistsError):
     pass
 
 
+class OutputBusyError(RuntimeError):
+    """Raised for an existing transaction lock; stale locks require manual review."""
+
+    def __init__(self, lock_path: Path) -> None:
+        self.lock_path = lock_path.resolve()
+        super().__init__(
+            f"output transaction is busy: {self.lock_path}; "
+            "stale locks are never removed automatically"
+        )
+
+
 class BundleRollbackError(RuntimeError):
     def __init__(
         self,
@@ -43,6 +55,29 @@ class BundleRollbackError(RuntimeError):
             "bundle publication failed and old outputs could not be fully "
             f"restored; backup preserved at {self.backup_path}; "
             f"affected files: {affected}"
+        )
+
+
+class BundleTransactionError(RuntimeError):
+    def __init__(
+        self,
+        primary_error: BaseException | None,
+        cleanup_failures: tuple[tuple[Path, Exception], ...],
+        *,
+        published: bool,
+        artifacts: ExtractionArtifacts,
+    ) -> None:
+        self.primary_error = primary_error
+        self.cleanup_errors = tuple(error for _, error in cleanup_failures)
+        self.cleanup_paths = tuple(path.resolve() for path, _ in cleanup_failures)
+        self.published = published
+        self.artifacts = artifacts if published else None
+        state = "published" if published else "not published"
+        paths = ", ".join(str(path) for path in self.cleanup_paths)
+        primary = repr(primary_error) if primary_error is not None else "none"
+        super().__init__(
+            f"bundle transaction cleanup failed ({state}); primary={primary}; "
+            f"preserved paths: {paths}"
         )
 
 
@@ -74,11 +109,95 @@ class OutputBundleWriter:
         overwrite: bool = False,
     ) -> ExtractionArtifacts:
         output_dir = Path(output_dir)
-        if os.path.lexists(output_dir) and (
-            not output_dir.is_dir() or output_dir.is_symlink()
-        ):
-            raise NotADirectoryError(f"output path is not a directory: {output_dir}")
+        initially_exists = self._inspect_output_directory(output_dir)
+        self._preflight_required_targets(output_dir, overwrite)
 
+        parent = output_dir.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        lock_path = parent / f".{output_dir.name}.lock"
+        try:
+            lock_path.mkdir()
+        except FileExistsError as exc:
+            raise OutputBusyError(lock_path) from exc
+        lock_identity = self._path_identity(lock_path)
+
+        artifacts = ExtractionArtifacts(
+            raw_xml=output_dir / RAW_XML_NAME,
+            semantic_xml=output_dir / SEMANTIC_XML_NAME,
+            report_json=output_dir / REPORT_JSON_NAME,
+        )
+        staging: Path | None = None
+        backup: Path | None = None
+        preserve_backup = False
+        published = False
+        primary_error: BaseException | None = None
+        primary_traceback = None
+        try:
+            staging = Path(
+                tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=parent)
+            )
+            self._write_and_validate_staging(document, report, staging)
+            currently_exists = self._inspect_output_directory(output_dir)
+            if currently_exists != initially_exists:
+                raise OutputCollisionError(
+                    f"output changed during transaction: {output_dir}"
+                )
+            self._preflight_required_targets(output_dir, overwrite)
+
+            if not initially_exists:
+                os.rename(staging, output_dir)
+                staging = None
+            else:
+                backup = Path(
+                    tempfile.mkdtemp(
+                        prefix=f".{output_dir.name}.backup-", dir=parent
+                    )
+                )
+                self._publish_into_existing(staging, backup, output_dir)
+            published = True
+        except BaseException as exc:
+            primary_error = exc
+            primary_traceback = exc.__traceback__
+            preserve_backup = isinstance(exc, BundleRollbackError)
+
+        cleanup_failures: list[tuple[Path, Exception]] = []
+        if staging is not None:
+            self._capture_cleanup(
+                staging, self._remove_owned_directory, cleanup_failures
+            )
+        if backup is not None and not preserve_backup:
+            self._capture_cleanup(
+                backup, self._remove_owned_directory, cleanup_failures
+            )
+        self._capture_cleanup(
+            lock_path,
+            lambda path: self._remove_owned_lock(path, lock_identity),
+            cleanup_failures,
+        )
+
+        if cleanup_failures:
+            raise BundleTransactionError(
+                primary_error,
+                tuple(cleanup_failures),
+                published=published,
+                artifacts=artifacts,
+            ) from primary_error
+        if primary_error is not None:
+            raise primary_error.with_traceback(primary_traceback)
+        return artifacts
+
+    @staticmethod
+    def _inspect_output_directory(output_dir: Path) -> bool:
+        if not os.path.lexists(output_dir):
+            return False
+        if not output_dir.is_dir() or output_dir.is_symlink():
+            raise NotADirectoryError(f"output path is not a directory: {output_dir}")
+        return True
+
+    @staticmethod
+    def _preflight_required_targets(
+        output_dir: Path, overwrite: bool
+    ) -> tuple[Path, ...]:
         existing: list[Path] = []
         for name in REQUIRED_OUTPUT_NAMES:
             destination = output_dir / name
@@ -92,39 +211,33 @@ class OutputBundleWriter:
         if existing and not overwrite:
             names = ", ".join(path.name for path in existing)
             raise OutputCollisionError(f"required output already exists: {names}")
+        return tuple(existing)
 
-        parent = output_dir.parent
-        parent.mkdir(parents=True, exist_ok=True)
-        staging = Path(
-            tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=parent)
-        )
-        backup: Path | None = None
-        preserve_backup = False
+    @staticmethod
+    def _path_identity(path: Path) -> tuple[int, int]:
+        stat = path.stat(follow_symlinks=False)
+        return stat.st_dev, stat.st_ino
+
+    @classmethod
+    def _remove_owned_lock(
+        cls, lock_path: Path, expected_identity: tuple[int, int]
+    ) -> None:
+        if not os.path.lexists(lock_path):
+            return
+        if cls._path_identity(lock_path) != expected_identity:
+            raise OSError(f"transaction lock ownership changed: {lock_path}")
+        lock_path.rmdir()
+
+    @staticmethod
+    def _capture_cleanup(
+        path: Path,
+        cleanup: Callable[[Path], None],
+        failures: list[tuple[Path, Exception]],
+    ) -> None:
         try:
-            self._write_and_validate_staging(document, report, staging)
-            if not output_dir.exists():
-                os.replace(staging, output_dir)
-                staging = None  # type: ignore[assignment]
-            else:
-                backup = Path(
-                    tempfile.mkdtemp(
-                        prefix=f".{output_dir.name}.backup-", dir=parent
-                    )
-                )
-                self._publish_into_existing(staging, backup, output_dir)
-            return ExtractionArtifacts(
-                raw_xml=output_dir / RAW_XML_NAME,
-                semantic_xml=output_dir / SEMANTIC_XML_NAME,
-                report_json=output_dir / REPORT_JSON_NAME,
-            )
-        except BundleRollbackError:
-            preserve_backup = True
-            raise
-        finally:
-            if staging is not None:
-                self._remove_owned_directory(staging)
-            if backup is not None and not preserve_backup:
-                self._remove_owned_directory(backup)
+            cleanup(path)
+        except Exception as exc:
+            failures.append((path, exc))
 
     def _write_and_validate_staging(
         self,

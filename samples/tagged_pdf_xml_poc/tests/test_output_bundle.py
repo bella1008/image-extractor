@@ -17,6 +17,8 @@ from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWri
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
     BundleRollbackError,
+    BundleTransactionError,
+    OutputBusyError,
     OutputBundleWriter,
     OutputCollisionError,
 )
@@ -54,9 +56,11 @@ def _report(document: TaggedDocument) -> QualityReport:
 
 
 def _owned_temporary_paths(parent: Path, output_name: str) -> list[Path]:
-    return list(parent.glob(f".{output_name}.staging-*")) + list(
+    paths = list(parent.glob(f".{output_name}.staging-*")) + list(
         parent.glob(f".{output_name}.backup-*")
     )
+    lock = parent / f".{output_name}.lock"
+    return paths + ([lock] if lock.exists() else [])
 
 
 def test_json_report_writer_preserves_dataclass_order_unicode_paths_and_controls(
@@ -173,6 +177,96 @@ def test_absent_output_directory_is_published_as_complete_bundle(tmp_path: Path)
     ET.parse(artifacts.semantic_xml)
     assert json.loads(artifacts.report_json.read_text(encoding="utf-8"))["status"] == "pass"
     assert _owned_temporary_paths(output.parent, output.name) == []
+
+
+def test_absent_output_uses_no_replace_rename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output = tmp_path / "result"
+    real_rename = os.rename
+    calls: list[tuple[Path, Path]] = []
+
+    def record_rename(source: str | Path, destination: str | Path) -> None:
+        calls.append((Path(source), Path(destination)))
+        real_rename(source, destination)
+
+    monkeypatch.setattr(output_bundle_module.os, "rename", record_rename)
+
+    document = _document(tmp_path)
+    OutputBundleWriter().write(document, _report(document), output)
+
+    assert len(calls) == 1
+    assert calls[0][1] == output
+
+
+def test_concurrent_creation_cannot_replace_initially_absent_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    competitor_text = "competitor owns this"
+    original = OutputBundleWriter._write_and_validate_staging
+
+    def stage_then_compete(
+        writer: OutputBundleWriter,
+        document: TaggedDocument,
+        report: QualityReport,
+        staging: Path,
+    ) -> None:
+        original(writer, document, report, staging)
+        output.mkdir()
+        (output / "raw_structure.xml").write_text(competitor_text, encoding="utf-8")
+
+    monkeypatch.setattr(OutputBundleWriter, "_write_and_validate_staging", stage_then_compete)
+    document = _document(tmp_path)
+
+    with pytest.raises(OutputCollisionError, match="changed during transaction"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert (output / "raw_structure.xml").read_text(encoding="utf-8") == competitor_text
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_concurrent_required_file_in_existing_output_is_rechecked_before_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    unrelated = output / "keep.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+    original = OutputBundleWriter._write_and_validate_staging
+
+    def stage_then_compete(
+        writer: OutputBundleWriter,
+        document: TaggedDocument,
+        report: QualityReport,
+        staging: Path,
+    ) -> None:
+        original(writer, document, report, staging)
+        (output / "semantic_document.xml").write_text("competitor", encoding="utf-8")
+
+    monkeypatch.setattr(OutputBundleWriter, "_write_and_validate_staging", stage_then_compete)
+    document = _document(tmp_path)
+
+    with pytest.raises(OutputCollisionError, match="semantic_document.xml"):
+        OutputBundleWriter().write(document, _report(document), output, overwrite=False)
+
+    assert (output / "semantic_document.xml").read_text(encoding="utf-8") == "competitor"
+    assert unrelated.read_text(encoding="utf-8") == "keep"
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_existing_transaction_lock_is_busy_and_never_deleted(tmp_path: Path) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    lock = tmp_path / ".result.lock"
+    lock.mkdir()
+    marker = lock / "owner.txt"
+    marker.write_text("other process", encoding="utf-8")
+    document = _document(tmp_path)
+
+    with pytest.raises(OutputBusyError) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert captured.value.lock_path == lock.resolve()
+    assert marker.read_text(encoding="utf-8") == "other process"
 
 
 def test_existing_directory_overwrite_preserves_unrelated_files(tmp_path: Path) -> None:
@@ -303,6 +397,74 @@ def test_restore_failure_preserves_backup_and_surfaces_recovery_details(
     )
     assert list(tmp_path.glob(".result.staging-*")) == []
     assert error.backup_path in list(tmp_path.glob(".result.backup-*"))
+
+
+def test_primary_publication_and_cleanup_failures_are_both_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    document = _document(tmp_path)
+    real_replace = os.replace
+
+    def fail_publication(source: str | Path, destination: str | Path) -> None:
+        source_path = Path(source)
+        if ".staging-" in source_path.parent.name and Path(destination).parent == output:
+            raise OSError("primary publication failure")
+        real_replace(source, destination)
+
+    original_cleanup = OutputBundleWriter._remove_owned_directory
+
+    def fail_staging_cleanup(directory: Path) -> None:
+        if ".staging-" in directory.name:
+            raise OSError("staging cleanup failure")
+        original_cleanup(directory)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", fail_publication)
+    monkeypatch.setattr(OutputBundleWriter, "_remove_owned_directory", staticmethod(fail_staging_cleanup))
+
+    with pytest.raises(BundleTransactionError) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    error = captured.value
+    assert isinstance(error.primary_error, OSError)
+    assert "primary publication failure" in str(error.primary_error)
+    assert any("staging cleanup failure" in str(item) for item in error.cleanup_errors)
+    assert error.published is False
+    assert any(".staging-" in path.name for path in error.cleanup_paths)
+
+
+def test_successful_publication_with_cleanup_failure_reports_committed_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    original_cleanup = OutputBundleWriter._remove_owned_directory
+
+    def fail_staging_cleanup(directory: Path) -> None:
+        if ".staging-" in directory.name:
+            raise OSError("post-publication cleanup failure")
+        original_cleanup(directory)
+
+    monkeypatch.setattr(OutputBundleWriter, "_remove_owned_directory", staticmethod(fail_staging_cleanup))
+    document = _document(tmp_path)
+
+    with pytest.raises(BundleTransactionError) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    error = captured.value
+    assert error.primary_error is None
+    assert error.published is True
+    assert error.artifacts is not None
+    assert all(
+        path.is_file()
+        for path in (
+            error.artifacts.raw_xml,
+            error.artifacts.semantic_xml,
+            error.artifacts.report_json,
+        )
+    )
+    assert any(".staging-" in path.name for path in error.cleanup_paths)
 
 
 def test_failed_publication_into_existing_empty_directory_removes_new_outputs(

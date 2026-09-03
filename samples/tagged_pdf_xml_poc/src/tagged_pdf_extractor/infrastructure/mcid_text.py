@@ -19,7 +19,7 @@ class McidTextCollector:
         def before(operator: Any, operands: Any, _cm: Any, _tm: Any) -> None:
             if operator in (b"BMC", b"BDC"):
                 mcid = None
-                if operator == b"BDC" and len(operands) > 1:
+                if len(operands) > 1:
                     properties = operands[1]
                     if hasattr(properties, "get") and properties.get("/MCID") is not None:
                         mcid = int(properties["/MCID"])

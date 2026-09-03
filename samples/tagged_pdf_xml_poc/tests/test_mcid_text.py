@@ -20,6 +20,20 @@ def test_collects_text_under_inherited_mcid() -> None:
     assert result.diagnostics == ()
 
 
+def test_collects_direct_mcid_from_bmc_properties() -> None:
+    class BmcPage:
+        def extract_text(self, *, visitor_operand_before, visitor_text):
+            visitor_operand_before(b"BMC", ["/P", {"/MCID": 9}], None, None)
+            visitor_text("Tagged", None, None, None, 10)
+            visitor_operand_before(b"EMC", [], None, None)
+            return "Tagged"
+
+    result = McidTextCollector().collect(BmcPage(), page_index=0)
+
+    assert result.parts_by_mcid == {9: ("Tagged",)}
+    assert result.diagnostics == ()
+
+
 def test_reports_unmatched_emc() -> None:
     class UnmatchedEmcPage:
         def extract_text(self, *, visitor_operand_before, visitor_text):

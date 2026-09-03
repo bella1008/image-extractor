@@ -1,8 +1,13 @@
+from copy import copy
 from dataclasses import dataclass
 from numbers import Integral
 from typing import Any
 
 from tagged_pdf_extractor.domain.models import Diagnostic
+
+
+_MARKED_CONTENT_BOUNDARIES = {b"BMC", b"BDC", b"EMC"}
+_IDENTITY_CM = ([1, 0, 0, 1, 0, 0], b"cm")
 
 
 def _get_object(value: Any) -> Any:
@@ -42,6 +47,28 @@ def _safe_repr(value: Any) -> str:
         return f"<unrepresentable {type(value).__name__}>"
 
 
+def _page_with_marked_content_flushes(page: Any) -> Any:
+    get_contents = getattr(page, "get_contents", None)
+    keys = getattr(page, "keys", None)
+    if not callable(get_contents) or not callable(keys):
+        return page
+    content = get_contents()
+    operations = getattr(content, "operations", None)
+    contents_key = next((key for key in keys() if str(key) == "/Contents"), None)
+    if operations is None or contents_key is None:
+        return page
+    page_copy = copy(page)
+    content_copy = copy(content)
+    injected_operations = []
+    for operands, operator in operations:
+        if operator in _MARKED_CONTENT_BOUNDARIES:
+            injected_operations.append(_IDENTITY_CM)
+        injected_operations.append((operands, operator))
+    content_copy.operations = injected_operations
+    page_copy[contents_key] = content_copy
+    return page_copy
+
+
 @dataclass(frozen=True)
 class McidTextResult:
     parts_by_mcid: dict[int, tuple[str, ...]]
@@ -50,6 +77,7 @@ class McidTextResult:
 
 class McidTextCollector:
     def collect(self, page: Any, page_index: int) -> McidTextResult:
+        extraction_page = _page_with_marked_content_flushes(page)
         stack: list[int | None] = []
         parts: dict[int, list[str]] = {}
         diagnostics: list[Diagnostic] = []
@@ -58,7 +86,7 @@ class McidTextCollector:
             if operator in (b"BMC", b"BDC"):
                 mcid = None
                 if len(operands) > 1:
-                    properties = _resolve_properties(page, operands[1])
+                    properties = _resolve_properties(extraction_page, operands[1])
                     raw_mcid = _mapping_value(properties, "/MCID")
                     if raw_mcid is not None:
                         if isinstance(raw_mcid, Integral) and not isinstance(
@@ -91,6 +119,19 @@ class McidTextCollector:
                             context={"page_index": page_index},
                         )
                     )
+            elif operator == b"Do" and stack and stack[-1] is not None:
+                operand = operands[0] if operands else None
+                diagnostics.append(
+                    Diagnostic(
+                        severity="warning",
+                        code="tagged_form_xobject_unsupported",
+                        message="Form XObject under tagged content is unsupported",
+                        context={
+                            "page_index": page_index,
+                            "operand_repr": _safe_repr(operand),
+                        },
+                    )
+                )
 
         def visit_text(
             text: str,
@@ -102,7 +143,9 @@ class McidTextCollector:
             if text and stack and stack[-1] is not None:
                 parts.setdefault(stack[-1], []).append(text)
 
-        page.extract_text(visitor_operand_before=before, visitor_text=visit_text)
+        extraction_page.extract_text(
+            visitor_operand_before=before, visitor_text=visit_text
+        )
         if stack:
             diagnostics.append(
                 Diagnostic(

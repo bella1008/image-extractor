@@ -1,5 +1,14 @@
-from pypdf.generic import DictionaryObject, NameObject, NumberObject
+from io import BytesIO
+
 import pytest
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+    NumberObject,
+)
 
 from tagged_pdf_extractor.domain.models import Diagnostic
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextCollector
@@ -22,6 +31,50 @@ class MalformedMcid:
 
     def __repr__(self) -> str:
         return "<malformed>"
+
+
+def _font_resources() -> DictionaryObject:
+    return DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject(
+                {
+                    NameObject("/F1"): DictionaryObject(
+                        {
+                            NameObject("/Type"): NameObject("/Font"),
+                            NameObject("/Subtype"): NameObject("/Type1"),
+                            NameObject("/BaseFont"): NameObject("/Helvetica"),
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+
+def _in_memory_page(content_data: bytes, form_data: bytes | None = None):
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    resources = _font_resources()
+    if form_data is not None:
+        form = DecodedStreamObject()
+        form.set_data(form_data)
+        form[NameObject("/Type")] = NameObject("/XObject")
+        form[NameObject("/Subtype")] = NameObject("/Form")
+        form[NameObject("/BBox")] = ArrayObject(
+            [NumberObject(0), NumberObject(0), NumberObject(100), NumberObject(100)]
+        )
+        form[NameObject("/Resources")] = _font_resources()
+        resources[NameObject("/XObject")] = DictionaryObject(
+            {NameObject("/Fm0"): form}
+        )
+    page[NameObject("/Resources")] = resources
+    content = DecodedStreamObject()
+    content.set_data(content_data)
+    page[NameObject("/Contents")] = content
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return PdfReader(output).pages[0]
 
 
 def test_collects_text_under_inherited_mcid() -> None:
@@ -76,6 +129,47 @@ def test_resolves_mcid_from_named_page_property_list() -> None:
 
     assert result.parts_by_mcid == {12: ("Resolved",)}
     assert result.diagnostics == ()
+
+
+def test_collects_real_pypdf_text_before_emc_closes_scope() -> None:
+    page = _in_memory_page(
+        b"BT /F1 12 Tf /P << /MCID 2 >> BDC (Inside) Tj EMC ET"
+    )
+
+    result = McidTextCollector().collect(page, page_index=0)
+
+    assert result.parts_by_mcid == {2: ("Inside",)}
+    assert result.diagnostics == ()
+
+
+def test_collect_does_not_mutate_original_page_content_operations() -> None:
+    page = _in_memory_page(
+        b"BT /F1 12 Tf /P << /MCID 2 >> BDC (Inside) Tj EMC ET"
+    )
+    original_operations = list(page.get_contents().operations)
+
+    McidTextCollector().collect(page, page_index=0)
+
+    assert page.get_contents().operations == original_operations
+    assert all(operator != b"cm" for _, operator in original_operations)
+
+
+def test_reports_form_xobject_under_active_mcid() -> None:
+    page = _in_memory_page(
+        b"/P << /MCID 4 >> BDC /Fm0 Do EMC",
+        form_data=b"BT /F1 12 Tf (Form text) Tj ET",
+    )
+
+    result = McidTextCollector().collect(page, page_index=6)
+
+    assert result.diagnostics == (
+        Diagnostic(
+            severity="warning",
+            code="tagged_form_xobject_unsupported",
+            message="Form XObject under tagged content is unsupported",
+            context={"page_index": 6, "operand_repr": "'/Fm0'"},
+        ),
+    )
 
 
 def test_restores_parent_mcid_after_nested_direct_mcid() -> None:

@@ -5,11 +5,23 @@
 ## 1차 범위
 
 - PDF `/StructTreeRoot`와 MCID를 이용한 구조·텍스트 추출
-- 원본 구조를 보존한 `raw_structure.xml`
+- 비개발자 검토용 `semantic_document.md`
 - 표준 역할과 보수적 텍스트 연결을 적용한 `semantic_document.xml`
+- 원본 구조를 보존한 `raw_structure.xml`
 - 구조, heading 후보, 문자 보존, 참조 오류를 기록한 `extraction_report.json`
 
-XML-to-Markdown, OCR, UI, 체크리스트 평가, 번역 및 buyer/language별 보정 규칙은 이번 단계에 포함하지 않습니다. `outputs/`는 `.gitignore` 대상이며 실제 산출물은 로컬에서만 생성하고 Git에 커밋하지 않습니다.
+OCR, UI, 체크리스트 평가, 번역 및 buyer/language별 보정 규칙은 이번 단계에 포함하지 않습니다. `outputs/`는 `.gitignore` 대상이며 실제 산출물은 로컬에서만 생성하고 Git에 커밋하지 않습니다.
+
+## 비개발자 검토와 감사 근거
+
+비개발자는 `semantic_document.md`를 먼저 열어 문서 순서, 제목 후보, 목록, 표, OSD 경로를 검토합니다. Markdown의 제목은 PDF source role 이름에서 찾은 source-role heading 후보이며, 검증된 표준 PDF heading이 아닙니다. `[CONTROL U+0003]` 같은 표시는 문자를 버린 결과가 아니라 XML 1.0에서 금지된 제어문자를 원래 위치에 드러낸 눈에 보이는 원본 추출 결함입니다.
+
+XML과 JSON은 감사 근거로 유지합니다. `semantic_document.xml`은 정규화된 구조와 원문 데이터를, `raw_structure.xml`은 PDF 태그 구조를, `extraction_report.json`은 품질 게이트와 수치 및 heading 후보 근거를 제공합니다. 한 번의 실행은 다음 네 파일을 원자적으로 함께 게시합니다.
+
+- `semantic_document.md`
+- `semantic_document.xml`
+- `raw_structure.xml`
+- `extraction_report.json`
 
 ## 설치와 실행
 
@@ -42,7 +54,7 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 
 XML 1.0에서 금지된 제어문자는 버리지 않고 정확한 위치에 `<control code="0001" />` 같은 노드로 기록합니다. 속성이나 메타데이터의 금지 문자는 UTF-8 Base64와 `*-encoding` 표식으로 보존합니다. 따라서 소비자는 일반 `itertext()`만 사용하지 말고 프로젝트의 `decode_data_element()`와 인코딩 표식을 사용해야 원문을 정확히 복원할 수 있습니다.
 
-산출물은 형제 staging 디렉터리에서 모두 직렬화·재파싱한 뒤 게시됩니다. `--overwrite` 사용 시에도 지정된 세 파일만 교체하며, 실패하면 기존 파일을 복구합니다.
+산출물은 형제 staging 디렉터리에서 모두 직렬화·재파싱한 뒤 게시됩니다. `--overwrite` 사용 시에도 지정된 네 파일만 교체하며, 실패하면 기존 파일을 복구합니다.
 
 ## 품질 보고서와 하드 게이트
 

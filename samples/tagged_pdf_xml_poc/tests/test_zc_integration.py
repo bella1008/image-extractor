@@ -48,6 +48,61 @@ def _resolve_zc_pdf(
 
 
 PDF = _resolve_zc_pdf()
+README = Path(__file__).parents[1] / "README.md"
+
+_TEXT_TOKEN = re.compile(r"\[CONTROL U\+[0-9A-F]{4,6}\]|\w+|[^\w\s]")
+_HEADING_PREFIX = re.compile(r"^#{2,6}\s+")
+_TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
+_FALLBACK_TABLE_ROW = re.compile(r"^-\s+행\s+\d+:\s*")
+
+
+def _visible_source_text(value: str) -> str:
+    return "".join(
+        character
+        if (
+            ord(character) in {0x09, 0x0A, 0x0D}
+            or 0x20 <= ord(character) <= 0xD7FF
+            or 0xE000 <= ord(character) <= 0xFFFD
+            or 0x10000 <= ord(character) <= 0x10FFFF
+        )
+        else f"[CONTROL U+{ord(character):04X}]"
+        for character in value
+    )
+
+
+def _semantic_text_tokens(root: ET.Element) -> list[str]:
+    return [
+        token
+        for element in root.iter("text")
+        for token in _TEXT_TOKEN.findall(
+            _visible_source_text(decode_data_element(element))
+        )
+    ]
+
+
+def _markdown_text_tokens(markdown: str) -> list[str]:
+    _, _, body = markdown.partition("\n\n")
+    _, separator, body = body.partition("\n\n")
+    assert separator, "Markdown reviewer header must be separated from document text"
+
+    source_lines: list[str] = []
+    for line in body.splitlines():
+        value = line.lstrip()
+        if not value or value == "[그림: 텍스트 없음]":
+            continue
+        if _TABLE_SEPARATOR.fullmatch(value):
+            continue
+        if value.startswith("|") and value.endswith("|"):
+            value = re.sub(r"(?<!\\)\|", " ", value[1:-1])
+        value = value.replace(r"\|", "|").strip()
+        value = _FALLBACK_TABLE_ROW.sub("", value)
+        if value.startswith("- "):
+            value = value[2:]
+        value = _HEADING_PREFIX.sub("", value)
+        if value.startswith("\\"):
+            value = value[1:]
+        source_lines.append(value)
+    return _TEXT_TOKEN.findall("\n".join(source_lines))
 
 
 def _touch_sample(root: Path) -> Path:
@@ -55,6 +110,26 @@ def _touch_sample(root: Path) -> Path:
     sample.parent.mkdir(parents=True)
     sample.touch()
     return sample
+
+
+def test_readme_prioritizes_markdown_and_explains_audit_artifacts() -> None:
+    readme = README.read_text(encoding="utf-8")
+    artifact_names = (
+        "semantic_document.md",
+        "semantic_document.xml",
+        "raw_structure.xml",
+        "extraction_report.json",
+    )
+
+    assert all(name in readme for name in artifact_names)
+    assert [readme.index(name) for name in artifact_names] == sorted(
+        readme.index(name) for name in artifact_names
+    )
+    assert "source-role heading 후보" in readme
+    assert "검증된 표준 PDF heading이 아닙니다" in readme
+    assert "눈에 보이는 원본 추출 결함" in readme
+    assert "XML과 JSON은 감사 근거" in readme
+    assert "--overwrite" in readme
 
 
 def test_sample_resolver_prefers_available_environment_override(
@@ -156,6 +231,9 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     raw_root = ET.parse(artifacts.raw_xml).getroot()
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
     report_data = json.loads(artifacts.report_json.read_text(encoding="utf-8"))
+    assert artifacts.semantic_markdown.is_file()
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert markdown.strip()
 
     raw_source_roles = {
         element.attrib["source-role"] for element in raw_root.iter("element")
@@ -198,6 +276,55 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         entry["semantic_role"] == "paragraph"
         for entry in report_data["heading_hierarchy"]
     )
+    rendered_headings = re.findall(r"(?m)^\s*(#{2,6})\s+(.+?)\s*$", markdown)
+    assert len(rendered_headings) == 38
+    expected_headings = Counter(
+        (
+            "#" * min(max(1, int(entry["level"] or 1)) + 1, 6),
+            re.sub(r"\s+", " ", entry["joined_text"]).strip(),
+        )
+        for entry in report_data["heading_hierarchy"]
+        if entry["classification"] == "source_role_candidate"
+    )
+    assert Counter(rendered_headings) == expected_headings
+    rendered_heading_texts = {text for _, text in rendered_headings}
+    assert {
+        "Before Reading This Simple User Guide",
+        "Troubleshooting",
+        "Specifications",
+        "Dépannage",
+        "Spécifications",
+    } <= rendered_heading_texts
+    cover_titles = [
+        entry
+        for entry in report_data["heading_hierarchy"]
+        if entry["source_role"] == "Cover_Title"
+    ]
+    assert len(cover_titles) == 2
+    rendered_heading_counts = Counter(rendered_headings)
+    for entry in cover_titles:
+        cover_text = re.sub(r"\s+", " ", entry["joined_text"]).strip()
+        assert rendered_heading_counts[("##", cover_text)] == 1
+
+    assert (
+        "( > left directional button > Settings > Support > Tips and User "
+        "Guides > Open User Guide)"
+    ) in markdown
+    assert markdown.count("[CONTROL U+") == report_data["metrics"][
+        "forbidden_xml_control_count"
+    ] == 608
+    assert _markdown_text_tokens(markdown) == _semantic_text_tokens(semantic_root)
+    assert markdown.index("Before Reading This Simple User Guide") < markdown.index(
+        "Dépannage"
+    )
+    assert (
+        "CAUTION: TO REDUCE THE RISK OF ELECTRIC SHOCK, DO NOT REMOVE COVER "
+        "(OR BACK)."
+    ) in markdown
+    assert (
+        "Do not overload wall outlets, extension cords, or adapters beyond "
+        "their voltage and capacity."
+    ) in markdown
     special = report_data["metrics"]["special_characters"]
     assert special[">"] == {"tagged": 54, "baseline": 54, "count_preserved": True}
     assert special["/"] == {"tagged": 69, "baseline": 72, "count_preserved": False}

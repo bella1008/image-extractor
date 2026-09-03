@@ -38,6 +38,7 @@ _WHITESPACE = re.compile(r"\s+")
 _EXACT_COMPARISON_THRESHOLD = 8_192
 _COMPARISON_CHUNK_SIZE = 2_048
 _COMPARISON_WINDOW_MARGIN = 0
+_COMPARISON_DRIFT_ALLOWANCE = 4_096
 
 
 def _is_xml_10_character(character: str) -> bool:
@@ -97,6 +98,8 @@ class QualityEvaluator:
             metric_mode,
             chunk_size,
             window_margin,
+            window_size,
+            drift_allowance,
         ) = self._character_match_ratio(
             normalized_tagged, normalized_baseline
         )
@@ -129,6 +132,8 @@ class QualityEvaluator:
             "character_match_metric_mode": metric_mode,
             "character_match_chunk_size": chunk_size,
             "character_match_window_margin": window_margin,
+            "character_match_window_size": window_size,
+            "character_match_drift_allowance": drift_allowance,
             "tagged_character_count": len(normalized_tagged),
             "baseline_character_count": len(normalized_baseline),
             "special_characters": {
@@ -216,18 +221,34 @@ class QualityEvaluator:
     @staticmethod
     def _character_match_ratio(
         tagged_text: str, baseline_text: str
-    ) -> tuple[float, str, int | None, int | None]:
+    ) -> tuple[
+        float,
+        str,
+        int | None,
+        int | None,
+        int | None,
+        int | None,
+    ]:
         if not baseline_text:
-            return (1.0 if not tagged_text else 0.0), "exact", None, None
+            return (
+                1.0 if not tagged_text else 0.0,
+                "exact",
+                None,
+                None,
+                None,
+                None,
+            )
         if max(len(baseline_text), len(tagged_text)) > _EXACT_COMPARISON_THRESHOLD:
-            matched = QualityEvaluator._chunked_matched_size(
+            matched = QualityEvaluator._sequential_matched_size(
                 baseline_text, tagged_text
             )
             return (
                 matched / len(baseline_text),
-                "chunked_monotonic",
+                "sequential_monotonic_window",
                 _COMPARISON_CHUNK_SIZE,
                 _COMPARISON_WINDOW_MARGIN,
+                _COMPARISON_CHUNK_SIZE + _COMPARISON_DRIFT_ALLOWANCE,
+                _COMPARISON_DRIFT_ALLOWANCE,
             )
         matched = sum(
             block.size
@@ -235,29 +256,29 @@ class QualityEvaluator:
                 None, baseline_text, tagged_text, autojunk=False
             ).get_matching_blocks()
         )
-        return matched / len(baseline_text), "exact", None, None
+        return matched / len(baseline_text), "exact", None, None, None, None
 
     @staticmethod
-    def _chunked_matched_size(baseline_text: str, tagged_text: str) -> int:
+    def _sequential_matched_size(baseline_text: str, tagged_text: str) -> int:
         matched = 0
-        baseline_length = len(baseline_text)
-        tagged_length = len(tagged_text)
-        chunk_count = (
-            max(baseline_length, tagged_length) + _COMPARISON_CHUNK_SIZE - 1
-        ) // _COMPARISON_CHUNK_SIZE
-        for chunk_index in range(chunk_count):
-            baseline_start = chunk_index * baseline_length // chunk_count
-            baseline_end = (chunk_index + 1) * baseline_length // chunk_count
-            tagged_start = chunk_index * tagged_length // chunk_count
-            tagged_end = (chunk_index + 1) * tagged_length // chunk_count
-            baseline_chunk = baseline_text[baseline_start:baseline_end]
-            tagged_chunk = tagged_text[tagged_start:tagged_end]
-            matched += sum(
-                block.size
-                for block in SequenceMatcher(
-                    None, baseline_chunk, tagged_chunk, autojunk=False
-                ).get_matching_blocks()
-            )
+        tagged_cursor = 0
+        window_size = _COMPARISON_CHUNK_SIZE + _COMPARISON_DRIFT_ALLOWANCE
+        for start in range(0, len(baseline_text), _COMPARISON_CHUNK_SIZE):
+            baseline_chunk = baseline_text[start : start + _COMPARISON_CHUNK_SIZE]
+            tagged_window = tagged_text[
+                tagged_cursor : tagged_cursor + window_size
+            ]
+            blocks = SequenceMatcher(
+                None, baseline_chunk, tagged_window, autojunk=False
+            ).get_matching_blocks()
+            consumed_end = 0
+            for block in blocks:
+                if block.size == 0:
+                    continue
+                matched += block.size
+                consumed_end = block.b + block.size
+            if consumed_end:
+                tagged_cursor += consumed_end
         return matched
 
     @staticmethod

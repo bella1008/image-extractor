@@ -4,6 +4,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 
 import pymupdf
+import pytest
 
 from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.domain.models import (
@@ -49,6 +50,23 @@ def _passing_document(text: str = "Body") -> TaggedDocument:
             "paragraph",
             children=(ContentFragment(0, 2, (text,)),),
         ),
+    )
+
+
+def _nonrepetitive_text(length: int = 9_000) -> str:
+    bmp_count = min(length, 0xF8FF - 0xE000 + 1)
+    return "".join(chr(0xE000 + index) for index in range(bmp_count)) + "".join(
+        chr(0xF0000 + index) for index in range(length - bmp_count)
+    )
+
+
+def _body_only_document(text: str) -> TaggedDocument:
+    return _document(
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(ContentFragment(0, 1, (text,)),),
+        )
     )
 
 
@@ -226,9 +244,13 @@ def test_large_character_comparison_is_deterministic_and_auditable() -> None:
     assert first.metrics["character_match_ratio"] == second.metrics[
         "character_match_ratio"
     ]
-    assert first.metrics["character_match_metric_mode"] == "chunked_monotonic"
+    assert first.metrics["character_match_metric_mode"] == (
+        "sequential_monotonic_window"
+    )
     assert first.metrics["character_match_chunk_size"] > 0
     assert first.metrics["character_match_window_margin"] == 0
+    assert first.metrics["character_match_window_size"] == 6_144
+    assert first.metrics["character_match_drift_allowance"] == 4_096
 
 
 def test_repeated_text_severe_deletion_cannot_reuse_tagged_characters() -> None:
@@ -248,39 +270,58 @@ def test_repeated_text_severe_deletion_cannot_reuse_tagged_characters() -> None:
     assert report.metrics["character_match_ratio"] <= len(tagged) / len(baseline)
 
 
-def test_chunked_comparison_handles_insertion_across_chunk_boundary() -> None:
-    baseline = "".join(f"{index:05d}|" for index in range(1_600))
-    tagged = baseline[:2_048] + "INSERTED" + baseline[2_048:]
-    document = _document(
-        StructureElement(
-            "P",
-            "paragraph",
-            children=(ContentFragment(0, 1, (tagged,)),),
-        )
+@pytest.mark.parametrize("amount", (256, 1_024))
+@pytest.mark.parametrize("position_name", ("beginning", "middle", "end"))
+def test_sequential_comparison_retains_full_coverage_after_pure_insertion(
+    amount: int, position_name: str
+) -> None:
+    baseline = _nonrepetitive_text()
+    positions = {"beginning": 0, "middle": len(baseline) // 2, "end": len(baseline)}
+    position = positions[position_name]
+    tagged = baseline[:position] + ("!" * amount) + baseline[position:]
+
+    report = QualityEvaluator().evaluate(
+        _body_only_document(tagged), baseline, xml_round_trip_ok=True
     )
 
-    report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
-
-    assert 0.99 < report.metrics["character_match_ratio"] <= 1.0
-    assert report.metrics["character_match_metric_mode"] == "chunked_monotonic"
+    assert report.metrics["character_match_ratio"] == 1.0
 
 
-def test_chunked_comparison_handles_deletion_across_chunk_boundary() -> None:
-    baseline = "".join(f"{index:05d}|" for index in range(1_600))
-    tagged = baseline[:2_040] + baseline[2_056:]
-    document = _document(
-        StructureElement(
-            "P",
-            "paragraph",
-            children=(ContentFragment(0, 1, (tagged,)),),
-        )
+@pytest.mark.parametrize("amount", (256, 1_024))
+@pytest.mark.parametrize("position_name", ("beginning", "middle", "end"))
+def test_sequential_comparison_tracks_theoretical_pure_deletion_coverage(
+    amount: int, position_name: str
+) -> None:
+    baseline = _nonrepetitive_text()
+    positions = {
+        "beginning": 0,
+        "middle": (len(baseline) - amount) // 2,
+        "end": len(baseline) - amount,
+    }
+    position = positions[position_name]
+    tagged = baseline[:position] + baseline[position + amount :]
+
+    report = QualityEvaluator().evaluate(
+        _body_only_document(tagged), baseline, xml_round_trip_ok=True
+    )
+    theoretical_ratio = len(tagged) / len(baseline)
+
+    assert report.metrics["character_match_ratio"] == pytest.approx(
+        theoretical_ratio, abs=1 / len(baseline)
     )
 
-    report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
-    maximum_ratio = len(tagged) / len(baseline)
 
-    assert maximum_ratio - 0.01 < report.metrics["character_match_ratio"]
-    assert report.metrics["character_match_ratio"] <= maximum_ratio
+def test_fully_deleted_baseline_chunk_does_not_consume_tagged_text() -> None:
+    baseline = _nonrepetitive_text()
+    tagged = baseline[2_048:]
+
+    report = QualityEvaluator().evaluate(
+        _body_only_document(tagged), baseline, xml_round_trip_ok=True
+    )
+
+    assert report.metrics["character_match_ratio"] == pytest.approx(
+        len(tagged) / len(baseline), abs=1 / len(baseline)
+    )
 
 
 def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> None:
@@ -294,14 +335,21 @@ def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> Non
             calls.append((baseline, tagged, autojunk))
 
         def get_matching_blocks(self):
-            return (type("Block", (), {"size": 1})(),)
+            baseline, tagged, _ = calls[-1]
+            size = min(len(baseline), len(tagged))
+            return (
+                type("Block", (), {"b": 0, "size": size})(),
+                type("Block", (), {"b": size, "size": 0})(),
+            )
 
     monkeypatch.setattr(quality_module, "SequenceMatcher", FakeMatcher)
-    long_text = "x" * (quality_module._EXACT_COMPARISON_THRESHOLD + 1)
+    long_text = _nonrepetitive_text(
+        quality_module._EXACT_COMPARISON_THRESHOLD + 1
+    )
 
     report = QualityEvaluator().evaluate(
-        _passing_document(long_text),
-        f"Heading {long_text}",
+        _body_only_document(long_text),
+        long_text,
         xml_round_trip_ok=True,
     )
 
@@ -312,10 +360,21 @@ def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> Non
     )
     assert max(len(tagged) for _, tagged, _ in calls) <= (
         quality_module._COMPARISON_CHUNK_SIZE
+        + quality_module._COMPARISON_DRIFT_ALLOWANCE
     )
-    assert "".join(baseline for baseline, _, _ in calls) == f"Heading {long_text}"
-    assert "".join(tagged for _, tagged, _ in calls) == f"Heading {long_text}"
-    assert report.metrics["character_match_metric_mode"] == "chunked_monotonic"
+    assert "".join(baseline for baseline, _, _ in calls) == long_text
+    assert all(
+        tagged.startswith(baseline)
+        for baseline, tagged, _ in calls
+    )
+    assert report.metrics["character_match_ratio"] == 1.0
+    assert report.metrics["character_match_metric_mode"] == (
+        "sequential_monotonic_window"
+    )
+    assert report.metrics["character_match_window_size"] == (
+        quality_module._COMPARISON_CHUNK_SIZE
+        + quality_module._COMPARISON_DRIFT_ALLOWANCE
+    )
 
 
 def test_empty_figure_is_empty_but_does_not_satisfy_body_gate() -> None:

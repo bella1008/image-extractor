@@ -248,7 +248,11 @@ class XmlDocumentWriter:
 
     @classmethod
     def _remove_indentation_text(cls, element: ET.Element) -> None:
-        if element.text is not None and not element.text.strip():
+        if (
+            element.tag not in {"part", "text"}
+            and element.text is not None
+            and not element.text.strip()
+        ):
             element.text = None
         for child in element:
             cls._remove_indentation_text(child)

@@ -197,3 +197,17 @@ def test_xml_reserved_characters_round_trip_without_source_normalization(
     assert "".join(raw_fragment.itertext()) == fragment.text
     assert semantic_text is not None
     assert semantic_text.text == "<& > © ‘설정’ \"도움말\""
+
+
+def test_raw_preserves_whitespace_only_parts_exactly(tmp_path: Path) -> None:
+    parts = (" ", "\n", "\t")
+    fragment = ContentFragment(page_index=0, mcid=8, text_parts=parts)
+    document = TaggedDocument(Path("whitespace.pdf"), True, None, (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+
+    XmlDocumentWriter().write_raw(document, raw_path)
+
+    raw_fragment = ET.parse(raw_path).getroot().find("fragment")
+    assert raw_fragment is not None
+    assert [part.text for part in raw_fragment.findall("part")] == list(parts)
+    assert "".join(raw_fragment.itertext()) == fragment.text

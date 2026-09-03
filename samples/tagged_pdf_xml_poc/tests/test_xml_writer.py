@@ -440,3 +440,43 @@ def test_lone_surrogate_metadata_round_trips_with_explicit_encoding(
         )
         encoded = base64.b64decode(serialized_element.attrib["title"])
         assert encoded.decode("utf-8", errors="surrogatepass") == title
+
+
+def test_partial_temporary_write_failure_removes_orphan_and_leaves_no_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "raw.xml"
+    partial_path = tmp_path / ".raw.xml.partial.tmp"
+    fragment = ContentFragment(0, 1, ("content",))
+    document = TaggedDocument(Path("write-failure.pdf"), True, None, (), (fragment,))
+
+    class PartialTemporaryFile:
+        def __init__(self) -> None:
+            self.name = str(partial_path)
+            self.handle = None
+
+        def __enter__(self) -> "PartialTemporaryFile":
+            self.handle = partial_path.open("wb")
+            return self
+
+        def write(self, data: bytes) -> None:
+            assert self.handle is not None
+            self.handle.write(data[:16])
+            self.handle.flush()
+            raise OSError("simulated temporary write failure")
+
+        def __exit__(self, *args: object) -> None:
+            assert self.handle is not None
+            self.handle.close()
+
+    monkeypatch.setattr(
+        xml_writer_module.tempfile,
+        "NamedTemporaryFile",
+        lambda **kwargs: PartialTemporaryFile(),
+    )
+
+    with pytest.raises(OSError, match="simulated temporary write failure"):
+        XmlDocumentWriter().write_raw(document, destination)
+
+    assert not destination.exists()
+    assert not partial_path.exists()

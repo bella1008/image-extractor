@@ -387,8 +387,8 @@ class XmlDocumentWriter:
                 suffix=".tmp",
                 delete=False,
             ) as temporary:
-                temporary.write(serialized)
                 temporary_path = Path(temporary.name)
+                temporary.write(serialized)
 
             parsed_root = ET.parse(temporary_path).getroot()
             parsed_signature = XmlDocumentWriter._canonical_signature(

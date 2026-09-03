@@ -39,6 +39,7 @@ _SAFE_SEMANTIC_TAGS = frozenset(
     }
 )
 _BASE64_UTF8 = "base64-utf8"
+_BASE64_UTF8_SURROGATEPASS = "base64-utf8-surrogatepass"
 
 
 def decode_data_element(element: ET.Element) -> str:
@@ -77,8 +78,14 @@ def _encoded_attributes(attributes: dict[str, str]) -> dict[str, str]:
     encoded: dict[str, str] = {}
     for name, value in attributes.items():
         if any(not _is_xml_10_character(character) for character in value):
-            encoded[name] = base64.b64encode(value.encode("utf-8")).decode("ascii")
-            encoded[f"{name}-encoding"] = _BASE64_UTF8
+            try:
+                value_bytes = value.encode("utf-8")
+                encoding = _BASE64_UTF8
+            except UnicodeEncodeError:
+                value_bytes = value.encode("utf-8", errors="surrogatepass")
+                encoding = _BASE64_UTF8_SURROGATEPASS
+            encoded[name] = base64.b64encode(value_bytes).decode("ascii")
+            encoded[f"{name}-encoding"] = encoding
         else:
             encoded[name] = value
     return encoded
@@ -95,10 +102,16 @@ def _decoded_attributes(element: ET.Element) -> tuple[tuple[str, str], ...]:
         marker_name = f"{name}-encoding"
         if index + 1 < len(items) and items[index + 1][0] == marker_name:
             marker = items[index + 1][1]
-            if marker != _BASE64_UTF8:
+            if marker == _BASE64_UTF8:
+                decode_errors = "strict"
+            elif marker == _BASE64_UTF8_SURROGATEPASS:
+                decode_errors = "surrogatepass"
+            else:
                 raise ValueError(f"unsupported attribute encoding {marker!r}")
             try:
-                value = base64.b64decode(value, validate=True).decode("utf-8")
+                value = base64.b64decode(value, validate=True).decode(
+                    "utf-8", errors=decode_errors
+                )
             except (binascii.Error, UnicodeDecodeError) as exc:
                 raise ValueError(f"invalid base64 UTF-8 attribute {name!r}") from exc
             index += 1
@@ -477,13 +490,14 @@ class XmlDocumentWriter:
     def _remove_indentation_text(
         cls, element: ET.Element, text_data_tags: frozenset[str]
     ) -> None:
+        is_data = element.tag in text_data_tags
         if (
-            element.tag not in text_data_tags
+            not is_data
             and element.text is not None
             and not element.text.strip()
         ):
             element.text = None
         for child in element:
             cls._remove_indentation_text(child, text_data_tags)
-            if child.tail is not None and not child.tail.strip():
+            if not is_data and child.tail is not None and not child.tail.strip():
                 child.tail = None

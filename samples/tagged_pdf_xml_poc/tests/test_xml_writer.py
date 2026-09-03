@@ -382,3 +382,61 @@ def test_join_decisions_distinguish_sibling_fragments_with_null_mcids(
         "/paragraph[0]",
     ]
     assert [decision["mcid"] for decision in decisions] == [None, None]
+
+
+def test_raw_preserves_whitespace_only_tail_after_control(tmp_path: Path) -> None:
+    source_text = "A\x01 "
+    fragment = ContentFragment(0, 1, (source_text,))
+    document = TaggedDocument(Path("raw-tail.pdf"), True, None, (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+
+    XmlDocumentWriter().write_raw(document, raw_path)
+
+    raw_part = ET.parse(raw_path).getroot().find("fragment/part")
+    assert raw_part is not None
+    assert xml_writer_module.decode_data_element(raw_part) == source_text
+    control = raw_part.find("control")
+    assert control is not None and control.tail == " "
+
+
+def test_semantic_preserves_newline_tail_after_control(tmp_path: Path) -> None:
+    source_text = "A\x01\n"
+    fragment = ContentFragment(0, 2, (source_text,))
+    document = TaggedDocument(
+        Path("semantic-tail.pdf"), True, None, (), (fragment,)
+    )
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    semantic_text = ET.parse(semantic_path).getroot().find("text")
+    assert semantic_text is not None
+    assert xml_writer_module.decode_data_element(semantic_text) == source_text
+    control = semantic_text.find("control")
+    assert control is not None and control.tail == "\n"
+
+
+def test_lone_surrogate_metadata_round_trips_with_explicit_encoding(
+    tmp_path: Path,
+) -> None:
+    title = "before\ud800after"
+    element = StructureElement("P", "paragraph", title=title)
+    document = TaggedDocument(Path("surrogate.pdf"), True, None, (), (element,))
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw_element = ET.parse(raw_path).getroot().find("element")
+    semantic_element = ET.parse(semantic_path).getroot().find("paragraph")
+    assert raw_element is not None
+    assert semantic_element is not None
+    for serialized_element in (raw_element, semantic_element):
+        assert (
+            serialized_element.attrib["title-encoding"]
+            == "base64-utf8-surrogatepass"
+        )
+        encoded = base64.b64decode(serialized_element.attrib["title"])
+        assert encoded.decode("utf-8", errors="surrogatepass") == title

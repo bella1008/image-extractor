@@ -13,6 +13,7 @@ from tagged_pdf_extractor.domain.models import (
 )
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
+from tagged_pdf_extractor.ports.output_writer import OutputValidation
 
 
 RAW_XML_NAME = "raw_structure.xml"
@@ -25,6 +26,26 @@ class OutputCollisionError(FileExistsError):
     pass
 
 
+class BundleRollbackError(RuntimeError):
+    def __init__(
+        self,
+        publication_error: Exception,
+        restoration_errors: tuple[Exception, ...],
+        backup_path: Path,
+        affected_files: tuple[str, ...],
+    ) -> None:
+        self.publication_error = publication_error
+        self.restoration_errors = restoration_errors
+        self.backup_path = backup_path.resolve()
+        self.affected_files = affected_files
+        affected = ", ".join(affected_files) or "unknown"
+        super().__init__(
+            "bundle publication failed and old outputs could not be fully "
+            f"restored; backup preserved at {self.backup_path}; "
+            f"affected files: {affected}"
+        )
+
+
 class OutputBundleWriter:
     def __init__(
         self,
@@ -34,6 +55,17 @@ class OutputBundleWriter:
         self.xml_writer = xml_writer or XmlDocumentWriter()
         self.json_writer = json_writer or JsonReportWriter()
 
+    def validate(self, document: TaggedDocument) -> OutputValidation:
+        with tempfile.TemporaryDirectory(prefix="tagged-pdf-xml-validation-") as temp:
+            validation_dir = Path(temp)
+            raw_path = validation_dir / RAW_XML_NAME
+            semantic_path = validation_dir / SEMANTIC_XML_NAME
+            self.xml_writer.write_raw(document, raw_path)
+            decisions = self.xml_writer.write_semantic(document, semantic_path)
+            ET.parse(raw_path)
+            ET.parse(semantic_path)
+            return OutputValidation(decisions)
+
     def write(
         self,
         document: TaggedDocument,
@@ -42,14 +74,21 @@ class OutputBundleWriter:
         overwrite: bool = False,
     ) -> ExtractionArtifacts:
         output_dir = Path(output_dir)
-        if output_dir.exists() and not output_dir.is_dir():
+        if os.path.lexists(output_dir) and (
+            not output_dir.is_dir() or output_dir.is_symlink()
+        ):
             raise NotADirectoryError(f"output path is not a directory: {output_dir}")
 
-        existing = tuple(
-            output_dir / name
-            for name in REQUIRED_OUTPUT_NAMES
-            if (output_dir / name).exists()
-        )
+        existing: list[Path] = []
+        for name in REQUIRED_OUTPUT_NAMES:
+            destination = output_dir / name
+            if not os.path.lexists(destination):
+                continue
+            if not destination.is_file() or destination.is_symlink():
+                raise OutputCollisionError(
+                    f"required output target is not a regular file: {destination}"
+                )
+            existing.append(destination)
         if existing and not overwrite:
             names = ", ".join(path.name for path in existing)
             raise OutputCollisionError(f"required output already exists: {names}")
@@ -60,6 +99,7 @@ class OutputBundleWriter:
             tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=parent)
         )
         backup: Path | None = None
+        preserve_backup = False
         try:
             self._write_and_validate_staging(document, report, staging)
             if not output_dir.exists():
@@ -77,10 +117,13 @@ class OutputBundleWriter:
                 semantic_xml=output_dir / SEMANTIC_XML_NAME,
                 report_json=output_dir / REPORT_JSON_NAME,
             )
+        except BundleRollbackError:
+            preserve_backup = True
+            raise
         finally:
             if staging is not None:
                 self._remove_owned_directory(staging)
-            if backup is not None:
+            if backup is not None and not preserve_backup:
                 self._remove_owned_directory(backup)
 
     def _write_and_validate_staging(
@@ -125,21 +168,32 @@ class OutputBundleWriter:
                 os.replace(staging / name, output_dir / name)
                 published.append(name)
         except Exception as publication_error:
-            rollback_errors: list[Exception] = []
+            removal_errors: list[Exception] = []
             for name in reversed(published):
                 try:
                     (output_dir / name).unlink(missing_ok=True)
                 except Exception as exc:
-                    rollback_errors.append(exc)
+                    removal_errors.append(exc)
+            restoration_errors: list[Exception] = []
             for name in reversed(backed_up):
                 try:
                     os.replace(backup / name, output_dir / name)
                 except Exception as exc:
-                    rollback_errors.append(exc)
-            if rollback_errors:
+                    restoration_errors.append(exc)
+            if restoration_errors:
+                affected_files = tuple(
+                    name for name in backed_up if (backup / name).exists()
+                )
+                raise BundleRollbackError(
+                    publication_error,
+                    tuple(restoration_errors),
+                    backup,
+                    affected_files,
+                ) from publication_error
+            if removal_errors:
                 raise ExceptionGroup(
                     "bundle publication and rollback failed",
-                    [publication_error, *rollback_errors],
+                    [publication_error, *removal_errors],
                 )
             raise
 

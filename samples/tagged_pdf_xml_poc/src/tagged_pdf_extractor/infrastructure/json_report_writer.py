@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -16,9 +18,40 @@ class JsonReportWriter:
             ensure_ascii=False,
             indent=2,
             allow_nan=False,
-        ) + "\n"
+        )
+        serialized = self._escape_surrogate_code_units(serialized) + "\n"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(serialized, encoding="utf-8", newline="")
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                newline="",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(serialized)
+
+            parsed = json.loads(temporary_path.read_text(encoding="utf-8"))
+            if parsed != payload:
+                raise ValueError("JSON report round trip mismatch")
+            os.replace(temporary_path, path)
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _escape_surrogate_code_units(serialized: str) -> str:
+        return "".join(
+            f"\\u{ord(character):04x}"
+            if 0xD800 <= ord(character) <= 0xDFFF
+            else character
+            for character in serialized
+        )
 
     def to_data(self, value: Any) -> Any:
         return self._convert(value, path="report")

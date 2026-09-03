@@ -6,7 +6,10 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
-from tagged_pdf_extractor.ports.output_writer import OutputWriterPort
+from tagged_pdf_extractor.ports.output_writer import (
+    OutputValidation,
+    OutputWriterPort,
+)
 from tagged_pdf_extractor.ports.pdf_reader import TaggedPdfReaderPort
 
 
@@ -38,11 +41,18 @@ class ExtractDocument:
 
         document = self.reader.read(pdf_path)
         baseline = self.baseline_reader.read_text(pdf_path)
+        validation = self.writer.validate(document)
+        if not isinstance(validation, OutputValidation):
+            raise TypeError("output writer returned invalid XML validation proof")
         report = self.evaluator.evaluate(
             document,
             baseline,
             xml_round_trip_ok=True,
         )
+        if tuple(validation.semantic_join_decisions) != report.join_decisions:
+            raise ValueError(
+                "validated semantic XML join decisions do not match quality report"
+            )
         artifacts = self.writer.write(
             document,
             report,

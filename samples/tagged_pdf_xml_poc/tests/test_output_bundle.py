@@ -16,9 +16,11 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
+    BundleRollbackError,
     OutputBundleWriter,
     OutputCollisionError,
 )
+from tagged_pdf_extractor.ports.output_writer import OutputValidation
 
 
 def _document(tmp_path: Path) -> TaggedDocument:
@@ -97,6 +99,43 @@ def test_json_report_writer_fails_clearly_for_unsupported_context_value(
     assert not (tmp_path / "report.json").exists()
 
 
+def test_json_report_writer_atomically_preserves_lone_surrogate_and_korean(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "report.json"
+    target.write_text("old report", encoding="utf-8")
+    report = QualityReport("fail", {"문자": "한글\ud800끝"}, {}, ())
+
+    JsonReportWriter().write(report, target)
+
+    raw = target.read_text(encoding="utf-8")
+    assert "한글" in raw
+    assert "\\ud800" in raw.lower()
+    assert json.loads(raw)["metrics"]["문자"] == "한글\ud800끝"
+    assert list(tmp_path.glob(".report.json.*.tmp")) == []
+
+
+def test_json_report_writer_failure_preserves_destination_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "report.json"
+    target.write_text("old report", encoding="utf-8")
+
+    def fail_replace(source: str | Path, destination: str | Path) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.json_report_writer.os.replace",
+        fail_replace,
+    )
+
+    with pytest.raises(OSError, match="replace failed"):
+        JsonReportWriter().write(QualityReport("fail", {}, {}, ()), target)
+
+    assert target.read_text(encoding="utf-8") == "old report"
+    assert list(tmp_path.glob(".report.json.*.tmp")) == []
+
+
 def test_refuses_any_existing_required_output_before_writing(tmp_path: Path) -> None:
     output = tmp_path / "result"
     output.mkdir()
@@ -155,7 +194,38 @@ def test_existing_directory_overwrite_preserves_unrelated_files(tmp_path: Path) 
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
-@pytest.mark.parametrize("fail_publication_number", [1, 2])
+@pytest.mark.parametrize(
+    ("existing_names", "overwrite", "should_succeed"),
+    [
+        ((), False, True),
+        (("raw_structure.xml",), False, False),
+        (("extraction_report.json",), True, True),
+        (tuple(output_bundle_module.REQUIRED_OUTPUT_NAMES), True, True),
+    ],
+)
+def test_existing_and_missing_required_target_matrix(
+    tmp_path: Path,
+    existing_names: tuple[str, ...],
+    overwrite: bool,
+    should_succeed: bool,
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    for name in existing_names:
+        (output / name).write_text(f"old::{name}", encoding="utf-8")
+    document = _document(tmp_path)
+
+    if should_succeed:
+        OutputBundleWriter().write(document, _report(document), output, overwrite)
+        assert all((output / name).is_file() for name in output_bundle_module.REQUIRED_OUTPUT_NAMES)
+    else:
+        with pytest.raises(OutputCollisionError):
+            OutputBundleWriter().write(document, _report(document), output, overwrite)
+        assert {path.name for path in output.iterdir()} == set(existing_names)
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+@pytest.mark.parametrize("fail_publication_number", [1, 2, 3])
 def test_mid_publication_os_replace_failure_restores_complete_previous_bundle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -192,6 +262,47 @@ def test_mid_publication_os_replace_failure_restores_complete_previous_bundle(
     assert {name: (output / name).read_text(encoding="utf-8") for name in old} == old
     assert unrelated.read_text(encoding="utf-8") == "safe"
     assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_restore_failure_preserves_backup_and_surfaces_recovery_details(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    real_replace = os.replace
+    publication_failed = False
+
+    def fail_publication_then_restore(source: str | Path, destination: str | Path) -> None:
+        nonlocal publication_failed
+        source_path = Path(source)
+        destination_path = Path(destination)
+        if ".staging-" in source_path.parent.name and destination_path.parent == output:
+            publication_failed = True
+            raise OSError("publication failed")
+        if publication_failed and ".backup-" in source_path.parent.name:
+            raise OSError("restore failed")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", fail_publication_then_restore)
+
+    with pytest.raises(BundleRollbackError) as captured:
+        OutputBundleWriter().write(document, _report(document), output, overwrite=True)
+
+    error = captured.value
+    assert error.backup_path.is_absolute()
+    assert str(error.backup_path) in str(error)
+    assert set(error.affected_files) == set(output_bundle_module.REQUIRED_OUTPUT_NAMES)
+    assert all(
+        (error.backup_path / name).read_text(encoding="utf-8") == old[name]
+        for name in error.affected_files
+    )
+    assert list(tmp_path.glob(".result.staging-*")) == []
+    assert error.backup_path in list(tmp_path.glob(".result.backup-*"))
 
 
 def test_failed_publication_into_existing_empty_directory_removes_new_outputs(
@@ -234,6 +345,33 @@ def test_join_decision_mismatch_fails_before_publication(tmp_path: Path) -> None
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
+@pytest.mark.parametrize("invalid_kind", ["directory", "symlink"])
+def test_preflight_rejects_non_regular_required_targets_before_staging(
+    tmp_path: Path, invalid_kind: str
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    invalid = output / "raw_structure.xml"
+    if invalid_kind == "directory":
+        invalid.mkdir()
+    else:
+        source = tmp_path / "linked.xml"
+        source.write_text("linked", encoding="utf-8")
+        try:
+            invalid.symlink_to(source)
+        except OSError:
+            pytest.skip("symlinks unavailable")
+    untouched = output / "semantic_document.xml"
+    untouched.write_text("old", encoding="utf-8")
+
+    with pytest.raises(OutputCollisionError, match="regular file"):
+        OutputBundleWriter().write(_document(tmp_path), _report(_document(tmp_path)), output, overwrite=True)
+
+    assert invalid.exists()
+    assert untouched.read_text(encoding="utf-8") == "old"
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
 def test_destination_parent_creation_failure_leaves_no_staging_or_outputs(
     tmp_path: Path,
 ) -> None:
@@ -247,6 +385,19 @@ def test_destination_parent_creation_failure_leaves_no_staging_or_outputs(
 
     assert parent_file.read_text(encoding="utf-8") == "occupied"
     assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_output_path_that_is_a_file_is_rejected_before_staging(tmp_path: Path) -> None:
+    output = tmp_path / "result"
+    output.write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(NotADirectoryError, match="not a directory"):
+        OutputBundleWriter().write(
+            _document(tmp_path), _report(_document(tmp_path)), output, overwrite=True
+        )
+
+    assert output.read_text(encoding="utf-8") == "not a directory"
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
@@ -272,6 +423,10 @@ def test_extract_document_validates_source_and_wires_dependencies(tmp_path: Path
             return report
 
     class Writer:
+        def validate(self, actual_document: TaggedDocument) -> OutputValidation:
+            calls.append(("validate", actual_document))
+            return OutputValidation(report.join_decisions)
+
         def write(self, actual_document: TaggedDocument, actual_report: QualityReport, output: Path, overwrite: bool = False) -> object:
             calls.append(("writer", (actual_document, actual_report, output, overwrite)))
             return artifacts
@@ -282,8 +437,8 @@ def test_extract_document_validates_source_and_wires_dependencies(tmp_path: Path
     use_case = ExtractDocument(Reader(), Baseline(), Evaluator(), Writer())
 
     assert use_case.run(source, output, overwrite=True) == (document, report, artifacts)
-    assert [name for name, _ in calls] == ["reader", "baseline", "evaluator", "writer"]
-    assert calls[2][1] == (document, "baseline", True)
+    assert [name for name, _ in calls] == ["reader", "baseline", "validate", "evaluator", "writer"]
+    assert calls[3][1] == (document, "baseline", True)
 
     missing = tmp_path / "missing.pdf"
     with pytest.raises(FileNotFoundError, match="missing.pdf"):
@@ -292,4 +447,78 @@ def test_extract_document_validates_source_and_wires_dependencies(tmp_path: Path
     directory.mkdir()
     with pytest.raises(IsADirectoryError, match="directory.pdf"):
         use_case.run(directory, output)
-    assert [name for name, _ in calls] == ["reader", "baseline", "evaluator", "writer"]
+    assert [name for name, _ in calls] == ["reader", "baseline", "validate", "evaluator", "writer"]
+
+
+def test_extract_document_validation_failure_prevents_evaluation_and_write(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    document = _document(tmp_path)
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            calls.append("reader")
+            return document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            calls.append("baseline")
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(self, *args: object, **kwargs: object) -> QualityReport:
+            calls.append("evaluator")
+            raise AssertionError("must not evaluate")
+
+    class Writer:
+        def validate(self, actual_document: TaggedDocument) -> OutputValidation:
+            calls.append("validate")
+            raise ValueError("XML proof failed")
+
+        def write(self, *args: object, **kwargs: object) -> object:
+            calls.append("writer")
+            raise AssertionError("must not write")
+
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+
+    with pytest.raises(ValueError, match="XML proof failed"):
+        ExtractDocument(Reader(), Baseline(), Evaluator(), Writer()).run(
+            source, tmp_path / "out"
+        )
+
+    assert calls == ["reader", "baseline", "validate"]
+    assert not (tmp_path / "out").exists()
+
+
+def test_extract_document_rejects_writer_without_validation_contract(
+    tmp_path: Path,
+) -> None:
+    document = _document(tmp_path)
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            return document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(self, *args: object, **kwargs: object) -> QualityReport:
+            raise AssertionError("must not evaluate")
+
+    class WriterWithoutValidation:
+        def write(self, *args: object, **kwargs: object) -> object:
+            raise AssertionError("must not write")
+
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+
+    with pytest.raises(AttributeError, match="validate"):
+        ExtractDocument(
+            Reader(), Baseline(), Evaluator(), WriterWithoutValidation()
+        ).run(source, tmp_path / "out")
+
+    assert not (tmp_path / "out").exists()

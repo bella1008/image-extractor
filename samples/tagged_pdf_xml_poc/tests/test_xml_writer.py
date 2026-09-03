@@ -1,11 +1,15 @@
+import base64
 from pathlib import Path
 from xml.etree import ElementTree as ET
+
+import pytest
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     StructureElement,
     TaggedDocument,
 )
+from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
 
 
@@ -53,6 +57,7 @@ def test_xml_round_trip_preserves_hierarchy_and_exact_unicode_osd_path(
             "page_index": 0,
             "mcid": 8,
             "element_path": "/heading[0]",
+            "fragment_child_index": 0,
             "boundary": 0,
             "action": "trim_left",
         },
@@ -266,3 +271,114 @@ def test_semantic_preserves_carriage_returns_in_serialized_text(tmp_path: Path) 
     assert semantic_text is not None
     assert semantic_text.text == source_text
     assert "".join(semantic.itertext()) == source_text
+
+
+def test_control_nodes_preserve_forbidden_xml_characters_in_raw_and_semantic(
+    tmp_path: Path,
+) -> None:
+    source_text = "A\x01B\x02C\x07D\x0eE\x00F"
+    fragment = ContentFragment(page_index=5, mcid=9, text_parts=(source_text, "tail"))
+    document = TaggedDocument(Path("controls.pdf"), True, None, (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw_parts = ET.parse(raw_path).getroot().findall("fragment/part")
+    semantic_text = ET.parse(semantic_path).getroot().find("text")
+    assert len(raw_parts) == 2
+    assert semantic_text is not None
+    expected_codes = ["0001", "0002", "0007", "000E", "0000"]
+    assert [node.attrib["code"] for node in raw_parts[0].findall("control")] == expected_codes
+    assert [node.attrib["code"] for node in semantic_text.findall("control")] == expected_codes
+    assert [xml_writer_module.decode_data_element(part) for part in raw_parts] == [
+        source_text,
+        "tail",
+    ]
+    assert xml_writer_module.decode_data_element(semantic_text) == f"{source_text} tail"
+
+
+def test_invalid_metadata_and_source_attributes_use_reversible_base64(
+    tmp_path: Path,
+) -> None:
+    source_role = "P\x01"
+    title = "Title\x02"
+    attribute_name = "Key\x07"
+    attribute_value = "Value\x0e"
+    element = StructureElement(
+        source_role=source_role,
+        semantic_role="paragraph",
+        title=title,
+        attributes=((attribute_name, attribute_value),),
+    )
+    document = TaggedDocument(
+        Path("source.pdf"),
+        True,
+        "en\x00US",
+        (("Role\x01", "P\x02"),),
+        (element,),
+    )
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw = ET.parse(raw_path).getroot()
+    assert raw.attrib["language-encoding"] == "base64-utf8"
+    assert base64.b64decode(raw.attrib["language"]).decode("utf-8") == "en\x00US"
+    raw_element = raw.find("element")
+    assert raw_element is not None
+    assert raw_element.attrib["source-role-encoding"] == "base64-utf8"
+    assert base64.b64decode(raw_element.attrib["source-role"]).decode("utf-8") == source_role
+    assert raw_element.attrib["title-encoding"] == "base64-utf8"
+    assert base64.b64decode(raw_element.attrib["title"]).decode("utf-8") == title
+    source_attribute = raw_element.find("attributes/attribute")
+    assert source_attribute is not None
+    assert source_attribute.attrib["name-encoding"] == "base64-utf8"
+    assert source_attribute.attrib["value-encoding"] == "base64-utf8"
+    assert base64.b64decode(source_attribute.attrib["name"]).decode("utf-8") == attribute_name
+    assert base64.b64decode(source_attribute.attrib["value"]).decode("utf-8") == attribute_value
+
+
+def test_failed_structural_validation_is_atomic_and_preserves_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fragment = ContentFragment(page_index=0, mcid=1, text_parts=("A", "B"))
+    document = TaggedDocument(Path("boundaries.pdf"), True, None, (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+    raw_path.write_text("existing destination", encoding="utf-8")
+    original_tostring = xml_writer_module.ET.tostring
+
+    def collapse_part_boundary(*args: object, **kwargs: object) -> bytes:
+        serialized = original_tostring(*args, **kwargs)
+        return serialized.replace(b"<part>A</part><part>B</part>", b"<part>AB</part>")
+
+    monkeypatch.setattr(xml_writer_module.ET, "tostring", collapse_part_boundary)
+
+    with pytest.raises(ValueError, match="structural round trip mismatch"):
+        XmlDocumentWriter().write_raw(document, raw_path)
+
+    assert raw_path.read_text(encoding="utf-8") == "existing destination"
+    assert list(tmp_path.glob(".raw.xml.*.tmp")) == []
+
+
+def test_join_decisions_distinguish_sibling_fragments_with_null_mcids(
+    tmp_path: Path,
+) -> None:
+    first = ContentFragment(0, None, ("first", "fragment"))
+    second = ContentFragment(0, None, ("second", "fragment"))
+    paragraph = StructureElement("P", "paragraph", children=(first, second))
+    document = TaggedDocument(Path("decisions.pdf"), True, None, (), (paragraph,))
+
+    decisions = XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+    assert [decision["fragment_child_index"] for decision in decisions] == [0, 1]
+    assert [decision["element_path"] for decision in decisions] == [
+        "/paragraph[0]",
+        "/paragraph[0]",
+    ]
+    assert [decision["mcid"] for decision in decisions] == [None, None]

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import os
+import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -34,6 +38,96 @@ _SAFE_SEMANTIC_TAGS = frozenset(
         "heading",
     }
 )
+_BASE64_UTF8 = "base64-utf8"
+
+
+def decode_data_element(element: ET.Element) -> str:
+    parts = [element.text or ""]
+    for child in element:
+        if child.tag != "control" or tuple(child.attrib) != ("code",):
+            raise ValueError(f"invalid data child {child.tag!r}")
+        code_text = child.attrib["code"]
+        try:
+            code_point = int(code_text, 16)
+        except ValueError as exc:
+            raise ValueError(f"invalid control code {code_text!r}") from exc
+        if (
+            len(code_text) < 4
+            or code_text != code_text.upper()
+            or code_text != f"{code_point:04X}"
+            or code_point > 0x10FFFF
+            or _is_xml_10_character(chr(code_point))
+        ):
+            raise ValueError(f"invalid control code {code_text!r}")
+        parts.extend((chr(code_point), child.tail or ""))
+    return "".join(parts)
+
+
+def _is_xml_10_character(character: str) -> bool:
+    code_point = ord(character)
+    return (
+        code_point in {0x09, 0x0A, 0x0D}
+        or 0x20 <= code_point <= 0xD7FF
+        or 0xE000 <= code_point <= 0xFFFD
+        or 0x10000 <= code_point <= 0x10FFFF
+    )
+
+
+def _encoded_attributes(attributes: dict[str, str]) -> dict[str, str]:
+    encoded: dict[str, str] = {}
+    for name, value in attributes.items():
+        if any(not _is_xml_10_character(character) for character in value):
+            encoded[name] = base64.b64encode(value.encode("utf-8")).decode("ascii")
+            encoded[f"{name}-encoding"] = _BASE64_UTF8
+        else:
+            encoded[name] = value
+    return encoded
+
+
+def _decoded_attributes(element: ET.Element) -> tuple[tuple[str, str], ...]:
+    items = tuple(element.attrib.items())
+    decoded: list[tuple[str, str]] = []
+    index = 0
+    while index < len(items):
+        name, value = items[index]
+        if name.endswith("-encoding"):
+            raise ValueError(f"orphan attribute encoding marker {name!r}")
+        marker_name = f"{name}-encoding"
+        if index + 1 < len(items) and items[index + 1][0] == marker_name:
+            marker = items[index + 1][1]
+            if marker != _BASE64_UTF8:
+                raise ValueError(f"unsupported attribute encoding {marker!r}")
+            try:
+                value = base64.b64decode(value, validate=True).decode("utf-8")
+            except (binascii.Error, UnicodeDecodeError) as exc:
+                raise ValueError(f"invalid base64 UTF-8 attribute {name!r}") from exc
+            index += 1
+        decoded.append((name, value))
+        index += 1
+    return tuple(decoded)
+
+
+def _set_data_text(element: ET.Element, value: str) -> None:
+    segment: list[str] = []
+    last_control: ET.Element | None = None
+    for character in value:
+        if _is_xml_10_character(character):
+            segment.append(character)
+            continue
+        valid_text = "".join(segment) or None
+        if last_control is None:
+            element.text = valid_text
+        else:
+            last_control.tail = valid_text
+        last_control = ET.SubElement(
+            element, "control", {"code": f"{ord(character):04X}"}
+        )
+        segment = []
+    valid_text = "".join(segment) or None
+    if last_control is None:
+        element.text = valid_text
+    else:
+        last_control.tail = valid_text
 
 
 class XmlDocumentWriter:
@@ -44,7 +138,7 @@ class XmlDocumentWriter:
         }
         if document.language is not None:
             root_attributes["language"] = document.language
-        root = ET.Element("tagged-document", root_attributes)
+        root = ET.Element("tagged-document", _encoded_attributes(root_attributes))
 
         if document.role_map:
             role_map = ET.SubElement(root, "role-map")
@@ -52,7 +146,9 @@ class XmlDocumentWriter:
                 ET.SubElement(
                     role_map,
                     "role",
-                    {"source-role": source_role, "mapped-role": mapped_role},
+                    _encoded_attributes(
+                        {"source-role": source_role, "mapped-role": mapped_role}
+                    ),
                 )
 
         for child in document.children:
@@ -98,12 +194,20 @@ class XmlDocumentWriter:
         child: StructureElement | ContentFragment,
     ) -> None:
         if isinstance(child, ContentFragment):
-            fragment = ET.SubElement(parent, "fragment", self._fragment_attributes(child))
+            fragment = ET.SubElement(
+                parent,
+                "fragment",
+                _encoded_attributes(self._fragment_attributes(child)),
+            )
             for part in child.text_parts:
-                ET.SubElement(fragment, "part").text = part
+                _set_data_text(ET.SubElement(fragment, "part"), part)
             return
 
-        element = ET.SubElement(parent, "element", self._raw_element_attributes(child))
+        element = ET.SubElement(
+            parent,
+            "element",
+            _encoded_attributes(self._raw_element_attributes(child)),
+        )
         self._append_source_attributes(element, child.attributes)
         for nested_child in child.children:
             self._append_raw_child(element, nested_child)
@@ -120,7 +224,12 @@ class XmlDocumentWriter:
     ) -> None:
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)
-            ET.SubElement(parent, "text", self._fragment_attributes(child)).text = text or None
+            text_element = ET.SubElement(
+                parent,
+                "text",
+                _encoded_attributes(self._fragment_attributes(child)),
+            )
+            _set_data_text(text_element, text)
             expected_parts.append(text)
             element_path = parent_path or "/"
             for decision in fragment_decisions:
@@ -129,6 +238,7 @@ class XmlDocumentWriter:
                         "page_index": child.page_index,
                         "mcid": child.mcid,
                         "element_path": element_path,
+                        "fragment_child_index": child_index,
                         **decision,
                     }
                 )
@@ -140,7 +250,11 @@ class XmlDocumentWriter:
             else "unknown"
         )
         element_path = f"{parent_path}/{tag}[{child_index}]"
-        element = ET.SubElement(parent, tag, self._semantic_element_attributes(child, tag))
+        element = ET.SubElement(
+            parent,
+            tag,
+            _encoded_attributes(self._semantic_element_attributes(child, tag)),
+        )
         self._append_source_attributes(element, child.attributes)
         for index, nested_child in enumerate(child.children):
             self._append_semantic_child(
@@ -212,7 +326,11 @@ class XmlDocumentWriter:
             return
         container = ET.SubElement(parent, "attributes")
         for name, value in attributes:
-            ET.SubElement(container, "attribute", {"name": name, "value": value})
+            ET.SubElement(
+                container,
+                "attribute",
+                _encoded_attributes({"name": name, "value": value}),
+            )
 
     @classmethod
     def _raw_text(
@@ -236,19 +354,124 @@ class XmlDocumentWriter:
         text_data_tags: frozenset[str],
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        expected_signature = XmlDocumentWriter._canonical_signature(
+            root, text_data_tags
+        )
+        data_state = XmlDocumentWriter._snapshot_data_text(root, text_data_tags)
         tree = ET.ElementTree(root)
         ET.indent(tree, space="  ")
+        XmlDocumentWriter._restore_data_text(data_state)
         XmlDocumentWriter._remove_indentation_text(root, text_data_tags)
         serialized = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-        path.write_bytes(serialized.replace(b"\r", b"&#13;"))
+        serialized = serialized.replace(b"\r", b"&#13;")
 
-        parsed_root = ET.parse(path).getroot()
-        parsed_text = "".join(parsed_root.itertext())
-        if parsed_text != expected_text:
-            raise ValueError(
-                f"{output_name} XML text round trip mismatch: "
-                f"expected {expected_text!r}, parsed {parsed_text!r}"
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary.write(serialized)
+                temporary_path = Path(temporary.name)
+
+            parsed_root = ET.parse(temporary_path).getroot()
+            parsed_signature = XmlDocumentWriter._canonical_signature(
+                parsed_root, text_data_tags
             )
+            if parsed_signature != expected_signature:
+                raise ValueError(f"{output_name} XML structural round trip mismatch")
+
+            parsed_text = XmlDocumentWriter._decoded_tree_text(
+                parsed_root, text_data_tags
+            )
+            if parsed_text != expected_text:
+                raise ValueError(
+                    f"{output_name} XML text round trip mismatch: "
+                    f"expected {expected_text!r}, parsed {parsed_text!r}"
+                )
+
+            os.replace(temporary_path, path)
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _snapshot_data_text(
+        root: ET.Element, text_data_tags: frozenset[str]
+    ) -> tuple[
+        tuple[ET.Element, str | None, tuple[tuple[ET.Element, str | None], ...]], ...
+    ]:
+        return tuple(
+            (
+                element,
+                element.text,
+                tuple((child, child.tail) for child in element),
+            )
+            for element in root.iter()
+            if element.tag in text_data_tags
+        )
+
+    @staticmethod
+    def _restore_data_text(
+        data_state: tuple[
+            tuple[ET.Element, str | None, tuple[tuple[ET.Element, str | None], ...]],
+            ...,
+        ]
+    ) -> None:
+        for element, text, child_tails in data_state:
+            element.text = text
+            for child, tail in child_tails:
+                child.tail = tail
+
+    @classmethod
+    def _canonical_signature(
+        cls,
+        element: ET.Element,
+        text_data_tags: frozenset[str],
+        *,
+        tail_is_data: bool = False,
+    ) -> tuple[object, ...]:
+        is_data = element.tag in text_data_tags
+        text = (
+            decode_data_element(element)
+            if is_data
+            else cls._without_formatting(element.text)
+        )
+        tail = element.tail if tail_is_data else cls._without_formatting(element.tail)
+        return (
+            element.tag,
+            _decoded_attributes(element),
+            text,
+            tuple(
+                cls._canonical_signature(
+                    child,
+                    text_data_tags,
+                    tail_is_data=is_data,
+                )
+                for child in element
+            ),
+            tail,
+        )
+
+    @classmethod
+    def _decoded_tree_text(
+        cls, element: ET.Element, text_data_tags: frozenset[str]
+    ) -> str:
+        if element.tag in text_data_tags:
+            return decode_data_element(element)
+        return "".join(
+            cls._decoded_tree_text(child, text_data_tags) for child in element
+        )
+
+    @staticmethod
+    def _without_formatting(value: str | None) -> str | None:
+        if value is not None and value.isspace():
+            return None
+        return value
 
     @classmethod
     def _remove_indentation_text(

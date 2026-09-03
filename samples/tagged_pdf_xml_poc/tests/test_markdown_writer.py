@@ -236,6 +236,9 @@ def test_list_preserves_text_order_around_nested_list(tmp_path: Path) -> None:
     assert markdown.count("After nested list") == 1
     assert markdown.index("Before nested list") < markdown.index("Nested item")
     assert markdown.index("Nested item") < markdown.index("After nested list")
+    body = markdown.split("\n\n", 2)[2]
+    assert sum(line.startswith("- ") for line in body.splitlines()) == 1
+    assert "\n  After nested list\n" in markdown
 
 
 def test_promotes_heading_candidate_inside_list_without_duplicate_text(
@@ -314,6 +317,45 @@ def test_promotes_heading_candidate_inside_table_without_duplicate_or_lost_text(
     assert markdown.count("Table heading") == 1
     assert markdown.count("Cell tail") == 1
     assert markdown.index("## Table heading") < markdown.index("Cell tail")
+
+
+@pytest.mark.parametrize(
+    "container_tag",
+    ["paragraph", "heading", "caption", "label", "figure"],
+)
+def test_promotes_descendant_heading_inside_atomic_container_in_source_order(
+    tmp_path: Path,
+    container_tag: str,
+) -> None:
+    report = _report(
+        {
+            "structure_path": f"/{container_tag}[0]/paragraph[1]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "Nested heading",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        f"""
+        <{container_tag}>
+          <text>Before heading</text>
+          <paragraph><text>Nested heading</text></paragraph>
+          <text>After heading</text>
+        </{container_tag}>
+        """,
+        report,
+    )
+
+    assert "## Nested heading" in markdown
+    assert markdown.count("Before heading") == 1
+    assert markdown.count("Nested heading") == 1
+    assert markdown.count("After heading") == 1
+    assert markdown.index("Before heading") < markdown.index("## Nested heading")
+    assert markdown.index("## Nested heading") < markdown.index("After heading")
 
 
 def test_irregular_or_nested_table_falls_back_to_row_lists_without_text_loss(

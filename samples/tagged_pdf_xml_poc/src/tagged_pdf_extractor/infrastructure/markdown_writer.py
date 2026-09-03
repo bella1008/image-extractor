@@ -103,7 +103,12 @@ class MarkdownDocumentWriter:
             prefix = "#" * min(level + 1, 6)
             return [f"{prefix} {cls._element_text(element)}"]
 
-        if element.tag in {"paragraph", "heading", "caption", "label"}:
+        atomic_tags = {"paragraph", "heading", "caption", "label", "figure"}
+        if element.tag in atomic_tags and cls._has_promoted_descendant(
+            element, promoted
+        ):
+            return cls._render_mixed_content(element, promoted)
+        if element.tag in atomic_tags - {"figure"}:
             text = cls._element_text(element)
             return [cls._escape_line_prefix(text)] if text else []
         if element.tag == "text":
@@ -158,14 +163,20 @@ class MarkdownDocumentWriter:
     ) -> list[str]:
         lines: list[str] = []
         text_parts: list[str] = []
-        emitted = False
+        has_content = False
+        marker_emitted = False
 
         def flush_text() -> None:
-            nonlocal emitted
+            nonlocal has_content, marker_emitted
             text = cls._join_text_parts(text_parts)
             if text:
-                lines.append(f"{'  ' * depth}- {text}")
-                emitted = True
+                escaped = cls._escape_line_prefix(text)
+                if marker_emitted:
+                    lines.append(f"{'  ' * (depth + 1)}{escaped}")
+                else:
+                    lines.append(f"{'  ' * depth}- {escaped}")
+                    marker_emitted = True
+                has_content = True
             text_parts.clear()
 
         for kind, value in cls._list_events(item, promoted):
@@ -174,9 +185,9 @@ class MarkdownDocumentWriter:
             else:
                 flush_text()
                 lines.extend(cls._render_list_block(value, promoted, depth=depth + 1))
-                emitted = True
+                has_content = True
         flush_text()
-        if not emitted:
+        if not has_content:
             lines.append(f"{'  ' * depth}-")
         return lines
 
@@ -318,7 +329,7 @@ class MarkdownDocumentWriter:
                 lines.append(f"{prefix}{text}")
             text_parts.clear()
 
-        for kind, value in cls._table_events(element, promoted):
+        for kind, value in cls._mixed_content_events(element, promoted):
             if kind == "text":
                 text_parts.append(cls._visible_text(value))
                 continue
@@ -332,7 +343,7 @@ class MarkdownDocumentWriter:
         return lines
 
     @classmethod
-    def _table_events(
+    def _mixed_content_events(
         cls,
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
@@ -343,7 +354,41 @@ class MarkdownDocumentWriter:
             elif child.tag == "text":
                 yield "text", child
             else:
-                yield from cls._table_events(child, promoted)
+                yield from cls._mixed_content_events(child, promoted)
+
+    @staticmethod
+    def _has_promoted_descendant(
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> bool:
+        return any(
+            descendant is not element and descendant in promoted
+            for descendant in element.iter()
+        )
+
+    @classmethod
+    def _render_mixed_content(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> list[str]:
+        blocks: list[str] = []
+        text_parts: list[str] = []
+
+        def flush_text() -> None:
+            text = cls._join_text_parts(text_parts)
+            if text:
+                blocks.append(cls._escape_line_prefix(text))
+            text_parts.clear()
+
+        for kind, value in cls._mixed_content_events(element, promoted):
+            if kind == "text":
+                text_parts.append(cls._visible_text(value))
+                continue
+            flush_text()
+            blocks.extend(cls._render_element(value, promoted))
+        flush_text()
+        return blocks
 
     @staticmethod
     def _structural_children(element: ET.Element) -> list[ET.Element]:

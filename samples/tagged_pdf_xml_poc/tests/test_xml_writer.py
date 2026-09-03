@@ -211,3 +211,24 @@ def test_raw_preserves_whitespace_only_parts_exactly(tmp_path: Path) -> None:
     assert raw_fragment is not None
     assert [part.text for part in raw_fragment.findall("part")] == list(parts)
     assert "".join(raw_fragment.itertext()) == fragment.text
+
+
+def test_semantic_structural_part_removes_indentation_from_itertext(
+    tmp_path: Path,
+) -> None:
+    fragment = ContentFragment(page_index=1, mcid=4, text_parts=("Nested content",))
+    structural_part = StructureElement(
+        source_role="Part",
+        semantic_role="part",
+        children=(fragment,),
+    )
+    document = TaggedDocument(
+        Path("semantic-part.pdf"), True, None, (), (structural_part,)
+    )
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    semantic = ET.parse(semantic_path).getroot()
+    assert semantic.find("part/text") is not None
+    assert "".join(semantic.itertext()) == fragment.text

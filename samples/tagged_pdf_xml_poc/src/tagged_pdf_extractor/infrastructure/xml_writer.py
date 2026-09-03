@@ -63,6 +63,7 @@ class XmlDocumentWriter:
             path,
             expected_text=self._raw_text(document.children),
             output_name="raw",
+            text_data_tags=frozenset({"part"}),
         )
 
     def write_semantic(
@@ -87,6 +88,7 @@ class XmlDocumentWriter:
             path,
             expected_text="".join(expected_parts),
             output_name="semantic",
+            text_data_tags=frozenset({"text"}),
         )
         return tuple(decisions)
 
@@ -231,11 +233,12 @@ class XmlDocumentWriter:
         *,
         expected_text: str,
         output_name: str,
+        text_data_tags: frozenset[str],
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tree = ET.ElementTree(root)
         ET.indent(tree, space="  ")
-        XmlDocumentWriter._remove_indentation_text(root)
+        XmlDocumentWriter._remove_indentation_text(root, text_data_tags)
         tree.write(path, encoding="utf-8", xml_declaration=True)
 
         parsed_root = ET.parse(path).getroot()
@@ -247,14 +250,16 @@ class XmlDocumentWriter:
             )
 
     @classmethod
-    def _remove_indentation_text(cls, element: ET.Element) -> None:
+    def _remove_indentation_text(
+        cls, element: ET.Element, text_data_tags: frozenset[str]
+    ) -> None:
         if (
-            element.tag not in {"part", "text"}
+            element.tag not in text_data_tags
             and element.text is not None
             and not element.text.strip()
         ):
             element.text = None
         for child in element:
-            cls._remove_indentation_text(child)
+            cls._remove_indentation_text(child, text_data_tags)
             if child.tail is not None and not child.tail.strip():
                 child.tail = None

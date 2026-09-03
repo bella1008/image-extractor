@@ -565,6 +565,42 @@ def test_system_exit_during_final_preflight_cleans_only_owned_lock_and_staging(
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
+def test_competitor_markdown_after_final_preflight_is_not_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    competitor = output / output_bundle_module.MARKDOWN_NAME
+    original = OutputBundleWriter._preflight_required_targets
+    calls = 0
+
+    def final_preflight_then_compete(
+        output_dir: Path, overwrite: bool
+    ) -> tuple[Path, ...]:
+        nonlocal calls
+        existing = original(output_dir, overwrite)
+        calls += 1
+        if calls == 2:
+            competitor.write_text("competitor markdown", encoding="utf-8")
+        return existing
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_preflight_required_targets",
+        staticmethod(final_preflight_then_compete),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(OutputCollisionError, match="semantic_document.md"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert competitor.read_text(encoding="utf-8") == "competitor markdown"
+    assert {path.name for path in output.iterdir()} == {
+        output_bundle_module.MARKDOWN_NAME
+    }
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
 def test_existing_directory_overwrite_preserves_unrelated_files(tmp_path: Path) -> None:
     document = _document(tmp_path)
     report = _report(document)
@@ -686,6 +722,93 @@ def test_keyboard_interrupt_during_publication_restores_all_old_files_and_rerais
         OutputBundleWriter().write(document, _report(document), output, overwrite=True)
 
     assert {name: (output / name).read_text(encoding="utf-8") for name in old} == old
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_keyboard_interrupt_after_backup_replace_restores_old_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    real_replace = os.replace
+    interrupted = False
+
+    def interrupt_after_backup_replace(
+        source: str | Path, destination: str | Path
+    ) -> None:
+        nonlocal interrupted
+        source_path = Path(source)
+        destination_path = Path(destination)
+        real_replace(source, destination)
+        if (
+            not interrupted
+            and source_path == output / output_bundle_module.RAW_XML_NAME
+            and ".backup-" in destination_path.parent.name
+        ):
+            interrupted = True
+            raise KeyboardInterrupt("backup move completed then interrupted")
+
+    monkeypatch.setattr(
+        output_bundle_module.os, "replace", interrupt_after_backup_replace
+    )
+
+    with pytest.raises(
+        KeyboardInterrupt, match="backup move completed then interrupted"
+    ):
+        OutputBundleWriter().write(
+            document, _report(document), output, overwrite=True
+        )
+
+    assert {
+        name: (output / name).read_text(encoding="utf-8") for name in old
+    } == old
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_system_exit_after_fourth_publication_restores_legacy_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document(tmp_path)
+    output = tmp_path / "result"
+    output.mkdir()
+    legacy_names = output_bundle_module.REQUIRED_OUTPUT_NAMES[:3]
+    old = {}
+    for name in legacy_names:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    real_replace = os.replace
+
+    def interrupt_after_markdown_publication(
+        source: str | Path, destination: str | Path
+    ) -> None:
+        source_path = Path(source)
+        destination_path = Path(destination)
+        real_replace(source, destination)
+        if (
+            source_path.parent.name.startswith(".result.staging-")
+            and destination_path == output / output_bundle_module.MARKDOWN_NAME
+        ):
+            raise SystemExit("Markdown move completed then interrupted")
+
+    monkeypatch.setattr(
+        output_bundle_module.os, "replace", interrupt_after_markdown_publication
+    )
+
+    with pytest.raises(SystemExit, match="Markdown move completed then interrupted"):
+        OutputBundleWriter().write(
+            document, _report(document), output, overwrite=True
+        )
+
+    assert {
+        name: (output / name).read_text(encoding="utf-8")
+        for name in legacy_names
+    } == old
+    assert not (output / output_bundle_module.MARKDOWN_NAME).exists()
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
@@ -1004,13 +1127,13 @@ def test_primary_publication_and_cleanup_failures_are_both_preserved(
     output = tmp_path / "result"
     output.mkdir()
     document = _document(tmp_path)
-    real_replace = os.replace
+    real_rename = os.rename
 
     def fail_publication(source: str | Path, destination: str | Path) -> None:
         source_path = Path(source)
         if ".staging-" in source_path.parent.name and Path(destination).parent == output:
             raise OSError("primary publication failure")
-        real_replace(source, destination)
+        real_rename(source, destination)
 
     original_cleanup = OutputBundleWriter._remove_owned_directory
 
@@ -1019,7 +1142,7 @@ def test_primary_publication_and_cleanup_failures_are_both_preserved(
             raise OSError("staging cleanup failure")
         original_cleanup(directory)
 
-    monkeypatch.setattr(output_bundle_module.os, "replace", fail_publication)
+    monkeypatch.setattr(output_bundle_module.os, "rename", fail_publication)
     monkeypatch.setattr(OutputBundleWriter, "_remove_owned_directory", staticmethod(fail_staging_cleanup))
 
     with pytest.raises(BundleTransactionError) as captured:
@@ -1073,13 +1196,13 @@ def test_primary_oserror_and_cleanup_keyboard_interrupt_are_both_visible(
     output = tmp_path / "result"
     output.mkdir()
     document = _document(tmp_path)
-    real_replace = os.replace
+    real_rename = os.rename
 
     def fail_publication(source: str | Path, destination: str | Path) -> None:
         source_path = Path(source)
         if ".staging-" in source_path.parent.name and Path(destination).parent == output:
             raise OSError("primary publication failure")
-        real_replace(source, destination)
+        real_rename(source, destination)
 
     original_cleanup = OutputBundleWriter._remove_owned_directory
 
@@ -1088,7 +1211,7 @@ def test_primary_oserror_and_cleanup_keyboard_interrupt_are_both_visible(
             raise KeyboardInterrupt("cleanup interrupted")
         original_cleanup(directory)
 
-    monkeypatch.setattr(output_bundle_module.os, "replace", fail_publication)
+    monkeypatch.setattr(output_bundle_module.os, "rename", fail_publication)
     monkeypatch.setattr(
         OutputBundleWriter,
         "_remove_owned_directory",
@@ -1152,7 +1275,7 @@ def test_failed_publication_into_existing_empty_directory_removes_new_outputs(
     document = _document(tmp_path)
     output = tmp_path / "result"
     output.mkdir()
-    real_replace = os.replace
+    real_rename = os.rename
     publication_count = 0
 
     def fail_second_publication(source: str | Path, destination: str | Path) -> None:
@@ -1163,9 +1286,9 @@ def test_failed_publication_into_existing_empty_directory_removes_new_outputs(
             publication_count += 1
             if publication_count == 2:
                 raise OSError("second publication failed")
-        real_replace(source, destination)
+        real_rename(source, destination)
 
-    monkeypatch.setattr(output_bundle_module.os, "replace", fail_second_publication)
+    monkeypatch.setattr(output_bundle_module.os, "rename", fail_second_publication)
 
     with pytest.raises(OSError, match="second publication failed"):
         OutputBundleWriter().write(document, _report(document), output)
@@ -1182,6 +1305,51 @@ def test_join_decision_mismatch_fails_before_publication(tmp_path: Path) -> None
     with pytest.raises(ValueError, match="join decisions"):
         OutputBundleWriter().write(document, report, output)
 
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_invalid_xml_prevents_report_and_markdown_writers(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    class InvalidXmlWriter:
+        def write_raw(self, document: TaggedDocument, output: Path) -> None:
+            output.write_text("<invalid", encoding="utf-8")
+
+        def write_semantic(
+            self, document: TaggedDocument, output: Path
+        ) -> tuple[dict[str, object], ...]:
+            output.write_text("<document />", encoding="utf-8")
+            return ()
+
+    class RecordingJsonWriter:
+        delegate = JsonReportWriter()
+
+        def write(self, report: QualityReport, output: Path) -> None:
+            calls.append("json")
+            self.delegate.write(report, output)
+
+        def to_data(self, report: QualityReport) -> dict[str, object]:
+            return self.delegate.to_data(report)
+
+    class RecordingMarkdownWriter:
+        def write(self, *args: object, **kwargs: object) -> None:
+            calls.append("markdown")
+
+    document = _document(tmp_path)
+    report = QualityReport("pass", {}, {"xml_round_trip": True}, (), ())
+    output = tmp_path / "result"
+
+    with pytest.raises(ET.ParseError):
+        OutputBundleWriter(
+            xml_writer=InvalidXmlWriter(),
+            json_writer=RecordingJsonWriter(),
+            markdown_writer=RecordingMarkdownWriter(),
+        ).write(document, report, output)
+
+    assert calls == []
     assert not output.exists()
     assert _owned_temporary_paths(tmp_path, "result") == []
 
@@ -1334,6 +1502,51 @@ def test_markdown_validation_matches_renderer_whitespace_normalization(
     ).splitlines()
 
 
+def test_markdown_validation_uses_renderer_punctuation_for_split_fragments(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        source_path=tmp_path / "source.pdf",
+        marked=True,
+        language="en",
+        role_map=(),
+        children=(
+            StructureElement(
+                "Heading1",
+                "paragraph",
+                children=(
+                    ContentFragment(0, 1, ("Warning ",)),
+                    ContentFragment(0, 2, ("! Important",)),
+                ),
+            ),
+        ),
+    )
+    base_report = _report(document)
+    report = QualityReport(
+        "pass",
+        {},
+        {"xml_round_trip": True},
+        (),
+        base_report.join_decisions,
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "source_role": "Heading1",
+                "semantic_role": "paragraph",
+                "level": 1,
+                "joined_text": "Warning ! Important",
+                "structure_path": "/paragraph[0]",
+            },
+        ),
+    )
+
+    artifacts = OutputBundleWriter().write(document, report, tmp_path / "result")
+
+    assert "## Warning! Important" in artifacts.semantic_markdown.read_text(
+        encoding="utf-8"
+    ).splitlines()
+
+
 def test_markdown_validation_rejects_missing_duplicate_candidate_before_publication(
     tmp_path: Path,
 ) -> None:
@@ -1380,11 +1593,13 @@ def test_markdown_validation_rejects_missing_duplicate_candidate_before_publicat
                 "classification": "source_role_candidate",
                 "level": 1,
                 "joined_text": "Repeated",
+                "structure_path": "/heading[0]",
             },
             {
                 "classification": "source_role_candidate",
                 "level": 1,
                 "joined_text": "Repeated",
+                "structure_path": "/heading[1]",
             },
         ),
     )

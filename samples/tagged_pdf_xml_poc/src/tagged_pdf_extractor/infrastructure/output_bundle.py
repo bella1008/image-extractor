@@ -381,7 +381,12 @@ class OutputBundleWriter:
                         backup, transaction_token, committed=False
                     )
                     publication_attempted = True
-                    self._publish_into_existing(staging, backup, output_dir)
+                    if overwrite:
+                        self._publish_into_existing(staging, backup, output_dir)
+                    else:
+                        self._publish_into_existing(
+                            staging, backup, output_dir, overwrite=False
+                        )
                     commit_evidence = True
                 published = True
             except BaseException as exc:
@@ -793,6 +798,8 @@ class OutputBundleWriter:
 
         self.xml_writer.write_raw(document, raw_path)
         semantic_decisions = self.xml_writer.write_semantic(document, semantic_path)
+        ET.parse(raw_path)
+        ET.parse(semantic_path)
         if semantic_decisions != report.join_decisions:
             raise ValueError(
                 "semantic XML join decisions do not match report join decisions"
@@ -805,15 +812,17 @@ class OutputBundleWriter:
             source_name=document.source_path.name,
         )
 
-        ET.parse(raw_path)
-        ET.parse(semantic_path)
         parsed_report = json.loads(report_path.read_text(encoding="utf-8"))
         if parsed_report != self.json_writer.to_data(report):
             raise ValueError("JSON report round trip mismatch")
-        self._validate_markdown(markdown_path, report)
+        self._validate_markdown(markdown_path, semantic_path, report)
 
     @staticmethod
-    def _validate_markdown(path: Path, report: QualityReport) -> None:
+    def _validate_markdown(
+        path: Path,
+        semantic_path: Path,
+        report: QualityReport,
+    ) -> None:
         if not os.path.lexists(path) or not path.is_file() or path.is_symlink():
             raise ValueError(f"Markdown output is not a regular file: {path}")
 
@@ -821,20 +830,10 @@ class OutputBundleWriter:
         if not markdown.strip():
             raise ValueError("Markdown output is empty")
 
-        expected_headings: Counter[str] = Counter()
-        for entry in report.heading_hierarchy:
-            if entry.get("classification") != "source_role_candidate":
-                continue
-            source_level = entry.get("level")
-            level = 1 if source_level is None else max(1, int(source_level))
-            prefix = "#" * min(level + 1, 6)
-            heading_text = entry.get("joined_text")
-            if not isinstance(heading_text, str):
-                raise ValueError("Markdown heading candidate has no joined text")
-            normalized_heading = " ".join(heading_text.split())
-            expected_headings[f"{prefix} {normalized_heading}"] += 1
-
-        markdown_lines = Counter(markdown.splitlines())
+        expected_headings = MarkdownDocumentWriter.candidate_heading_lines(
+            semantic_path, report
+        )
+        markdown_lines = Counter(line.lstrip() for line in markdown.splitlines())
         if any(
             markdown_lines[heading] != count
             for heading, count in expected_headings.items()
@@ -846,27 +845,44 @@ class OutputBundleWriter:
         staging: Path,
         backup: Path,
         output_dir: Path,
+        *,
+        overwrite: bool = True,
     ) -> None:
         backed_up: list[str] = []
         published: list[str] = []
         try:
+            if overwrite:
+                for name in REQUIRED_OUTPUT_NAMES:
+                    destination = output_dir / name
+                    if destination.exists():
+                        backed_up.append(name)
+                        os.replace(destination, backup / name)
             for name in REQUIRED_OUTPUT_NAMES:
-                destination = output_dir / name
-                if destination.exists():
-                    os.replace(destination, backup / name)
-                    backed_up.append(name)
-            for name in REQUIRED_OUTPUT_NAMES:
-                os.replace(staging / name, output_dir / name)
                 published.append(name)
+                source = staging / name
+                destination = output_dir / name
+                if overwrite:
+                    os.replace(source, destination)
+                else:
+                    try:
+                        os.rename(source, destination)
+                    except FileExistsError as exc:
+                        raise OutputCollisionError(
+                            f"required output already exists: {destination.name}"
+                        ) from exc
         except BaseException as publication_error:
             removal_errors: list[BaseException] = []
             for name in reversed(published):
+                if os.path.lexists(staging / name):
+                    continue
                 try:
                     (output_dir / name).unlink(missing_ok=True)
                 except BaseException as exc:
                     removal_errors.append(exc)
             restoration_errors: list[BaseException] = []
             for name in reversed(backed_up):
+                if not os.path.lexists(backup / name):
+                    continue
                 try:
                     os.replace(backup / name, output_dir / name)
                 except BaseException as exc:

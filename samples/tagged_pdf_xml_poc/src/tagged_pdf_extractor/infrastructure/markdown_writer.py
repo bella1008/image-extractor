@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Iterable
 import os
 import re
 import tempfile
-from collections.abc import Iterable
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -33,16 +34,7 @@ class MarkdownDocumentWriter:
         source_name: str,
     ) -> None:
         root = ET.parse(semantic_xml).getroot()
-        path_index = self._build_path_index(root)
-        promoted: dict[ET.Element, dict[str, object]] = {}
-        for entry in report.heading_hierarchy:
-            if entry.get("classification") != "source_role_candidate":
-                continue
-            path = entry.get("structure_path")
-            element = path_index.get(path) if isinstance(path, str) else None
-            if element is None:
-                raise ValueError(f"unresolved heading candidate path {path}")
-            promoted[element] = entry
+        promoted = self._resolve_heading_candidates(root, report)
 
         header = [
             "# Semantic XML 문서 검토",
@@ -57,6 +49,37 @@ class MarkdownDocumentWriter:
             markdown += "\n\n" + "\n\n".join(blocks)
         markdown += "\n"
         self._write_atomic(output, markdown)
+
+    @classmethod
+    def candidate_heading_lines(
+        cls,
+        semantic_xml: Path,
+        report: QualityReport,
+    ) -> Counter[str]:
+        root = ET.parse(semantic_xml).getroot()
+        promoted = cls._resolve_heading_candidates(root, report)
+        rendered: Counter[str] = Counter()
+        for element, entry in promoted.items():
+            rendered.update(cls._render_element(element, {element: entry}))
+        return rendered
+
+    @classmethod
+    def _resolve_heading_candidates(
+        cls,
+        root: ET.Element,
+        report: QualityReport,
+    ) -> dict[ET.Element, dict[str, object]]:
+        path_index = cls._build_path_index(root)
+        promoted: dict[ET.Element, dict[str, object]] = {}
+        for entry in report.heading_hierarchy:
+            if entry.get("classification") != "source_role_candidate":
+                continue
+            path = entry.get("structure_path")
+            element = path_index.get(path) if isinstance(path, str) else None
+            if element is None:
+                raise ValueError(f"unresolved heading candidate path {path}")
+            promoted[element] = entry
+        return promoted
 
     @classmethod
     def _build_path_index(cls, root: ET.Element) -> dict[str, ET.Element]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,31 @@ def test_trailing_fragment_whitespace_moves_after_closing_punctuation(
     assert "A. B, C: D; E? F! G)" in markdown
     assert "A .B ,C :D ;E ?F !G )" not in markdown
     assert "Ordinary word spacing" in markdown
+
+
+def test_candidate_heading_lines_resolve_exact_renderer_punctuation(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<paragraph><text>Warning </text><text>! Important</text></paragraph>",
+    )
+    report = _report(
+        {
+            "structure_path": "/paragraph[0]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "Warning ! Important",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+
+    assert MarkdownDocumentWriter.candidate_heading_lines(
+        semantic, report
+    ) == Counter({"## Warning! Important": 1})
 
 
 def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(

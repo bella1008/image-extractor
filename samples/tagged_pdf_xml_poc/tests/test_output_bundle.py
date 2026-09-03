@@ -61,7 +61,7 @@ def _report(document: TaggedDocument) -> QualityReport:
 def _owned_temporary_paths(parent: Path, output_name: str) -> list[Path]:
     paths = list(parent.glob(f".{output_name}.staging-*")) + list(
         parent.glob(f".{output_name}.backup-*")
-    )
+    ) + list(parent.glob(f".{output_name}.lock-candidate-*"))
     lock = parent / f".{output_name}.lock"
     return paths + ([lock] if lock.exists() else [])
 
@@ -196,8 +196,8 @@ def test_absent_output_uses_no_replace_rename(tmp_path: Path, monkeypatch: pytes
     document = _document(tmp_path)
     OutputBundleWriter().write(document, _report(document), output)
 
-    assert len(calls) == 1
-    assert calls[0][1] == output
+    publication_calls = [call for call in calls if call[1] == output]
+    assert len(publication_calls) == 1
 
 
 def test_concurrent_creation_cannot_replace_initially_absent_output(
@@ -272,23 +272,126 @@ def test_existing_transaction_lock_is_busy_and_never_deleted(tmp_path: Path) -> 
     assert marker.read_text(encoding="utf-8") == "other process"
 
 
-def test_keyboard_interrupt_during_lock_identity_cleans_own_lock(
+def test_keyboard_interrupt_after_candidate_mkdir_cleans_owned_candidate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output = tmp_path / "result"
     output.mkdir()
+    original = OutputBundleWriter._create_lock_candidate
 
-    def interrupt_identity(path: Path) -> tuple[int, int]:
-        raise KeyboardInterrupt("identity interrupted")
+    def create_then_interrupt(path: Path) -> None:
+        original(path)
+        raise KeyboardInterrupt("candidate mkdir interrupted")
 
-    monkeypatch.setattr(OutputBundleWriter, "_path_identity", staticmethod(interrupt_identity))
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_create_lock_candidate",
+        staticmethod(create_then_interrupt),
+    )
     document = _document(tmp_path)
 
-    with pytest.raises(KeyboardInterrupt, match="identity interrupted"):
+    with pytest.raises(KeyboardInterrupt, match="candidate mkdir interrupted"):
         OutputBundleWriter().write(document, _report(document), output)
 
     assert not (tmp_path / ".result.lock").exists()
     assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_keyboard_interrupt_after_lock_marker_write_cleans_owned_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    original = OutputBundleWriter._write_lock_owner_marker
+
+    def write_then_interrupt(path: Path, token: str) -> None:
+        original(path, token)
+        raise KeyboardInterrupt("marker write interrupted")
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_write_lock_owner_marker",
+        staticmethod(write_then_interrupt),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt, match="marker write interrupted"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert not (tmp_path / ".result.lock").exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_keyboard_interrupt_after_lock_rename_cleans_owned_final_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    real_rename = os.rename
+
+    def rename_then_interrupt(source: str | Path, destination: str | Path) -> None:
+        real_rename(source, destination)
+        if Path(destination) == tmp_path / ".result.lock":
+            raise KeyboardInterrupt("lock rename interrupted")
+
+    monkeypatch.setattr(output_bundle_module.os, "rename", rename_then_interrupt)
+    document = _document(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt, match="lock rename interrupted"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert not (tmp_path / ".result.lock").exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_competing_owned_lock_remains_and_own_candidate_is_cleaned(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    lock = tmp_path / ".result.lock"
+    lock.mkdir()
+    owner_marker = lock / ".owner-token"
+    owner_marker.write_text("competitor-token\n", encoding="ascii")
+    document = _document(tmp_path)
+
+    with pytest.raises(OutputBusyError):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert owner_marker.read_text(encoding="ascii") == "competitor-token\n"
+    assert list(tmp_path.glob(".result.lock-candidate-*")) == []
+
+
+def test_normal_cleanup_refuses_to_remove_lock_with_changed_owner_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    original = OutputBundleWriter._write_and_validate_staging
+    lock = tmp_path / ".result.lock"
+
+    def stage_then_change_lock_owner(
+        writer: OutputBundleWriter,
+        document: TaggedDocument,
+        report: QualityReport,
+        staging: Path,
+    ) -> None:
+        original(writer, document, report, staging)
+        (lock / ".owner-token").write_text("competitor-token\n", encoding="ascii")
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_write_and_validate_staging",
+        stage_then_change_lock_owner,
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(BundleTransactionError) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert captured.value.published is True
+    assert any("ownership changed" in str(error) for error in captured.value.cleanup_errors)
+    assert (lock / ".owner-token").read_text(encoding="ascii") == "competitor-token\n"
 
 
 def test_system_exit_during_final_preflight_cleans_only_owned_lock_and_staging(
@@ -566,7 +669,8 @@ def test_absent_rename_commits_then_wrapper_interrupt_reports_published(
 
     def rename_then_interrupt(source: str | Path, destination: str | Path) -> None:
         real_rename(source, destination)
-        raise KeyboardInterrupt("after directory commit")
+        if Path(destination) == output:
+            raise KeyboardInterrupt("after directory commit")
 
     monkeypatch.setattr(output_bundle_module.os, "rename", rename_then_interrupt)
     document = _document(tmp_path)

@@ -24,6 +24,7 @@ SEMANTIC_XML_NAME = "semantic_document.xml"
 REPORT_JSON_NAME = "extraction_report.json"
 REQUIRED_OUTPUT_NAMES = (RAW_XML_NAME, SEMANTIC_XML_NAME, REPORT_JSON_NAME)
 _COMMIT_MARKER_NAME = ".tagged-pdf-xml-commit"
+_LOCK_OWNER_MARKER_NAME = ".owner-token"
 
 
 class OutputCollisionError(FileExistsError):
@@ -299,13 +300,51 @@ class OutputBundleWriter:
             semantic_xml=output_dir / SEMANTIC_XML_NAME,
             report_json=output_dir / REPORT_JSON_NAME,
         )
+        transaction_token = uuid.uuid4().hex
         lock_path = parent / f".{output_dir.name}.lock"
+        lock_candidate = parent / (
+            f".{output_dir.name}.lock-candidate-{transaction_token}"
+        )
         try:
-            lock_path.mkdir()
-        except FileExistsError as exc:
-            raise OutputBusyError(lock_path) from exc
+            self._create_lock_candidate(lock_candidate)
+            self._write_lock_owner_marker(lock_candidate, transaction_token)
+            try:
+                os.rename(lock_candidate, lock_path)
+            except FileExistsError as exc:
+                raise OutputBusyError(lock_path) from exc
+        except BaseException as exc:
+            acquisition_cleanup_failures: list[tuple[Path, BaseException]] = []
+            self._capture_cleanup(
+                lock_candidate,
+                lambda path: self._remove_lock_candidate_if_owned(
+                    path, transaction_token
+                ),
+                acquisition_cleanup_failures,
+            )
+            self._capture_cleanup(
+                lock_path,
+                lambda path: self._remove_lock_if_owned(path, transaction_token),
+                acquisition_cleanup_failures,
+            )
+            if acquisition_cleanup_failures:
+                members = (exc,) + tuple(
+                    error for _, error in acquisition_cleanup_failures
+                )
+                if all(isinstance(member, Exception) for member in members):
+                    raise BundleTransactionError(
+                        exc,
+                        tuple(acquisition_cleanup_failures),
+                        published=False,
+                        artifacts=artifacts,
+                    ) from exc
+                raise BundleTransactionBaseExceptionGroup(
+                    exc,
+                    tuple(acquisition_cleanup_failures),
+                    published=False,
+                    artifacts=artifacts,
+                ) from exc
+            raise
 
-        lock_identity: tuple[int, int] | None = None
         staging: Path | None = None
         backup: Path | None = None
         preserve_backup = False
@@ -314,14 +353,11 @@ class OutputBundleWriter:
         published = False
         publication_attempted = False
         commit_evidence = False
-        transaction_token: str | None = None
         expected_fingerprints: dict[str, tuple[int, str]] | None = None
         primary_error: BaseException | None = None
         primary_traceback = None
         try:
             try:
-                lock_identity = self._path_identity(lock_path)
-                transaction_token = uuid.uuid4().hex
                 staging = Path(
                     tempfile.mkdtemp(
                         prefix=f".{output_dir.name}.staging-", dir=parent
@@ -449,7 +485,7 @@ class OutputBundleWriter:
                 )
             self._capture_cleanup(
                 lock_path,
-                lambda path: self._remove_owned_lock(path, lock_identity),
+                lambda path: self._remove_owned_lock(path, transaction_token),
                 cleanup_failures,
             )
 
@@ -627,18 +663,85 @@ class OutputBundleWriter:
         return tuple(existing)
 
     @staticmethod
-    def _path_identity(path: Path) -> tuple[int, int]:
-        stat = path.stat(follow_symlinks=False)
-        return stat.st_dev, stat.st_ino
+    def _lock_owner_text(transaction_token: str) -> str:
+        return f"{transaction_token}\n"
+
+    @staticmethod
+    def _create_lock_candidate(candidate_path: Path) -> None:
+        candidate_path.mkdir()
 
     @classmethod
-    def _remove_owned_lock(
-        cls, lock_path: Path, expected_identity: tuple[int, int] | None
+    def _write_lock_owner_marker(
+        cls, candidate_path: Path, transaction_token: str
+    ) -> None:
+        (candidate_path / _LOCK_OWNER_MARKER_NAME).write_text(
+            cls._lock_owner_text(transaction_token), encoding="ascii"
+        )
+
+    @classmethod
+    def _has_lock_owner_token(cls, lock_path: Path, transaction_token: str) -> bool:
+        marker = lock_path / _LOCK_OWNER_MARKER_NAME
+        return (
+            os.path.lexists(marker)
+            and marker.is_file()
+            and not marker.is_symlink()
+            and marker.read_text(encoding="ascii")
+            == cls._lock_owner_text(transaction_token)
+        )
+
+    @classmethod
+    def _remove_lock_candidate_if_owned(
+        cls, candidate_path: Path, transaction_token: str
+    ) -> None:
+        if not os.path.lexists(candidate_path):
+            return
+        if candidate_path.is_symlink() or not candidate_path.is_dir():
+            return
+        if not candidate_path.name.endswith(f"-{transaction_token}"):
+            return
+        entries = tuple(candidate_path.iterdir())
+        marker = candidate_path / _LOCK_OWNER_MARKER_NAME
+        if not entries:
+            candidate_path.rmdir()
+            return
+        if entries == (marker,):
+            marker.unlink()
+            candidate_path.rmdir()
+
+    @classmethod
+    def _remove_lock_if_owned(
+        cls, lock_path: Path, transaction_token: str
     ) -> None:
         if not os.path.lexists(lock_path):
             return
-        if expected_identity is not None and cls._path_identity(lock_path) != expected_identity:
+        if (
+            lock_path.is_symlink()
+            or not lock_path.is_dir()
+            or not cls._has_lock_owner_token(lock_path, transaction_token)
+        ):
+            return
+        marker = lock_path / _LOCK_OWNER_MARKER_NAME
+        if tuple(lock_path.iterdir()) != (marker,):
+            return
+        marker.unlink()
+        lock_path.rmdir()
+
+    @classmethod
+    def _remove_owned_lock(
+        cls, lock_path: Path, transaction_token: str
+    ) -> None:
+        if not os.path.lexists(lock_path):
+            return
+        if (
+            lock_path.is_symlink()
+            or not lock_path.is_dir()
+            or not cls._has_lock_owner_token(lock_path, transaction_token)
+        ):
             raise OSError(f"transaction lock ownership changed: {lock_path}")
+        marker = lock_path / _LOCK_OWNER_MARKER_NAME
+        if tuple(lock_path.iterdir()) != (marker,):
+            raise OSError(f"transaction lock contents changed: {lock_path}")
+        marker.unlink()
         lock_path.rmdir()
 
     @staticmethod

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
-
 import hashlib
 import json
 import os
@@ -815,13 +813,20 @@ class OutputBundleWriter:
         parsed_report = json.loads(report_path.read_text(encoding="utf-8"))
         if parsed_report != self.json_writer.to_data(report):
             raise ValueError("JSON report round trip mismatch")
-        self._validate_markdown(markdown_path, semantic_path, report)
+        self._validate_markdown(
+            markdown_path,
+            semantic_path,
+            report,
+            source_name=document.source_path.name,
+        )
 
     @staticmethod
     def _validate_markdown(
         path: Path,
         semantic_path: Path,
         report: QualityReport,
+        *,
+        source_name: str,
     ) -> None:
         if not os.path.lexists(path) or not path.is_file() or path.is_symlink():
             raise ValueError(f"Markdown output is not a regular file: {path}")
@@ -830,19 +835,13 @@ class OutputBundleWriter:
         if not markdown.strip():
             raise ValueError("Markdown output is empty")
 
-        expected_headings = MarkdownDocumentWriter.candidate_heading_lines(
-            semantic_path, report
+        expected_markdown = MarkdownDocumentWriter.render_text(
+            semantic_path,
+            report,
+            source_name=source_name,
         )
-        markdown_lines: Counter[str] = Counter()
-        for line in markdown.splitlines():
-            indentation = len(line) - len(line.lstrip(" "))
-            if indentation <= 3:
-                markdown_lines[line[indentation:]] += 1
-        if any(
-            markdown_lines[heading] != count
-            for heading, count in expected_headings.items()
-        ):
-            raise ValueError("Markdown heading candidates do not match report")
+        if markdown != expected_markdown:
+            raise ValueError("Markdown output does not match renderer")
 
     @staticmethod
     def _publish_into_existing(

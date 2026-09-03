@@ -14,6 +14,7 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
+from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
     BundlePublicationErrorGroup,
@@ -1420,7 +1421,12 @@ def test_injected_markdown_writer_receives_semantic_xml_report_and_source_name(
         ) -> None:
             assert ET.parse(semantic_xml).getroot().tag == "document"
             calls.append((semantic_xml, report, output, source_name))
-            output.write_text("# custom markdown\n", encoding="utf-8")
+            MarkdownDocumentWriter().write(
+                semantic_xml,
+                report,
+                output,
+                source_name=source_name,
+            )
 
     document = _document(tmp_path)
     report = _report(document)
@@ -1433,9 +1439,8 @@ def test_injected_markdown_writer_receives_semantic_xml_report_and_source_name(
     assert len(calls) == 1
     assert calls[0][1] is report
     assert calls[0][3] == document.source_path.name
-    assert (
-        artifacts.semantic_markdown.read_text(encoding="utf-8")
-        == "# custom markdown\n"
+    assert artifacts.semantic_markdown.read_text(encoding="utf-8").startswith(
+        "# Semantic XML"
     )
 
 
@@ -1655,7 +1660,7 @@ def test_markdown_validation_rejects_missing_duplicate_candidate_before_publicat
     )
     output = tmp_path / "result"
 
-    with pytest.raises(ValueError, match="Markdown heading candidates"):
+    with pytest.raises(ValueError, match="Markdown output does not match renderer"):
         OutputBundleWriter(markdown_writer=MissingDuplicateMarkdownWriter()).write(
             document, report, output
         )
@@ -1689,8 +1694,10 @@ def test_markdown_validation_rejects_four_space_code_block_heading_lookalike(
         ),
     )
 
-    with pytest.raises(ValueError, match="Markdown heading candidates"):
-        OutputBundleWriter._validate_markdown(markdown, semantic, report)
+    with pytest.raises(ValueError, match="Markdown output does not match renderer"):
+        OutputBundleWriter._validate_markdown(
+            markdown, semantic, report, source_name="source.pdf"
+        )
 
 
 def test_markdown_validation_accepts_list_indented_promoted_heading(
@@ -1703,7 +1710,6 @@ def test_markdown_validation_accepts_list_indented_promoted_heading(
         encoding="utf-8",
     )
     markdown = tmp_path / "semantic_document.md"
-    markdown.write_text("-\n  ## List heading\n", encoding="utf-8")
     report = QualityReport(
         "pass",
         {},
@@ -1719,7 +1725,59 @@ def test_markdown_validation_accepts_list_indented_promoted_heading(
         ),
     )
 
-    OutputBundleWriter._validate_markdown(markdown, semantic, report)
+    markdown.write_text(
+        MarkdownDocumentWriter.render_text(
+            semantic, report, source_name="source.pdf"
+        ),
+        encoding="utf-8",
+    )
+
+    OutputBundleWriter._validate_markdown(
+        markdown, semantic, report, source_name="source.pdf"
+    )
+
+
+def test_bundle_accepts_second_level_nested_list_promoted_heading(
+    tmp_path: Path,
+) -> None:
+    heading = StructureElement(
+        "Heading1",
+        "paragraph",
+        children=(ContentFragment(0, 1, ("Nested heading",)),),
+    )
+    inner_item = StructureElement("LI", "list_item", children=(heading,))
+    inner_list = StructureElement("L", "list", children=(inner_item,))
+    outer_item = StructureElement("LI", "list_item", children=(inner_list,))
+    document = TaggedDocument(
+        source_path=tmp_path / "source.pdf",
+        marked=True,
+        language="en",
+        role_map=(),
+        children=(StructureElement("L", "list", children=(outer_item,)),),
+    )
+    base_report = _report(document)
+    report = QualityReport(
+        "pass",
+        {},
+        {"xml_round_trip": True},
+        (),
+        base_report.join_decisions,
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "level": 1,
+                "structure_path": (
+                    "/list[0]/list_item[0]/list[0]/list_item[0]/paragraph[0]"
+                ),
+            },
+        ),
+    )
+
+    artifacts = OutputBundleWriter().write(document, report, tmp_path / "result")
+
+    assert "    ## Nested heading" in artifacts.semantic_markdown.read_text(
+        encoding="utf-8"
+    ).splitlines()
 
 
 @pytest.mark.parametrize("invalid_kind", ["directory", "symlink"])

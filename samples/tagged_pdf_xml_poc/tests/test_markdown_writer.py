@@ -209,6 +209,32 @@ def test_candidate_heading_lines_resolve_exact_renderer_punctuation(
     ) == Counter({"## Warning! Important": 1})
 
 
+def test_render_text_matches_written_markdown(tmp_path: Path) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    output = tmp_path / "semantic_document.md"
+    _write_xml(
+        semantic,
+        "<list><list_item><list><list_item><paragraph>"
+        "<text>Nested heading</text></paragraph></list_item></list></list_item></list>",
+    )
+    report = _report(
+        {
+            "structure_path": (
+                "/list[0]/list_item[0]/list[0]/list_item[0]/paragraph[0]"
+            ),
+            "level": 1,
+            "classification": "source_role_candidate",
+        }
+    )
+    writer = MarkdownDocumentWriter()
+
+    rendered = writer.render_text(semantic, report, source_name="manual.pdf")
+    writer.write(semantic, report, output, source_name="manual.pdf")
+
+    assert rendered == output.read_text(encoding="utf-8")
+    assert "    ## Nested heading" in rendered.splitlines()
+
+
 def test_duplicate_candidate_structure_paths_are_rejected(tmp_path: Path) -> None:
     semantic = tmp_path / "semantic_document.xml"
     _write_xml(semantic, "<paragraph><text>Repeated path</text></paragraph>")

@@ -33,8 +33,23 @@ class MarkdownDocumentWriter:
         *,
         source_name: str,
     ) -> None:
+        markdown = self.render_text(
+            semantic_xml,
+            report,
+            source_name=source_name,
+        )
+        self._write_atomic(output, markdown)
+
+    @classmethod
+    def render_text(
+        cls,
+        semantic_xml: Path,
+        report: QualityReport,
+        *,
+        source_name: str,
+    ) -> str:
         root = ET.parse(semantic_xml).getroot()
-        promoted = self._resolve_heading_candidates(root, report)
+        promoted = cls._resolve_heading_candidates(root, report)
 
         header = [
             "# Semantic XML 문서 검토",
@@ -43,12 +58,12 @@ class MarkdownDocumentWriter:
             "- 목적: PDF 태그 구조와 추출 텍스트 검토",
             "- 주의: 아래 제목은 검증된 표준 PDF 제목이 아니라 PDF 원본 역할 후보입니다.",
         ]
-        blocks = self._render_children(root, promoted)
+        blocks = cls._render_children(root, promoted)
         markdown = "\n".join(header)
         if blocks:
             markdown += "\n\n" + "\n\n".join(blocks)
         markdown += "\n"
-        self._write_atomic(output, markdown)
+        return markdown
 
     @classmethod
     def candidate_heading_lines(

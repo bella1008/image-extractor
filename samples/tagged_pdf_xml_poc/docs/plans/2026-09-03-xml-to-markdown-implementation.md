@@ -4,7 +4,7 @@
 
 **Goal:** Generate a single human-readable `semantic_document.md` beside the existing XML and JSON artifacts while preserving document order, heading candidates, lists, tables, OSD paths, and visible extraction defects.
 
-**Architecture:** Add a focused Markdown renderer that reads the already-serialized Semantic XML plus `QualityReport.heading_hierarchy`. The output bundle writes the Markdown file into the same staging directory and publishes all four artifacts atomically, so XML, JSON, and Markdown can never come from different extraction runs.
+**Architecture:** Add a focused Markdown renderer that reads the already-serialized Semantic XML plus `QualityReport.heading_hierarchy`. The output bundle writes the Markdown file into the same staging directory and publishes all four artifacts through a lock-protected, crash-aware transaction with rollback for caught failures. Existing-directory publication replaces files sequentially, so cooperating readers must not read while the sibling `.<output>.lock` exists; hard termination can require manual review.
 
 **Tech Stack:** Python 3.11+, standard-library `xml.etree.ElementTree`, dataclasses, pytest.
 
@@ -69,7 +69,7 @@ Expected: collection fails because `tagged_pdf_extractor.infrastructure.markdown
 
 Implement `MarkdownDocumentWriter.write(semantic_xml, report, output, *, source_name)` and focused private helpers for heading lookup, structural-child traversal, control-aware text decoding, recursive element rendering, table rendering, and atomic UTF-8 writing. Structural-child traversal must exclude only the synthetic `<attributes>` container; `<text>` children still count when reconstructing the report's child-index paths.
 
-Only `classification == "source_role_candidate"` and report entries whose path resolves are promoted. Render PDF heading level 1 as Markdown `##`, clamping deeper levels to Markdown `######`; the two `Cover_Title` candidates whose level is `None` use PDF level 1. Normalize whitespace between adjacent `<text>` fragments without changing punctuation. Decode control nodes with `decode_data_element`, replacing XML-illegal characters with `[CONTROL U+XXXX]`. Escape only table-cell pipes and Markdown-significant line prefixes; do not alter inline `>`, `/`, `:`, brackets, parentheses, ampersands, or URLs.
+Only `classification == "source_role_candidate"` and report entries whose path resolves are promoted. Reject duplicate candidate paths and candidates whose paths overlap through an ancestor/descendant relationship. Render PDF heading level 1 as Markdown `##`, clamping deeper levels to Markdown `######`; the two `Cover_Title` candidates whose level is `None` use PDF level 1. Normalize whitespace between adjacent `<text>` fragments without changing punctuation. Decode control nodes with `decode_data_element`, replacing XML-illegal characters with `[CONTROL U+XXXX]`. Escape table-cell pipes, Markdown-significant line prefixes, and source link-reference/footnote definition lines; do not alter ordinary inline `>`, `/`, `:`, brackets, parentheses, ampersands, URLs, or reference uses.
 
 Write UTF-8 with `\n` line endings through a temporary sibling file and `os.replace`. Reparse the Semantic XML before publication and raise `ValueError` for a candidate path that cannot be resolved; this keeps heading-count validation strict instead of silently downgrading a heading.
 
@@ -84,7 +84,7 @@ git add -- samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/infrastructure/ma
 git commit -m "Add semantic XML Markdown renderer"
 ```
 
-### Task 2: Publish Markdown as a fourth atomic artifact
+### Task 2: Publish Markdown as a fourth transaction artifact
 
 **Files:**
 - Modify: `samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/models.py`
@@ -140,7 +140,7 @@ self.markdown_writer.write(
 )
 ```
 
-Validate the Markdown as non-empty UTF-8 and confirm every accepted heading candidate occurs exactly once with its expected Markdown prefix. Keep all fingerprint, collision, backup, rollback, and publication loops driven by `REQUIRED_OUTPUT_NAMES`, so the existing transaction guarantees automatically apply to the fourth file.
+Validate the Markdown as non-empty UTF-8 and confirm every accepted heading candidate occurs exactly once with its expected Markdown prefix. Keep all fingerprint, collision, backup, rollback, and publication loops driven by `REQUIRED_OUTPUT_NAMES`, so the existing lock and rollback protections apply to the fourth file. Do not claim atomic multi-file visibility for publication into an existing directory.
 
 - [ ] **Step 4: Run focused transaction tests and verify GREEN**
 

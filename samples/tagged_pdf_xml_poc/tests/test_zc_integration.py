@@ -142,6 +142,9 @@ def test_readme_prioritizes_markdown_and_explains_audit_artifacts() -> None:
     assert "눈에 보이는 원본 추출 결함" in readme
     assert "XML과 JSON은 감사 근거" in readme
     assert "--overwrite" in readme
+    assert ".<출력-디렉터리-이름>.lock" in readme
+    assert "잠금이 있는 동안에는 네 산출물을 읽지" in readme
+    assert "수동 검토" in readme
 
 
 def test_sample_resolver_prefers_available_environment_override(
@@ -267,10 +270,15 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["marked"] is True
     assert report_data["role_map"] == [list(item) for item in document.role_map]
     assert report_data["source_role_counts"] == dict(sorted(source_roles.items()))
-    heading_candidates = {
-        entry["source_role"]
+    candidate_entries = [
+        entry
         for entry in report_data["heading_hierarchy"]
         if entry["classification"] == "source_role_candidate"
+    ]
+    assert len(candidate_entries) == 38
+    heading_candidates = {
+        entry["source_role"]
+        for entry in candidate_entries
     }
     assert expected_custom_headings <= heading_candidates
     assert len(report_data["heading_hierarchy"]) == 38
@@ -293,8 +301,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
             "#" * min(max(1, int(entry["level"] or 1)) + 1, 6),
             re.sub(r"\s+", " ", entry["joined_text"]).strip(),
         )
-        for entry in report_data["heading_hierarchy"]
-        if entry["classification"] == "source_role_candidate"
+        for entry in candidate_entries
     )
     rendered_headings = _assert_candidate_headings(markdown, expected_headings)
     assert sum(rendered_headings.values()) == 38

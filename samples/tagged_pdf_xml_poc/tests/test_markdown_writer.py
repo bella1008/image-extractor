@@ -254,6 +254,37 @@ def test_duplicate_candidate_structure_paths_are_rejected(tmp_path: Path) -> Non
         )
 
 
+def test_ancestor_and_descendant_heading_candidate_paths_are_rejected(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<paragraph><text>Parent</text><paragraph><text>Child</text></paragraph></paragraph>",
+    )
+    parent = {
+        "structure_path": "/paragraph[0]",
+        "level": 1,
+        "classification": "source_role_candidate",
+    }
+    child = {
+        "structure_path": "/paragraph[0]/paragraph[1]",
+        "level": 2,
+        "classification": "source_role_candidate",
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"overlapping heading candidate paths /paragraph\[0\] and "
+            r"/paragraph\[0\]/paragraph\[1\]"
+        ),
+    ):
+        MarkdownDocumentWriter.render_text(
+            semantic, _report(parent, child), source_name="manual.pdf"
+        )
+
+
 def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(
     tmp_path: Path,
 ) -> None:
@@ -424,6 +455,78 @@ def test_renders_rectangular_table_and_escapes_cell_pipes(tmp_path: Path) -> Non
     assert "| Menu | A / B \\| https://example.com |" in markdown
 
 
+@pytest.mark.parametrize(
+    ("table_body", "expected_texts"),
+    [
+        (
+            """
+            <table_row><table_cell><text>Data A</text></table_cell><table_cell><text>Data B</text></table_cell></table_row>
+            <table_row><table_cell><text>Data C</text></table_cell><table_cell><text>Data D</text></table_cell></table_row>
+            """,
+            ("Data A", "Data B", "Data C", "Data D"),
+        ),
+        (
+            """
+            <table_row><table_header><text>Header A</text></table_header><table_cell><text>Not a header</text></table_cell></table_row>
+            <table_row><table_cell><text>Data A</text></table_cell><table_cell><text>Data B</text></table_cell></table_row>
+            """,
+            ("Header A", "Not a header", "Data A", "Data B"),
+        ),
+        (
+            """
+            <table_row><table_header><text>Header A</text></table_header><table_header><text>Header B</text></table_header></table_row>
+            <table_row><table_cell><attributes><attribute name="/ColSpan" value="2" /></attributes><text>Merged A</text></table_cell><table_cell><text>Merged B</text></table_cell></table_row>
+            """,
+            ("Header A", "Header B", "Merged A", "Merged B"),
+        ),
+        (
+            """
+            <table_row><table_header><text>Header A</text></table_header><table_header><text>Header B</text></table_header></table_row>
+            <table_row><table_cell><attributes><attribute name="/RowSpan" value="2" /></attributes><text>Tall A</text></table_cell><table_cell><text>Data B</text></table_cell></table_row>
+            """,
+            ("Header A", "Header B", "Tall A", "Data B"),
+        ),
+        (
+            """
+            <table_row><table_header><text>Header A</text></table_header><table_header><text>Header B</text></table_header></table_row>
+            <table_row><table_cell><attributes><attribute name="/ColSpan" value="unknown" /></attributes><text>Ambiguous A</text></table_cell><table_cell><text>Data B</text></table_cell></table_row>
+            """,
+            ("Header A", "Header B", "Ambiguous A", "Data B"),
+        ),
+        (
+            """
+            <table_row><table_header><text>Header A</text></table_header><table_header><text>Header B</text></table_header></table_row>
+            <table_row><table_cell><list><list_item><text>Nested A</text></list_item></list></table_cell><table_cell><text>Data B</text></table_cell></table_row>
+            """,
+            ("Header A", "Header B", "Nested A", "Data B"),
+        ),
+    ],
+    ids=(
+        "data-only",
+        "mixed-cell-roles",
+        "column-span",
+        "row-span",
+        "ambiguous-span",
+        "nested-block",
+    ),
+)
+def test_unsafe_rectangular_tables_fall_back_to_labeled_rows_without_text_loss(
+    tmp_path: Path,
+    table_body: str,
+    expected_texts: tuple[str, ...],
+) -> None:
+    markdown = _render(tmp_path, f"<table>{table_body}</table>")
+
+    assert "| ---" not in markdown
+    assert "- 행 1:" in markdown
+    assert "- 행 2:" in markdown
+    for text in expected_texts:
+        assert markdown.count(text) == 1
+    assert [markdown.index(text) for text in expected_texts] == sorted(
+        markdown.index(text) for text in expected_texts
+    )
+
+
 def test_promotes_heading_candidate_inside_table_without_duplicate_or_lost_text(
     tmp_path: Path,
 ) -> None:
@@ -492,6 +595,83 @@ def test_promotes_descendant_heading_inside_atomic_container_in_source_order(
     assert markdown.count("After heading") == 1
     assert markdown.index("Before heading") < markdown.index("## Nested heading")
     assert markdown.index("## Nested heading") < markdown.index("After heading")
+
+
+@pytest.mark.parametrize(
+    "container_tag",
+    ["paragraph", "heading", "caption", "label", "figure"],
+)
+def test_paragraph_like_container_preserves_text_around_nested_list(
+    tmp_path: Path,
+    container_tag: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        f"""
+        <{container_tag}>
+          <text>Before list</text>
+          <list><list_item><text>Nested item</text></list_item></list>
+          <text>After list</text>
+        </{container_tag}>
+        """,
+    )
+
+    assert "- Nested item" in markdown
+    for text in ("Before list", "Nested item", "After list"):
+        assert markdown.count(text) == 1
+    assert markdown.index("Before list") < markdown.index("- Nested item")
+    assert markdown.index("- Nested item") < markdown.index("After list")
+
+
+def test_paragraph_like_container_keeps_nested_table_and_empty_figure_semantics(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph>
+          <text>Before table</text>
+          <table>
+            <table_row><table_header><text>Name</text></table_header></table_row>
+            <table_row><table_cell><text>Value</text></table_cell></table_row>
+          </table>
+          <text>Between blocks</text>
+          <figure />
+          <text>After figure</text>
+        </paragraph>
+        """,
+    )
+
+    assert "| Name |\n| --- |\n| Value |" in markdown
+    assert "[그림: 텍스트 없음]" in markdown
+    for text in ("Before table", "Name", "Value", "Between blocks", "After figure"):
+        assert markdown.count(text) == 1
+    assert markdown.index("Before table") < markdown.index("| Name |")
+    assert markdown.index("| Value |") < markdown.index("Between blocks")
+    assert markdown.index("Between blocks") < markdown.index("[그림: 텍스트 없음]")
+    assert markdown.index("[그림: 텍스트 없음]") < markdown.index("After figure")
+
+
+def test_explicit_empty_text_figures_do_not_break_surrounding_osd_text(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph>
+          <text>( &gt; left directional button &gt; </text>
+          <figure><attributes><attribute name="/Placement" value="/Block" /></attributes><text /></figure>
+          <text>Settings &gt; Support &gt; Open User Guide)</text>
+        </paragraph>
+        """,
+    )
+
+    assert (
+        "( > left directional button > Settings > Support > Open User Guide)"
+        in markdown
+    )
+    assert markdown.count("[그림: 텍스트 없음]") == 1
+    assert markdown.count("left directional button") == 1
 
 
 def test_irregular_or_nested_table_falls_back_to_row_lists_without_text_loss(
@@ -614,6 +794,36 @@ def test_escapes_commonmark_block_openers_per_source_line(
     )
 
     assert f"\n{escaped}\n\nFollowing content\n" in markdown
+
+
+def test_escapes_link_reference_definition_without_changing_following_reference(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<paragraph><text>[manual]: https://example.com/guide</text></paragraph>"
+        "<paragraph><text>Read [manual] and keep [ordinary brackets].</text></paragraph>",
+    )
+
+    assert r"\[manual]: https://example.com/guide" in markdown
+    assert "Read [manual] and keep [ordinary brackets]." in markdown
+    assert r"Read \[manual]" not in markdown
+
+
+def test_escapes_footnote_definition_without_changing_following_footnote_reference(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<paragraph><text>[^warning]: Source footnote text</text></paragraph>"
+        "<paragraph><text>Keep [^warning] visible in source text.</text></paragraph>"
+        "<paragraph><text>( &gt; Settings &gt; Support &gt; Open User Guide)</text></paragraph>",
+    )
+
+    assert r"\[^warning]: Source footnote text" in markdown
+    assert "Keep [^warning] visible in source text." in markdown
+    assert r"Keep \[^warning]" not in markdown
+    assert "( > Settings > Support > Open User Guide)" in markdown
 
 
 def test_replace_failure_keeps_existing_destination_and_removes_temp(

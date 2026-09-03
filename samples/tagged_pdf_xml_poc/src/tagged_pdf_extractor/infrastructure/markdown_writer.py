@@ -20,8 +20,13 @@ _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _RAW_HTML_BLOCK_PREFIX = re.compile(
     r"^<(?:!--|[!?]|/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]))"
 )
+_REFERENCE_DEFINITION_PREFIX = re.compile(r"^\[[^\]\r\n]+\]:")
 _LEADING_CLOSING_PUNCTUATION = re.compile(r"^([.,:;?!)]+)(.*)$")
 _CELL_TAGS = frozenset({"table_header", "table_cell"})
+_NESTED_TABLE_BLOCK_TAGS = frozenset(
+    {"paragraph", "heading", "caption", "label", "list", "table", "figure"}
+)
+_SPAN_ATTRIBUTE_NAMES = frozenset({"rowspan", "colspan"})
 
 
 class MarkdownDocumentWriter:
@@ -94,6 +99,17 @@ class MarkdownDocumentWriter:
             if isinstance(path, str) and path in candidate_paths:
                 raise ValueError(f"duplicate heading candidate path {path}")
             if isinstance(path, str):
+                for other_path in candidate_paths:
+                    if path.startswith(f"{other_path}/"):
+                        raise ValueError(
+                            "overlapping heading candidate paths "
+                            f"{other_path} and {path}"
+                        )
+                    if other_path.startswith(f"{path}/"):
+                        raise ValueError(
+                            "overlapping heading candidate paths "
+                            f"{path} and {other_path}"
+                        )
                 candidate_paths.add(path)
             element = path_index.get(path) if isinstance(path, str) else None
             if element is None:
@@ -147,7 +163,7 @@ class MarkdownDocumentWriter:
             return [f"{prefix} {cls._element_text(element)}"]
 
         atomic_tags = {"paragraph", "heading", "caption", "label", "figure"}
-        if element.tag in atomic_tags and cls._has_promoted_descendant(
+        if element.tag in atomic_tags and cls._has_mixed_content_descendant(
             element, promoted
         ):
             return cls._render_mixed_content(element, promoted)
@@ -296,12 +312,8 @@ class MarkdownDocumentWriter:
             [child for child in cls._structural_children(row) if child.tag in _CELL_TAGS]
             for row in rows
         ]
-        has_nested_table = any(
-            descendant is not table and descendant.tag == "table"
-            for descendant in table.iter()
-        )
-        rectangular = (
-            bool(cells)
+        safe_pipe_table = (
+            len(cells) >= 2
             and bool(cells[0])
             and len(rows) == len(table_children)
             and all(len(row_cells) == len(cells[0]) for row_cells in cells)
@@ -309,9 +321,15 @@ class MarkdownDocumentWriter:
                 len(row_cells) == len(cls._structural_children(row))
                 for row, row_cells in zip(rows, cells, strict=True)
             )
-            and not has_nested_table
+            and all(cell.tag == "table_header" for cell in cells[0])
+            and all(
+                cell.tag == "table_cell"
+                for row_cells in cells[1:]
+                for cell in row_cells
+            )
+            and all(cls._is_simple_table_cell(cell) for row_cells in cells for cell in row_cells)
         )
-        if rectangular:
+        if safe_pipe_table:
             rendered_rows = [
                 "| "
                 + " | ".join(
@@ -339,6 +357,27 @@ class MarkdownDocumentWriter:
             text = cls._element_text(table)
             lines.append(f"- 행 1: {text}".rstrip())
         return "\n".join(lines)
+
+    @classmethod
+    def _is_simple_table_cell(cls, cell: ET.Element) -> bool:
+        if any(
+            descendant is not cell and descendant.tag in _NESTED_TABLE_BLOCK_TAGS
+            for descendant in cell.iter()
+        ):
+            return False
+
+        spans: dict[str, list[str | None]] = {
+            name: [] for name in _SPAN_ATTRIBUTE_NAMES
+        }
+        for attributes in cell.findall("attributes"):
+            for attribute in attributes.findall("attribute"):
+                name = attribute.get("name", "").lstrip("/").casefold()
+                if name in spans:
+                    spans[name].append(attribute.get("value"))
+        return all(
+            not values or (len(values) == 1 and values[0] is not None and values[0].strip() == "1")
+            for values in spans.values()
+        )
 
     @classmethod
     def _render_table_with_promotions(
@@ -409,12 +448,16 @@ class MarkdownDocumentWriter:
                 yield from cls._mixed_content_events(child, promoted)
 
     @staticmethod
-    def _has_promoted_descendant(
+    def _has_mixed_content_descendant(
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> bool:
         return any(
-            descendant is not element and descendant in promoted
+            descendant is not element
+            and (
+                descendant in promoted
+                or descendant.tag in {"list", "table", "figure"}
+            )
             for descendant in element.iter()
         )
 
@@ -426,6 +469,7 @@ class MarkdownDocumentWriter:
     ) -> list[str]:
         blocks: list[str] = []
         text_parts: list[str] = []
+        deferred_empty_figures = 0
 
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
@@ -433,14 +477,33 @@ class MarkdownDocumentWriter:
                 blocks.append(cls._escape_line_prefix(text))
             text_parts.clear()
 
+        def flush_deferred_figures() -> None:
+            nonlocal deferred_empty_figures
+            blocks.extend(
+                "[그림: 텍스트 없음]" for _ in range(deferred_empty_figures)
+            )
+            deferred_empty_figures = 0
+
         for kind, value in cls._mixed_content_events(element, promoted):
             if kind == "text":
                 text_parts.append(cls._visible_text(value))
                 continue
+            if value.tag == "figure" and cls._is_explicit_empty_text_figure(value):
+                deferred_empty_figures += 1
+                continue
             flush_text()
+            flush_deferred_figures()
             blocks.extend(cls._render_element(value, promoted))
         flush_text()
+        flush_deferred_figures()
         return blocks
+
+    @classmethod
+    def _is_explicit_empty_text_figure(cls, figure: ET.Element) -> bool:
+        text_nodes = list(figure.iter("text"))
+        return bool(text_nodes) and all(
+            not cls._visible_text(text).strip() for text in text_nodes
+        )
 
     @staticmethod
     def _structural_children(element: ET.Element) -> list[ET.Element]:
@@ -509,6 +572,7 @@ class MarkdownDocumentWriter:
             or _FENCED_CODE_PREFIX.match(value)
             or _THEMATIC_BREAK.match(value)
             or _RAW_HTML_BLOCK_PREFIX.match(value)
+            or _REFERENCE_DEFINITION_PREFIX.match(value)
         ):
             return f"\\{value}"
         return value

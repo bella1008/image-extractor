@@ -68,7 +68,7 @@ def _owned_temporary_paths(parent: Path, output_name: str) -> list[Path]:
     return paths + ([lock] if lock.exists() else [])
 
 
-def test_required_output_names_are_the_four_atomic_artifacts() -> None:
+def test_required_output_names_are_the_four_transaction_artifacts() -> None:
     assert output_bundle_module.REQUIRED_OUTPUT_NAMES == (
         "raw_structure.xml",
         "semantic_document.xml",
@@ -1778,6 +1778,55 @@ def test_bundle_accepts_second_level_nested_list_promoted_heading(
     assert "    ## Nested heading" in artifacts.semantic_markdown.read_text(
         encoding="utf-8"
     ).splitlines()
+
+
+def test_bundle_rejects_ancestor_and_descendant_heading_candidates_before_publish(
+    tmp_path: Path,
+) -> None:
+    child = StructureElement(
+        "Heading2",
+        "paragraph",
+        children=(ContentFragment(0, 2, ("Child",)),),
+    )
+    parent = StructureElement(
+        "Heading1",
+        "paragraph",
+        children=(ContentFragment(0, 1, ("Parent",)), child),
+    )
+    document = TaggedDocument(
+        source_path=tmp_path / "source.pdf",
+        marked=True,
+        language="en",
+        role_map=(),
+        children=(parent,),
+    )
+    base_report = _report(document)
+    report = QualityReport(
+        "pass",
+        {},
+        {"xml_round_trip": True},
+        (),
+        base_report.join_decisions,
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "level": 1,
+                "structure_path": "/paragraph[0]",
+            },
+            {
+                "classification": "source_role_candidate",
+                "level": 2,
+                "structure_path": "/paragraph[0]/paragraph[1]",
+            },
+        ),
+    )
+    output = tmp_path / "result"
+
+    with pytest.raises(ValueError, match="overlapping heading candidate paths"):
+        OutputBundleWriter().write(document, report, output)
+
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
 
 
 @pytest.mark.parametrize("invalid_kind", ["directory", "symlink"])

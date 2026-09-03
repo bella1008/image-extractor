@@ -16,6 +16,7 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
+    BundlePublicationStateBaseExceptionGroup,
     BundleRollbackBaseExceptionGroup,
     BundleRollbackError,
     BundleTransactionBaseExceptionGroup,
@@ -271,6 +272,55 @@ def test_existing_transaction_lock_is_busy_and_never_deleted(tmp_path: Path) -> 
     assert marker.read_text(encoding="utf-8") == "other process"
 
 
+def test_keyboard_interrupt_during_lock_identity_cleans_own_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+
+    def interrupt_identity(path: Path) -> tuple[int, int]:
+        raise KeyboardInterrupt("identity interrupted")
+
+    monkeypatch.setattr(OutputBundleWriter, "_path_identity", staticmethod(interrupt_identity))
+    document = _document(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt, match="identity interrupted"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert not (tmp_path / ".result.lock").exists()
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_system_exit_during_final_preflight_cleans_only_owned_lock_and_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    original = OutputBundleWriter._preflight_required_targets
+    calls = 0
+
+    def exit_final_preflight(output_dir: Path, overwrite: bool) -> tuple[Path, ...]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise SystemExit(23)
+        return original(output_dir, overwrite)
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_preflight_required_targets",
+        staticmethod(exit_final_preflight),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(SystemExit) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert captured.value.code == 23
+    assert list(output.iterdir()) == []
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
 def test_existing_directory_overwrite_preserves_unrelated_files(tmp_path: Path) -> None:
     document = _document(tmp_path)
     report = _report(document)
@@ -462,6 +512,156 @@ def test_system_exit_during_publication_restores_old_files_and_reraises(
 
     assert captured.value.code == 17
     assert {name: (output / name).read_text(encoding="utf-8") for name in old} == old
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_existing_publish_commits_then_wrapper_interrupt_reports_published_and_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = f"old::{name}"
+        (output / name).write_text(old[name], encoding="utf-8")
+    original = OutputBundleWriter._publish_into_existing
+
+    def publish_then_interrupt(staging: Path, backup: Path, output_dir: Path) -> None:
+        original(staging, backup, output_dir)
+        raise KeyboardInterrupt("after existing commit")
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_publish_into_existing",
+        staticmethod(publish_then_interrupt),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(BundlePublicationStateBaseExceptionGroup) as captured:
+        OutputBundleWriter().write(document, _report(document), output, overwrite=True)
+
+    error = captured.value
+    assert error.state == "published"
+    assert error.published is True
+    assert error.artifacts is not None
+    assert all(path.is_file() for path in (
+        error.artifacts.raw_xml,
+        error.artifacts.semantic_xml,
+        error.artifacts.report_json,
+    ))
+    assert error.backup_path is not None and error.backup_path.exists()
+    assert all(
+        (error.backup_path / name).read_text(encoding="utf-8") == old[name]
+        for name in output_bundle_module.REQUIRED_OUTPUT_NAMES
+    )
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.exceptions)
+    assert not (tmp_path / ".result.lock").exists()
+
+
+def test_absent_rename_commits_then_wrapper_interrupt_reports_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    real_rename = os.rename
+
+    def rename_then_interrupt(source: str | Path, destination: str | Path) -> None:
+        real_rename(source, destination)
+        raise KeyboardInterrupt("after directory commit")
+
+    monkeypatch.setattr(output_bundle_module.os, "rename", rename_then_interrupt)
+    document = _document(tmp_path)
+
+    with pytest.raises(BundlePublicationStateBaseExceptionGroup) as captured:
+        OutputBundleWriter().write(document, _report(document), output)
+
+    error = captured.value
+    assert error.state == "published"
+    assert error.published is True
+    assert error.backup_path is None
+    assert error.artifacts is not None
+    assert all(path.is_file() for path in (
+        error.artifacts.raw_xml,
+        error.artifacts.semantic_xml,
+        error.artifacts.report_json,
+    ))
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.exceptions)
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_failed_publication_inference_reports_unknown_and_preserves_recovery_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        (output / name).write_text(f"old::{name}", encoding="utf-8")
+    original = OutputBundleWriter._publish_into_existing
+
+    def publish_then_interrupt(staging: Path, backup: Path, output_dir: Path) -> None:
+        original(staging, backup, output_dir)
+        raise KeyboardInterrupt("after commit")
+
+    def fail_inference(*args: object, **kwargs: object) -> str:
+        raise OSError("fingerprint inference failed")
+
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_publish_into_existing",
+        staticmethod(publish_then_interrupt),
+    )
+    monkeypatch.setattr(
+        OutputBundleWriter,
+        "_infer_publication_state",
+        staticmethod(fail_inference),
+    )
+    document = _document(tmp_path)
+
+    with pytest.raises(BundlePublicationStateBaseExceptionGroup) as captured:
+        OutputBundleWriter().write(document, _report(document), output, overwrite=True)
+
+    error = captured.value
+    assert error.state == "unknown"
+    assert error.published is False
+    assert error.backup_path is not None and error.backup_path.exists()
+    assert error.staging_path is not None and error.staging_path.exists()
+    assert any(isinstance(item, KeyboardInterrupt) for item in error.exceptions)
+    assert any("fingerprint inference failed" in str(item) for item in error.exceptions)
+    assert not (tmp_path / ".result.lock").exists()
+
+
+def test_identical_old_files_after_rollback_are_not_misclassified_as_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = _document(tmp_path)
+    report = _report(document)
+    reference = tmp_path / "reference"
+    OutputBundleWriter().write(document, report, reference)
+    output = tmp_path / "result"
+    output.mkdir()
+    old = {}
+    for name in output_bundle_module.REQUIRED_OUTPUT_NAMES:
+        old[name] = (reference / name).read_bytes()
+        (output / name).write_bytes(old[name])
+    real_replace = os.replace
+    publication_count = 0
+
+    def interrupt_after_third_move(source: str | Path, destination: str | Path) -> None:
+        nonlocal publication_count
+        source_path = Path(source)
+        destination_path = Path(destination)
+        if ".staging-" in source_path.parent.name and destination_path.parent == output:
+            publication_count += 1
+            if publication_count == 3:
+                real_replace(source, destination)
+                raise KeyboardInterrupt("third move completed then interrupted")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(output_bundle_module.os, "replace", interrupt_after_third_move)
+
+    with pytest.raises(KeyboardInterrupt, match="third move completed then interrupted"):
+        OutputBundleWriter().write(document, report, output, overwrite=True)
+
+    assert {name: (output / name).read_bytes() for name in old} == old
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Callable
 from xml.etree import ElementTree as ET
@@ -21,6 +23,7 @@ RAW_XML_NAME = "raw_structure.xml"
 SEMANTIC_XML_NAME = "semantic_document.xml"
 REPORT_JSON_NAME = "extraction_report.json"
 REQUIRED_OUTPUT_NAMES = (RAW_XML_NAME, SEMANTIC_XML_NAME, REPORT_JSON_NAME)
+_COMMIT_MARKER_NAME = ".tagged-pdf-xml-commit"
 
 
 class OutputCollisionError(FileExistsError):
@@ -175,6 +178,89 @@ class BundleTransactionBaseExceptionGroup(BaseExceptionGroup):
         return derived
 
 
+class BundlePublicationStateError(RuntimeError):
+    def __init__(
+        self,
+        primary_error: BaseException,
+        inference_error: BaseException | None,
+        *,
+        state: str,
+        artifacts: ExtractionArtifacts,
+        backup_path: Path | None,
+        staging_path: Path | None,
+    ) -> None:
+        self.primary_error = primary_error
+        self.inference_error = inference_error
+        self.state = state
+        self.published = state == "published"
+        self.artifacts = artifacts if self.published else None
+        self.backup_path = backup_path.resolve() if backup_path is not None else None
+        self.staging_path = staging_path.resolve() if staging_path is not None else None
+        super().__init__(
+            f"bundle publication state is {state}; primary={primary_error!r}; "
+            f"backup={self.backup_path}; staging={self.staging_path}"
+        )
+
+
+class BundlePublicationStateBaseExceptionGroup(BaseExceptionGroup):
+    def __new__(
+        cls,
+        primary_error: BaseException,
+        inference_error: BaseException | None,
+        *,
+        state: str,
+        artifacts: ExtractionArtifacts,
+        backup_path: Path | None,
+        staging_path: Path | None,
+    ) -> BundlePublicationStateBaseExceptionGroup:
+        resolved_backup = backup_path.resolve() if backup_path is not None else None
+        resolved_staging = staging_path.resolve() if staging_path is not None else None
+        members = (
+            (primary_error, inference_error)
+            if inference_error is not None
+            else (primary_error,)
+        )
+        instance = super().__new__(
+            cls,
+            f"bundle publication state is {state}; backup={resolved_backup}; "
+            f"staging={resolved_staging}",
+            members,
+        )
+        instance.primary_error = primary_error
+        instance.inference_error = inference_error
+        instance.state = state
+        instance.published = state == "published"
+        instance.artifacts = artifacts if instance.published else None
+        instance.backup_path = resolved_backup
+        instance.staging_path = resolved_staging
+        return instance
+
+    def __init__(
+        self,
+        primary_error: BaseException,
+        inference_error: BaseException | None,
+        *,
+        state: str,
+        artifacts: ExtractionArtifacts,
+        backup_path: Path | None,
+        staging_path: Path | None,
+    ) -> None:
+        pass
+
+    def derive(
+        self, exceptions: tuple[BaseException, ...]
+    ) -> BaseExceptionGroup:
+        derived = BaseExceptionGroup(self.message, exceptions)
+        derived.primary_error = self.primary_error
+        derived.inference_error = self.inference_error
+        derived.state = self.state
+        derived.published = self.published
+        derived.artifacts = self.artifacts
+        derived.backup_path = self.backup_path
+        derived.staging_path = self.staging_path
+        return derived
+
+
 class OutputBundleWriter:
     def __init__(
         self,
@@ -204,72 +290,168 @@ class OutputBundleWriter:
     ) -> ExtractionArtifacts:
         output_dir = Path(output_dir)
         initially_exists = self._inspect_output_directory(output_dir)
-        self._preflight_required_targets(output_dir, overwrite)
+        initial_targets = self._preflight_required_targets(output_dir, overwrite)
 
         parent = output_dir.parent
         parent.mkdir(parents=True, exist_ok=True)
-        lock_path = parent / f".{output_dir.name}.lock"
-        try:
-            lock_path.mkdir()
-        except FileExistsError as exc:
-            raise OutputBusyError(lock_path) from exc
-        lock_identity = self._path_identity(lock_path)
-
         artifacts = ExtractionArtifacts(
             raw_xml=output_dir / RAW_XML_NAME,
             semantic_xml=output_dir / SEMANTIC_XML_NAME,
             report_json=output_dir / REPORT_JSON_NAME,
         )
+        lock_path = parent / f".{output_dir.name}.lock"
+        try:
+            lock_path.mkdir()
+        except FileExistsError as exc:
+            raise OutputBusyError(lock_path) from exc
+
+        lock_identity: tuple[int, int] | None = None
         staging: Path | None = None
         backup: Path | None = None
         preserve_backup = False
+        preserve_staging = False
+        preserve_commit_marker = False
         published = False
+        publication_attempted = False
+        commit_evidence = False
+        transaction_token: str | None = None
+        expected_fingerprints: dict[str, tuple[int, str]] | None = None
         primary_error: BaseException | None = None
         primary_traceback = None
         try:
-            staging = Path(
-                tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=parent)
-            )
-            self._write_and_validate_staging(document, report, staging)
-            currently_exists = self._inspect_output_directory(output_dir)
-            if currently_exists != initially_exists:
-                raise OutputCollisionError(
-                    f"output changed during transaction: {output_dir}"
-                )
-            self._preflight_required_targets(output_dir, overwrite)
-
-            if not initially_exists:
-                os.rename(staging, output_dir)
-                staging = None
-            else:
-                backup = Path(
+            try:
+                lock_identity = self._path_identity(lock_path)
+                transaction_token = uuid.uuid4().hex
+                staging = Path(
                     tempfile.mkdtemp(
-                        prefix=f".{output_dir.name}.backup-", dir=parent
+                        prefix=f".{output_dir.name}.staging-", dir=parent
                     )
                 )
-                self._publish_into_existing(staging, backup, output_dir)
-            published = True
-        except BaseException as exc:
-            primary_error = exc
-            primary_traceback = exc.__traceback__
-            preserve_backup = backup is not None and any(
-                os.path.lexists(backup / name) for name in REQUIRED_OUTPUT_NAMES
-            )
+                self._write_and_validate_staging(document, report, staging)
+                expected_fingerprints = self._bundle_fingerprints(staging)
+                currently_exists = self._inspect_output_directory(output_dir)
+                if currently_exists != initially_exists:
+                    raise OutputCollisionError(
+                        f"output changed during transaction: {output_dir}"
+                    )
+                self._preflight_required_targets(output_dir, overwrite)
 
-        cleanup_failures: list[tuple[Path, BaseException]] = []
-        if staging is not None:
+                if not initially_exists:
+                    self._write_commit_marker(staging, transaction_token, committed=True)
+                    publication_attempted = True
+                    os.rename(staging, output_dir)
+                    staging = None
+                    commit_evidence = True
+                else:
+                    backup = Path(
+                        tempfile.mkdtemp(
+                            prefix=f".{output_dir.name}.backup-", dir=parent
+                        )
+                    )
+                    self._write_commit_marker(
+                        backup, transaction_token, committed=False
+                    )
+                    publication_attempted = True
+                    self._publish_into_existing(staging, backup, output_dir)
+                    commit_evidence = True
+                published = True
+            except BaseException as exc:
+                primary_error = exc
+                primary_traceback = exc.__traceback__
+                preserve_backup = backup is not None and any(
+                    os.path.lexists(backup / name)
+                    for name in REQUIRED_OUTPUT_NAMES
+                )
+                rollback_complete = bool(
+                    getattr(exc, "_tagged_pdf_rollback_complete", False)
+                )
+                rollback_failed = isinstance(
+                    exc, (BundleRollbackError, BundleRollbackBaseExceptionGroup)
+                )
+                if (
+                    publication_attempted
+                    and expected_fingerprints is not None
+                    and not rollback_complete
+                    and not rollback_failed
+                ):
+                    try:
+                        state = self._infer_publication_state(
+                            output_dir,
+                            staging,
+                            expected_fingerprints,
+                            initially_exists=initially_exists,
+                            backup=backup,
+                            transaction_token=transaction_token,
+                            commit_evidence=commit_evidence,
+                        )
+                    except BaseException as inference_error:
+                        preserve_backup = backup is not None
+                        preserve_staging = staging is not None
+                        preserve_commit_marker = True
+                        primary_error = self._publication_state_error(
+                            exc,
+                            inference_error,
+                            state="unknown",
+                            artifacts=artifacts,
+                            backup_path=backup,
+                            staging_path=staging,
+                        )
+                        primary_traceback = primary_error.__traceback__
+                    else:
+                        if state == "published":
+                            published = True
+                            preserve_backup = bool(initial_targets) and backup is not None
+                            primary_error = self._publication_state_error(
+                                exc,
+                                None,
+                                state="published",
+                                artifacts=artifacts,
+                                backup_path=backup if initial_targets else None,
+                                staging_path=staging,
+                            )
+                            primary_traceback = primary_error.__traceback__
+                        elif state == "unknown":
+                            preserve_backup = backup is not None
+                            preserve_staging = staging is not None
+                            preserve_commit_marker = True
+                            primary_error = self._publication_state_error(
+                                exc,
+                                None,
+                                state="unknown",
+                                artifacts=artifacts,
+                                backup_path=backup,
+                                staging_path=staging,
+                            )
+                            primary_traceback = primary_error.__traceback__
+        finally:
+            cleanup_failures: list[tuple[Path, BaseException]] = []
+            if staging is not None and not preserve_staging:
+                self._capture_cleanup(
+                    staging, self._remove_owned_directory, cleanup_failures
+                )
+            if backup is not None and not preserve_backup:
+                self._capture_cleanup(
+                    backup, self._remove_owned_directory, cleanup_failures
+                )
+            if (
+                not initially_exists
+                and published
+                and not preserve_commit_marker
+                and transaction_token is not None
+            ):
+                marker = output_dir / _COMMIT_MARKER_NAME
+                self._capture_cleanup(
+                    marker,
+                    lambda path: self._remove_owned_commit_marker(
+                        path, transaction_token
+                    ),
+                    cleanup_failures,
+                )
             self._capture_cleanup(
-                staging, self._remove_owned_directory, cleanup_failures
+                lock_path,
+                lambda path: self._remove_owned_lock(path, lock_identity),
+                cleanup_failures,
             )
-        if backup is not None and not preserve_backup:
-            self._capture_cleanup(
-                backup, self._remove_owned_directory, cleanup_failures
-            )
-        self._capture_cleanup(
-            lock_path,
-            lambda path: self._remove_owned_lock(path, lock_identity),
-            cleanup_failures,
-        )
 
         if cleanup_failures:
             members = (
@@ -292,6 +474,130 @@ class OutputBundleWriter:
         if primary_error is not None:
             raise primary_error.with_traceback(primary_traceback)
         return artifacts
+
+    @staticmethod
+    def _publication_state_error(
+        primary_error: BaseException,
+        inference_error: BaseException | None,
+        *,
+        state: str,
+        artifacts: ExtractionArtifacts,
+        backup_path: Path | None,
+        staging_path: Path | None,
+    ) -> BaseException:
+        members = (
+            (primary_error, inference_error)
+            if inference_error is not None
+            else (primary_error,)
+        )
+        if all(isinstance(member, Exception) for member in members):
+            return BundlePublicationStateError(
+                primary_error,
+                inference_error,
+                state=state,
+                artifacts=artifacts,
+                backup_path=backup_path,
+                staging_path=staging_path,
+            )
+        return BundlePublicationStateBaseExceptionGroup(
+            primary_error,
+            inference_error,
+            state=state,
+            artifacts=artifacts,
+            backup_path=backup_path,
+            staging_path=staging_path,
+        )
+
+    @classmethod
+    def _bundle_fingerprints(
+        cls, directory: Path
+    ) -> dict[str, tuple[int, str]]:
+        return {
+            name: cls._file_fingerprint(directory / name)
+            for name in REQUIRED_OUTPUT_NAMES
+        }
+
+    @staticmethod
+    def _file_fingerprint(path: Path) -> tuple[int, str]:
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                size += len(chunk)
+                digest.update(chunk)
+        return size, digest.hexdigest()
+
+    @staticmethod
+    def _commit_marker_text(transaction_token: str, *, committed: bool) -> str:
+        state = "committed" if committed else "prepared"
+        return f"{state}:{transaction_token}\n"
+
+    @classmethod
+    def _write_commit_marker(
+        cls, directory: Path, transaction_token: str, *, committed: bool
+    ) -> None:
+        (directory / _COMMIT_MARKER_NAME).write_text(
+            cls._commit_marker_text(transaction_token, committed=committed),
+            encoding="ascii",
+        )
+
+    @classmethod
+    def _remove_owned_commit_marker(
+        cls, marker: Path, transaction_token: str
+    ) -> None:
+        if not os.path.lexists(marker):
+            return
+        expected = cls._commit_marker_text(transaction_token, committed=True)
+        if not marker.is_file() or marker.is_symlink() or marker.read_text(
+            encoding="ascii"
+        ) != expected:
+            raise OSError(f"commit marker ownership changed: {marker}")
+        marker.unlink()
+
+    @classmethod
+    def _infer_publication_state(
+        cls,
+        output_dir: Path,
+        staging: Path | None,
+        expected_fingerprints: dict[str, tuple[int, str]],
+        *,
+        initially_exists: bool,
+        backup: Path | None,
+        transaction_token: str,
+        commit_evidence: bool,
+    ) -> str:
+        for name in REQUIRED_OUTPUT_NAMES:
+            destination = output_dir / name
+            if (
+                not os.path.lexists(destination)
+                or not destination.is_file()
+                or destination.is_symlink()
+                or cls._file_fingerprint(destination)
+                != expected_fingerprints[name]
+            ):
+                return "uncommitted"
+        staging_consumed = staging is None or all(
+            not os.path.lexists(staging / name) for name in REQUIRED_OUTPUT_NAMES
+        )
+        if not staging_consumed:
+            return "uncommitted"
+        if commit_evidence:
+            return "published"
+        marker_directory = backup if initially_exists else output_dir
+        if marker_directory is None:
+            return "unknown"
+        marker = marker_directory / _COMMIT_MARKER_NAME
+        expected_marker = cls._commit_marker_text(
+            transaction_token, committed=True
+        )
+        if (
+            os.path.lexists(marker)
+            and marker.is_file()
+            and not marker.is_symlink()
+            and marker.read_text(encoding="ascii") == expected_marker
+        ):
+            return "published"
+        return "unknown"
 
     @staticmethod
     def _inspect_output_directory(output_dir: Path) -> bool:
@@ -327,11 +633,11 @@ class OutputBundleWriter:
 
     @classmethod
     def _remove_owned_lock(
-        cls, lock_path: Path, expected_identity: tuple[int, int]
+        cls, lock_path: Path, expected_identity: tuple[int, int] | None
     ) -> None:
         if not os.path.lexists(lock_path):
             return
-        if cls._path_identity(lock_path) != expected_identity:
+        if expected_identity is not None and cls._path_identity(lock_path) != expected_identity:
             raise OSError(f"transaction lock ownership changed: {lock_path}")
         lock_path.rmdir()
 
@@ -425,10 +731,23 @@ class OutputBundleWriter:
                     if all(isinstance(member, Exception) for member in members)
                     else BaseExceptionGroup
                 )
-                raise group_type(
+                group = group_type(
                     "bundle publication and rollback failed", members
-                ) from publication_error
+                )
+                setattr(group, "_tagged_pdf_rollback_complete", True)
+                raise group from publication_error
+            setattr(publication_error, "_tagged_pdf_rollback_complete", True)
             raise
+
+        marker = backup / _COMMIT_MARKER_NAME
+        prepared = marker.read_text(encoding="ascii")
+        prefix = "prepared:"
+        if not prepared.startswith(prefix) or not prepared.endswith("\n"):
+            raise ValueError(f"invalid prepared commit marker: {marker}")
+        transaction_token = prepared[len(prefix) : -1]
+        OutputBundleWriter._write_commit_marker(
+            backup, transaction_token, committed=True
+        )
 
     @staticmethod
     def _remove_owned_directory(directory: Path) -> None:
@@ -436,4 +755,5 @@ class OutputBundleWriter:
             return
         for name in REQUIRED_OUTPUT_NAMES:
             (directory / name).unlink(missing_ok=True)
+        (directory / _COMMIT_MARKER_NAME).unlink(missing_ok=True)
         directory.rmdir()

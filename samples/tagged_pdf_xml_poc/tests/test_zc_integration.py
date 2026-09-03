@@ -105,6 +105,18 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
     return _TEXT_TOKEN.findall("\n".join(source_lines))
 
 
+def _candidate_heading_lines(markdown: str) -> Counter[tuple[str, str]]:
+    return Counter(re.findall(r"(?m)^(#{2,6})\s+(.+?)\s*$", markdown))
+
+
+def _assert_candidate_headings(
+    markdown: str, expected: Counter[tuple[str, str]]
+) -> Counter[tuple[str, str]]:
+    actual = _candidate_heading_lines(markdown)
+    assert actual == expected, "Markdown candidate headings must match the report"
+    return actual
+
+
 def _touch_sample(root: Path) -> Path:
     sample = root / _SAMPLE_RELATIVE_PATH
     sample.parent.mkdir(parents=True)
@@ -276,8 +288,6 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         entry["semantic_role"] == "paragraph"
         for entry in report_data["heading_hierarchy"]
     )
-    rendered_headings = re.findall(r"(?m)^\s*(#{2,6})\s+(.+?)\s*$", markdown)
-    assert len(rendered_headings) == 38
     expected_headings = Counter(
         (
             "#" * min(max(1, int(entry["level"] or 1)) + 1, 6),
@@ -286,7 +296,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         for entry in report_data["heading_hierarchy"]
         if entry["classification"] == "source_role_candidate"
     )
-    assert Counter(rendered_headings) == expected_headings
+    rendered_headings = _assert_candidate_headings(markdown, expected_headings)
+    assert sum(rendered_headings.values()) == 38
     rendered_heading_texts = {text for _, text in rendered_headings}
     assert {
         "Before Reading This Simple User Guide",
@@ -301,10 +312,22 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         if entry["source_role"] == "Cover_Title"
     ]
     assert len(cover_titles) == 2
-    rendered_heading_counts = Counter(rendered_headings)
     for entry in cover_titles:
         cover_text = re.sub(r"\s+", " ", entry["joined_text"]).strip()
-        assert rendered_heading_counts[("##", cover_text)] == 1
+        assert rendered_headings[("##", cover_text)] == 1
+
+    indented_heading = markdown.replace(
+        "## Before Reading This Simple User Guide",
+        "    ## Before Reading This Simple User Guide",
+        1,
+    )
+    assert _markdown_text_tokens(indented_heading) == _semantic_text_tokens(
+        semantic_root
+    )
+    with pytest.raises(
+        AssertionError, match="candidate headings must match the report"
+    ):
+        _assert_candidate_headings(indented_heading, expected_headings)
 
     assert (
         "( > left directional button > Settings > Support > Tips and User "

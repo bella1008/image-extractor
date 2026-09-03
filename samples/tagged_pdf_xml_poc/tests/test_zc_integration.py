@@ -142,8 +142,9 @@ def test_readme_prioritizes_markdown_and_explains_audit_artifacts() -> None:
     assert "눈에 보이는 원본 추출 결함" in readme
     assert "XML과 JSON은 감사 근거" in readme
     assert "--overwrite" in readme
-    assert ".<출력-디렉터리-이름>.lock" in readme
-    assert "잠금이 있는 동안에는 네 산출물을 읽지" in readme
+    assert "동시 읽기는 지원하지 않습니다" in readme
+    assert "추출 명령이 완전히 종료된 뒤" in readme
+    assert "파일을 열기 직전과 읽은 직후" not in readme
     assert "수동 검토" in readme
 
 

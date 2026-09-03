@@ -20,7 +20,6 @@ _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _RAW_HTML_BLOCK_PREFIX = re.compile(
     r"^<(?:!--|[!?]|/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]))"
 )
-_REFERENCE_DEFINITION_PREFIX = re.compile(r"^\[[^\]\r\n]+\]:")
 _LEADING_CLOSING_PUNCTUATION = re.compile(r"^([.,:;?!)]+)(.*)$")
 _CELL_TAGS = frozenset({"table_header", "table_cell"})
 _NESTED_TABLE_BLOCK_TAGS = frozenset(
@@ -565,17 +564,34 @@ class MarkdownDocumentWriter:
             or 0x10000 <= code_point <= 0x10FFFF
         )
 
-    @staticmethod
-    def _escape_line_prefix(value: str) -> str:
+    @classmethod
+    def _escape_line_prefix(cls, value: str) -> str:
         if (
             _MARKDOWN_LINE_PREFIX.match(value)
             or _FENCED_CODE_PREFIX.match(value)
             or _THEMATIC_BREAK.match(value)
             or _RAW_HTML_BLOCK_PREFIX.match(value)
-            or _REFERENCE_DEFINITION_PREFIX.match(value)
+            or cls._starts_reference_definition(value)
         ):
             return f"\\{value}"
         return value
+
+    @staticmethod
+    def _starts_reference_definition(value: str) -> bool:
+        if not value.startswith("["):
+            return False
+        index = 1
+        while index < len(value):
+            character = value[index]
+            if character in "\r\n":
+                return False
+            if character == "\\":
+                index += 2
+                continue
+            if character == "]":
+                return index > 1 and value[index + 1 : index + 2] == ":"
+            index += 1
+        return False
 
     @staticmethod
     def _write_atomic(output: Path, markdown: str) -> None:

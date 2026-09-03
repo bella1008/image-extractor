@@ -826,6 +826,34 @@ def test_escapes_footnote_definition_without_changing_following_footnote_referen
     assert "( > Settings > Support > Open User Guide)" in markdown
 
 
+def test_escapes_reference_definition_with_escaped_closing_bracket_in_label(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        r"<paragraph><text>[foo\]]: https://example.com</text></paragraph>"
+        r"<paragraph><text>Keep [foo\]] and [ordinary] visible.</text></paragraph>",
+    )
+
+    assert r"\[foo\]]: https://example.com" in markdown
+    assert r"Keep [foo\]] and [ordinary] visible." in markdown
+    assert r"Keep \[foo\]]" not in markdown
+
+
+def test_escapes_footnote_definition_with_escaped_closing_bracket_in_label(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        r"<paragraph><text>[^note\]]: Footnote source</text></paragraph>"
+        r"<paragraph><text>Keep [^note\]] and [ordinary text].</text></paragraph>",
+    )
+
+    assert r"\[^note\]]: Footnote source" in markdown
+    assert r"Keep [^note\]] and [ordinary text]." in markdown
+    assert r"Keep \[^note\]]" not in markdown
+
+
 def test_replace_failure_keeps_existing_destination_and_removes_temp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

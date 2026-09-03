@@ -201,9 +201,14 @@ The initial run passes only when all hard gates pass:
 - At least one heading and one body-content element are recovered.
 - No resolved source text is lost during XML serialization.
 - XML files are well formed and round-trip parse successfully.
-- Required OSD-path characters found in source fragments survive semantic XML
-  serialization exactly.
-- Every unresolved MCID or object reference is counted and identified.
+- Required special-character counts found in the independent baseline are not
+  lower in tagged text. This is an aggregate proxy only; an integration
+  assertion verifies the known ZC OSD path in context.
+- Every unresolved MCID or object reference is counted and identified, and no
+  centrally classified extraction-loss diagnostic is present. The loss list
+  includes unresolved MCID/page/OBJR, unsupported stream MCR/tagged Form
+  XObject/structure kid, and invalid MCID diagnostics; structural balancing
+  warnings alone are not classified as text loss.
 
 The following are reported as measured findings rather than fixed pass
 thresholds in the first run:

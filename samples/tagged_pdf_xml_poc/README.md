@@ -48,7 +48,7 @@ XML 1.0에서 금지된 제어문자는 버리지 않고 정확한 위치에 `<c
 
 보고서 최상위에는 `source_path`, PDF가 선언한 `language`, `marked`, 원본 `role_map`, source role별 개수, heading 계층/후보 목록이 들어갑니다. 언어는 파일명이나 본문에서 추론하지 않습니다.
 
-heading 목록은 구조 경로, source role, semantic role, level, 연결된 텍스트와 `/T` title을 기록합니다. `Heading2`, `NoTOC-Heading1`, `Cover_Title`처럼 이름이 heading처럼 보이더라도 RoleMap 결과가 `P`이면 `source_role_candidate`로만 기록하며 `heading_count`에는 포함하지 않습니다.
+heading 목록은 구조 경로, source role, semantic role, level, 연결된 텍스트와 `/T` title을 기록합니다. `Heading2`, `NoTOC-Heading1`, `Cover_Title`, `Heading2_0_2`처럼 이름이 heading처럼 보이더라도 RoleMap 결과가 `P`이면 `source_role_candidate`로만 기록하며 `heading_count`에는 포함하지 않습니다. `Heading2_0_2`처럼 `Heading1`~`Heading6` 뒤에 숫자가 아닌 장식 suffix가 붙은 이름은 후보지만 `Heading20`, `H0`, `H7`은 후보가 아닙니다.
 
 모든 하드 게이트가 참이어야 `status=pass`입니다.
 
@@ -56,24 +56,29 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 - 표준 `H`, `H1`~`H6`, `Title` 또는 검증된 RoleMap 대응 heading이 있어야 합니다. `H0`, `H7`~`H9`는 heading이 아닙니다.
 - XML 직렬화와 왕복 검증이 성공해야 합니다.
 - `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`가 모두 0이어야 합니다.
+- 알려진 텍스트 손실 진단인 `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`, `unsupported_stream_mcr`, `tagged_form_xobject_unsupported`, `invalid_mcid`, `unsupported_structure_kid`가 모두 0이어야 합니다. 이 목록은 `domain/quality_diagnostics.py`에서 중앙 관리합니다. 단순 marked-content 범위 균형 경고는 그 자체로 텍스트 손실을 뜻하지 않으므로 포함하지 않습니다.
 - 기준 텍스트에 등장한 필수 문자 `>`, `→`, `/`, `&`, `:`, `[`, `]`, `(`, `)`는 태그 텍스트에 기준 개수 이상 있어야 합니다. 기준에 없는 문자는 실패 원인이 아닙니다.
 
 `resolved_references_reported`는 발견된 참조 진단에 조사 가능한 context가 있는지 별도로 보여주지만, context가 충분해도 미해결 참조가 하나라도 있으면 `resolved_references=false`로 실패합니다.
+
+`special_character_counts_preserved`와 각 문자의 `count_preserved`는 문서 전체 문자 개수만 비교하는 보수적인 집계 proxy입니다. 특정 OSD 경로의 순서·문맥·문장 연결이 보존됐다는 뜻은 아닙니다. 지정 ZC OSD 경로의 문맥 보존은 아래 표본을 통합 테스트에서 직접 찾아 별도로 검증합니다.
 
 ## 지정 ZC PDF 결과
 
 2026-09-03 재실행 결과는 `status=fail`, CLI 종료 코드 `1`입니다. XML 두 개와 JSON 생성·재파싱은 성공했으며 실패 이유는 두 가지입니다.
 
 - `has_heading=false`: PDF의 사용자 heading 태그가 RoleMap에서 모두 `P`로 선언됨
-- `special_characters_preserved=false`: 기준 대비 `/`, `:`, `(`, `)` 개수가 부족함
+- `special_character_counts_preserved=false`: 기준 대비 `/`, `:`, `(`, `)` 개수가 부족함
 
 주요 수치는 다음과 같습니다.
 
 - 구조 요소 1,842개, 텍스트 조각 1,938개
 - 텍스트가 있는 body 요소 1,410개
-- heading 0개, source-role heading 후보 34개
+- heading 0개, source-role heading 후보 38개
+- 장식된 source role에서 `Troubleshooting`, `Specifications`, `Dépannage`, `Spécifications` 후보 추가 확인
 - unknown 역할 0개
 - unresolved MCID 0개, unresolved page reference 0개, unsupported OBJR 0개
+- 알려진 텍스트 손실 진단 0개 (`no_known_text_loss=true`)
 - 문자 일치율 `0.9798180073`
 - 태그 텍스트 48,494자, 기준 텍스트 47,914자
 - XML 금지 제어문자 608개, 영향 필드 44개

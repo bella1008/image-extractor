@@ -146,7 +146,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report.metrics["heading_count"] == 0
     assert report.hard_gates["has_heading"] is False
     assert report.hard_gates["resolved_references"] is True
-    assert report.hard_gates["special_characters_preserved"] is False
+    assert report.hard_gates["no_known_text_loss"] is True
+    assert report.hard_gates["special_character_counts_preserved"] is False
     assert report.status == "fail"
     assert validation.semantic_join_decisions == report.join_decisions
 
@@ -169,6 +170,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["metrics"]["unresolved_page_reference_count"] == 0
     assert report_data["metrics"]["unsupported_objr_count"] == 0
     assert report_data["metrics"]["unresolved_reference_count"] == 0
+    assert report_data["metrics"]["extraction_loss_diagnostic_total"] == 0
     assert report_data["join_decisions"] == list(report.join_decisions)
     assert report_data["source_path"] == str(PDF)
     assert report_data["language"] == document.language == "ko"
@@ -181,17 +183,27 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         if entry["classification"] == "source_role_candidate"
     }
     assert expected_custom_headings <= heading_candidates
-    assert len(report_data["heading_hierarchy"]) == 34
+    assert len(report_data["heading_hierarchy"]) == 38
+    candidate_texts = {
+        entry["joined_text"].strip()
+        for entry in report_data["heading_hierarchy"]
+    }
+    assert {
+        "Troubleshooting",
+        "Specifications",
+        "Dépannage",
+        "Spécifications",
+    } <= candidate_texts
     assert all(
         entry["semantic_role"] == "paragraph"
         for entry in report_data["heading_hierarchy"]
     )
     special = report_data["metrics"]["special_characters"]
-    assert special[">"] == {"tagged": 54, "baseline": 54, "preserved": True}
-    assert special["/"] == {"tagged": 69, "baseline": 72, "preserved": False}
-    assert special[":"] == {"tagged": 56, "baseline": 60, "preserved": False}
-    assert special["("] == {"tagged": 80, "baseline": 83, "preserved": False}
-    assert special[")"] == {"tagged": 79, "baseline": 83, "preserved": False}
+    assert special[">"] == {"tagged": 54, "baseline": 54, "count_preserved": True}
+    assert special["/"] == {"tagged": 69, "baseline": 72, "count_preserved": False}
+    assert special[":"] == {"tagged": 56, "baseline": 60, "count_preserved": False}
+    assert special["("] == {"tagged": 80, "baseline": 83, "count_preserved": False}
+    assert special[")"] == {"tagged": 79, "baseline": 83, "count_preserved": False}
 
     normalized_paragraphs = {
         re.sub(

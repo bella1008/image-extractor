@@ -141,9 +141,9 @@ def test_quality_report_counts_structure_roles_and_special_characters() -> None:
         assert report.metrics["special_characters"][character] == {
             "tagged": baseline.count(character),
             "baseline": baseline.count(character),
-            "preserved": True,
+            "count_preserved": True,
         }
-    assert report.hard_gates["special_characters_preserved"] is True
+    assert report.hard_gates["special_character_counts_preserved"] is True
     assert report.status == "pass"
 
 
@@ -707,7 +707,8 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "xml_round_trip",
         "resolved_references",
         "resolved_references_reported",
-        "special_characters_preserved",
+        "no_known_text_loss",
+        "special_character_counts_preserved",
     )
     assert report.hard_gates == {
         "is_marked": False,
@@ -717,7 +718,8 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "xml_round_trip": False,
         "resolved_references": True,
         "resolved_references_reported": True,
-        "special_characters_preserved": True,
+        "no_known_text_loss": True,
+        "special_character_counts_preserved": True,
     }
     assert report.status == "fail"
 
@@ -814,6 +816,36 @@ def test_heading_hierarchy_preserves_document_order_for_nested_headings() -> Non
     ]
 
 
+def test_decorated_heading_source_role_is_candidate_without_promotion() -> None:
+    document = _document(
+        StructureElement(
+            "Heading2_0_2", "paragraph",
+            children=(ContentFragment(0, 1, ("Troubleshooting",)),),
+        ),
+        StructureElement(
+            "Heading20", "paragraph",
+            children=(ContentFragment(0, 2, ("Not a heading",)),),
+        ),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Troubleshooting Not a heading", xml_round_trip_ok=True
+    )
+
+    assert report.heading_hierarchy == (
+        {
+            "structure_path": "/paragraph[0]",
+            "source_role": "Heading2_0_2",
+            "semantic_role": "paragraph",
+            "level": 2,
+            "joined_text": "Troubleshooting",
+            "title": None,
+            "classification": "source_role_candidate",
+        },
+    )
+    assert report.metrics["heading_count"] == 0
+
+
 @pytest.mark.parametrize(
     ("code", "metric"),
     [("unresolved_mcid", "unresolved_mcid_count"),
@@ -833,14 +865,64 @@ def test_each_unresolved_reference_code_fails_resolved_references_gate(
     assert report.status == "fail"
 
 
+@pytest.mark.parametrize(
+    "code",
+    (
+        "unresolved_mcid",
+        "unresolved_page_reference",
+        "unsupported_objr",
+        "unsupported_stream_mcr",
+        "tagged_form_xobject_unsupported",
+        "invalid_mcid",
+        "unsupported_structure_kid",
+    ),
+)
+def test_each_known_extraction_loss_diagnostic_fails_text_loss_gate(
+    code: str,
+) -> None:
+    diagnostic = Diagnostic("warning", code, "content may be lost", {"source": "test"})
+    document = _passing_document()
+    object.__setattr__(document, "diagnostics", (diagnostic,))
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["extraction_loss_diagnostic_counts"][code] == 1
+    assert report.metrics["extraction_loss_diagnostic_total"] == 1
+    assert report.hard_gates["no_known_text_loss"] is False
+    assert report.status == "fail"
+
+
+@pytest.mark.parametrize(
+    "code", ("unbalanced_emc", "unclosed_marked_content")
+)
+def test_structural_balancing_warning_is_not_assumed_to_be_text_loss(
+    code: str,
+) -> None:
+    diagnostic = Diagnostic(
+        "warning", code, "marked-content scope imbalance", {}
+    )
+    document = _passing_document()
+    object.__setattr__(document, "diagnostics", (diagnostic,))
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["extraction_loss_diagnostic_total"] == 0
+    assert report.hard_gates["no_known_text_loss"] is True
+    assert report.status == "pass"
+
+
 def test_special_character_gate_ignores_absent_baseline_characters() -> None:
     report = QualityEvaluator().evaluate(
         _passing_document("A/B"), "Heading A/B", xml_round_trip_ok=True
     )
     assert report.metrics["special_characters"]["\u2192"] == {
-        "tagged": 0, "baseline": 0, "preserved": True,
+        "tagged": 0, "baseline": 0, "count_preserved": True,
     }
-    assert report.hard_gates["special_characters_preserved"] is True
+    assert report.hard_gates["special_character_counts_preserved"] is True
 
 
 @pytest.mark.parametrize("character", tuple(">\u2192/&:[]()"))
@@ -848,6 +930,6 @@ def test_special_character_deficit_fails_preservation_gate(character: str) -> No
     report = QualityEvaluator().evaluate(
         _passing_document("Body"), f"Heading Body {character}", xml_round_trip_ok=True
     )
-    assert report.metrics["special_characters"][character]["preserved"] is False
-    assert report.hard_gates["special_characters_preserved"] is False
+    assert report.metrics["special_characters"][character]["count_preserved"] is False
+    assert report.hard_gates["special_character_counts_preserved"] is False
     assert report.status == "fail"

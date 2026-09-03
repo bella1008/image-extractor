@@ -15,6 +15,10 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.quality_diagnostics import (
+    EXTRACTION_LOSS_DIAGNOSTIC_CODES,
+    UNRESOLVED_REFERENCE_DIAGNOSTIC_CODES,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -37,15 +41,10 @@ _BODY_ROLES = frozenset(
 )
 _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
-_UNRESOLVED_REFERENCE_CODES = (
-    "unresolved_mcid",
-    "unresolved_page_reference",
-    "unsupported_objr",
-)
 _HEADING_CANDIDATE = re.compile(
-    r"(?:heading(?:[1-6])?$|(?:^|[_-])title$)", re.IGNORECASE
+    r"heading(?:(?P<level>[1-6])(?=$|\D)|$)", re.IGNORECASE
 )
-_HEADING_CANDIDATE_LEVEL = re.compile(r"heading([1-6])$", re.IGNORECASE)
+_TITLE_CANDIDATE = re.compile(r"(?:^|[_-])title$", re.IGNORECASE)
 _BIT_MASK_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
 _SPARSE_MATCH_PAIR_BUDGET = 10_000_000
 _SPARSE_MEMORY_BUDGET_BYTES = 16 * 1024 * 1024
@@ -161,18 +160,23 @@ class QualityEvaluator:
         reference_counts = Counter(
             diagnostic.code
             for diagnostic in document.diagnostics
-            if diagnostic.code in _UNRESOLVED_REFERENCE_CODES
+            if diagnostic.code in UNRESOLVED_REFERENCE_DIAGNOSTIC_CODES
         )
         unresolved = tuple(
             diagnostic
             for diagnostic in document.diagnostics
-            if diagnostic.code in _UNRESOLVED_REFERENCE_CODES
+            if diagnostic.code in UNRESOLVED_REFERENCE_DIAGNOSTIC_CODES
+        )
+        extraction_loss_counts = Counter(
+            diagnostic.code
+            for diagnostic in document.diagnostics
+            if diagnostic.code in EXTRACTION_LOSS_DIAGNOSTIC_CODES
         )
         special_characters = {
             character: {
                 "tagged": normalized_tagged.count(character),
                 "baseline": normalized_baseline.count(character),
-                "preserved": (
+                "count_preserved": (
                     normalized_baseline.count(character) == 0
                     or normalized_tagged.count(character)
                     >= normalized_baseline.count(character)
@@ -191,8 +195,10 @@ class QualityEvaluator:
                 self._has_useful_reference_context(diagnostic)
                 for diagnostic in unresolved
             ),
-            "special_characters_preserved": all(
-                result["preserved"] for result in special_characters.values()
+            "no_known_text_loss": not extraction_loss_counts,
+            "special_character_counts_preserved": all(
+                result["count_preserved"]
+                for result in special_characters.values()
             ),
         }
         metrics = {
@@ -209,6 +215,13 @@ class QualityEvaluator:
             ],
             "unsupported_objr_count": reference_counts["unsupported_objr"],
             "unresolved_reference_count": sum(reference_counts.values()),
+            "extraction_loss_diagnostic_counts": {
+                code: extraction_loss_counts[code]
+                for code in EXTRACTION_LOSS_DIAGNOSTIC_CODES
+            },
+            "extraction_loss_diagnostic_total": sum(
+                extraction_loss_counts.values()
+            ),
             "character_match_ratio": comparison.ratio,
             "comparison_mode": comparison.mode,
             "comparison_parameters": comparison.parameters,
@@ -278,8 +291,12 @@ class QualityEvaluator:
                 traversal.heading_hierarchy.append({})
             element_has_text = self._walk(child.children, element_path, traversal)
             if heading_entry_index is not None:
-                match = _HEADING_CANDIDATE_LEVEL.search(child.source_role)
-                candidate_level = int(match.group(1)) if match else None
+                match = _HEADING_CANDIDATE.search(child.source_role)
+                candidate_level = (
+                    int(match.group("level"))
+                    if match and match.group("level")
+                    else None
+                )
                 traversal.heading_hierarchy[heading_entry_index] = {
                     "structure_path": element_path,
                     "source_role": child.source_role,
@@ -649,7 +666,10 @@ class QualityEvaluator:
 
     @staticmethod
     def _is_heading_candidate(source_role: str) -> bool:
-        return bool(_HEADING_CANDIDATE.search(source_role))
+        return bool(
+            _HEADING_CANDIDATE.search(source_role)
+            or _TITLE_CANDIDATE.search(source_role)
+        )
 
     @staticmethod
     def _has_useful_reference_context(diagnostic: Diagnostic) -> bool:

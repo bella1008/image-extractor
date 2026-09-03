@@ -589,6 +589,7 @@ def test_competitor_markdown_after_final_preflight_is_not_overwritten(
         "_preflight_required_targets",
         staticmethod(final_preflight_then_compete),
     )
+    monkeypatch.setattr(output_bundle_module.os, "rename", os.replace)
     document = _document(tmp_path)
 
     with pytest.raises(OutputCollisionError, match="semantic_document.md"):
@@ -598,6 +599,55 @@ def test_competitor_markdown_after_final_preflight_is_not_overwritten(
     assert {path.name for path in output.iterdir()} == {
         output_bundle_module.MARKDOWN_NAME
     }
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_keyboard_interrupt_after_no_replace_link_removes_owned_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    real_link = os.link
+
+    def interrupt_after_link(source: str | Path, destination: str | Path) -> None:
+        real_link(source, destination)
+        raise KeyboardInterrupt("link completed then interrupted")
+
+    monkeypatch.setattr(output_bundle_module.os, "link", interrupt_after_link)
+    document = _document(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt, match="link completed then interrupted"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert list(output.iterdir()) == []
+    assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_system_exit_after_no_replace_source_unlink_removes_owned_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "result"
+    output.mkdir()
+    real_unlink = Path.unlink
+    interrupted = False
+
+    def interrupt_after_source_unlink(
+        path: Path, missing_ok: bool = False
+    ) -> None:
+        nonlocal interrupted
+        existed_before = path.exists()
+        real_unlink(path, missing_ok=missing_ok)
+        if not interrupted and existed_before and ".staging-" in path.parent.name:
+            interrupted = True
+            raise SystemExit("source unlink completed then interrupted")
+
+    monkeypatch.setattr(Path, "unlink", interrupt_after_source_unlink)
+    document = _document(tmp_path)
+
+    with pytest.raises(SystemExit, match="source unlink completed then interrupted"):
+        OutputBundleWriter().write(document, _report(document), output)
+
+    assert list(output.iterdir()) == []
     assert _owned_temporary_paths(tmp_path, "result") == []
 
 
@@ -1127,13 +1177,13 @@ def test_primary_publication_and_cleanup_failures_are_both_preserved(
     output = tmp_path / "result"
     output.mkdir()
     document = _document(tmp_path)
-    real_rename = os.rename
+    real_link = os.link
 
     def fail_publication(source: str | Path, destination: str | Path) -> None:
         source_path = Path(source)
         if ".staging-" in source_path.parent.name and Path(destination).parent == output:
             raise OSError("primary publication failure")
-        real_rename(source, destination)
+        real_link(source, destination)
 
     original_cleanup = OutputBundleWriter._remove_owned_directory
 
@@ -1142,7 +1192,7 @@ def test_primary_publication_and_cleanup_failures_are_both_preserved(
             raise OSError("staging cleanup failure")
         original_cleanup(directory)
 
-    monkeypatch.setattr(output_bundle_module.os, "rename", fail_publication)
+    monkeypatch.setattr(output_bundle_module.os, "link", fail_publication)
     monkeypatch.setattr(OutputBundleWriter, "_remove_owned_directory", staticmethod(fail_staging_cleanup))
 
     with pytest.raises(BundleTransactionError) as captured:
@@ -1196,13 +1246,13 @@ def test_primary_oserror_and_cleanup_keyboard_interrupt_are_both_visible(
     output = tmp_path / "result"
     output.mkdir()
     document = _document(tmp_path)
-    real_rename = os.rename
+    real_link = os.link
 
     def fail_publication(source: str | Path, destination: str | Path) -> None:
         source_path = Path(source)
         if ".staging-" in source_path.parent.name and Path(destination).parent == output:
             raise OSError("primary publication failure")
-        real_rename(source, destination)
+        real_link(source, destination)
 
     original_cleanup = OutputBundleWriter._remove_owned_directory
 
@@ -1211,7 +1261,7 @@ def test_primary_oserror_and_cleanup_keyboard_interrupt_are_both_visible(
             raise KeyboardInterrupt("cleanup interrupted")
         original_cleanup(directory)
 
-    monkeypatch.setattr(output_bundle_module.os, "rename", fail_publication)
+    monkeypatch.setattr(output_bundle_module.os, "link", fail_publication)
     monkeypatch.setattr(
         OutputBundleWriter,
         "_remove_owned_directory",
@@ -1275,7 +1325,7 @@ def test_failed_publication_into_existing_empty_directory_removes_new_outputs(
     document = _document(tmp_path)
     output = tmp_path / "result"
     output.mkdir()
-    real_rename = os.rename
+    real_link = os.link
     publication_count = 0
 
     def fail_second_publication(source: str | Path, destination: str | Path) -> None:
@@ -1286,9 +1336,9 @@ def test_failed_publication_into_existing_empty_directory_removes_new_outputs(
             publication_count += 1
             if publication_count == 2:
                 raise OSError("second publication failed")
-        real_rename(source, destination)
+        real_link(source, destination)
 
-    monkeypatch.setattr(output_bundle_module.os, "rename", fail_second_publication)
+    monkeypatch.setattr(output_bundle_module.os, "link", fail_second_publication)
 
     with pytest.raises(OSError, match="second publication failed"):
         OutputBundleWriter().write(document, _report(document), output)
@@ -1612,6 +1662,64 @@ def test_markdown_validation_rejects_missing_duplicate_candidate_before_publicat
 
     assert not output.exists()
     assert _owned_temporary_paths(tmp_path, "result") == []
+
+
+def test_markdown_validation_rejects_four_space_code_block_heading_lookalike(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    semantic.write_text(
+        "<document><paragraph><text>Not a heading</text></paragraph></document>",
+        encoding="utf-8",
+    )
+    markdown = tmp_path / "semantic_document.md"
+    markdown.write_text("    ## Not a heading\n", encoding="utf-8")
+    report = QualityReport(
+        "pass",
+        {},
+        {},
+        (),
+        (),
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "level": 1,
+                "structure_path": "/paragraph[0]",
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Markdown heading candidates"):
+        OutputBundleWriter._validate_markdown(markdown, semantic, report)
+
+
+def test_markdown_validation_accepts_list_indented_promoted_heading(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    semantic.write_text(
+        "<document><list><list_item><paragraph><text>List heading</text>"
+        "</paragraph></list_item></list></document>",
+        encoding="utf-8",
+    )
+    markdown = tmp_path / "semantic_document.md"
+    markdown.write_text("-\n  ## List heading\n", encoding="utf-8")
+    report = QualityReport(
+        "pass",
+        {},
+        {},
+        (),
+        (),
+        heading_hierarchy=(
+            {
+                "classification": "source_role_candidate",
+                "level": 1,
+                "structure_path": "/list[0]/list_item[0]/paragraph[0]",
+            },
+        ),
+    )
+
+    OutputBundleWriter._validate_markdown(markdown, semantic, report)
 
 
 @pytest.mark.parametrize("invalid_kind", ["directory", "symlink"])

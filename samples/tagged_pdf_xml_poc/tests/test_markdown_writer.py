@@ -209,6 +209,25 @@ def test_candidate_heading_lines_resolve_exact_renderer_punctuation(
     ) == Counter({"## Warning! Important": 1})
 
 
+def test_duplicate_candidate_structure_paths_are_rejected(tmp_path: Path) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, "<paragraph><text>Repeated path</text></paragraph>")
+    entry = {
+        "structure_path": "/paragraph[0]",
+        "source_role": "Heading1",
+        "semantic_role": "paragraph",
+        "level": 1,
+        "joined_text": "Repeated path",
+        "title": None,
+        "classification": "source_role_candidate",
+    }
+
+    with pytest.raises(ValueError, match="duplicate heading candidate path"):
+        MarkdownDocumentWriter.candidate_heading_lines(
+            semantic, _report(entry, dict(entry))
+        )
+
+
 def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(
     tmp_path: Path,
 ) -> None:

@@ -833,7 +833,11 @@ class OutputBundleWriter:
         expected_headings = MarkdownDocumentWriter.candidate_heading_lines(
             semantic_path, report
         )
-        markdown_lines = Counter(line.lstrip() for line in markdown.splitlines())
+        markdown_lines: Counter[str] = Counter()
+        for line in markdown.splitlines():
+            indentation = len(line) - len(line.lstrip(" "))
+            if indentation <= 3:
+                markdown_lines[line[indentation:]] += 1
         if any(
             markdown_lines[heading] != count
             for heading, count in expected_headings.items()
@@ -849,7 +853,7 @@ class OutputBundleWriter:
         overwrite: bool = True,
     ) -> None:
         backed_up: list[str] = []
-        published: list[str] = []
+        published: list[tuple[str, os.stat_result | None]] = []
         try:
             if overwrite:
                 for name in REQUIRED_OUTPUT_NAMES:
@@ -858,25 +862,36 @@ class OutputBundleWriter:
                         backed_up.append(name)
                         os.replace(destination, backup / name)
             for name in REQUIRED_OUTPUT_NAMES:
-                published.append(name)
                 source = staging / name
                 destination = output_dir / name
                 if overwrite:
+                    published.append((name, None))
                     os.replace(source, destination)
                 else:
+                    source_identity = source.stat(follow_symlinks=False)
+                    published.append((name, source_identity))
                     try:
-                        os.rename(source, destination)
+                        os.link(source, destination)
                     except FileExistsError as exc:
                         raise OutputCollisionError(
                             f"required output already exists: {destination.name}"
                         ) from exc
+                    source.unlink()
         except BaseException as publication_error:
             removal_errors: list[BaseException] = []
-            for name in reversed(published):
-                if os.path.lexists(staging / name):
+            for name, source_identity in reversed(published):
+                source = staging / name
+                destination = output_dir / name
+                if source_identity is None:
+                    owns_destination = not os.path.lexists(source)
+                else:
+                    owns_destination = OutputBundleWriter._matches_file_identity(
+                        destination, source_identity
+                    )
+                if not owns_destination:
                     continue
                 try:
-                    (output_dir / name).unlink(missing_ok=True)
+                    destination.unlink(missing_ok=True)
                 except BaseException as exc:
                     removal_errors.append(exc)
             restoration_errors: list[BaseException] = []
@@ -928,6 +943,14 @@ class OutputBundleWriter:
         OutputBundleWriter._write_commit_marker(
             backup, transaction_token, committed=True
         )
+
+    @staticmethod
+    def _matches_file_identity(path: Path, expected: os.stat_result) -> bool:
+        try:
+            actual = path.stat(follow_symlinks=False)
+        except OSError:
+            return False
+        return os.path.samestat(expected, actual)
 
     @staticmethod
     def _remove_owned_directory(directory: Path) -> None:

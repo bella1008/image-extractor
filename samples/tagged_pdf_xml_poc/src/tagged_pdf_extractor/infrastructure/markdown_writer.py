@@ -71,10 +71,15 @@ class MarkdownDocumentWriter:
     ) -> dict[ET.Element, dict[str, object]]:
         path_index = cls._build_path_index(root)
         promoted: dict[ET.Element, dict[str, object]] = {}
+        candidate_paths: set[str] = set()
         for entry in report.heading_hierarchy:
             if entry.get("classification") != "source_role_candidate":
                 continue
             path = entry.get("structure_path")
+            if isinstance(path, str) and path in candidate_paths:
+                raise ValueError(f"duplicate heading candidate path {path}")
+            if isinstance(path, str):
+                candidate_paths.add(path)
             element = path_index.get(path) if isinstance(path, str) else None
             if element is None:
                 raise ValueError(f"unresolved heading candidate path {path}")

@@ -205,6 +205,70 @@ def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(
     assert "\\> source line" in markdown
 
 
+def test_list_preserves_unexpected_direct_text(tmp_path: Path) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list><text>Loose list text</text>
+          <list_item><text>Regular item</text></list_item>
+        </list>
+        """,
+    )
+
+    assert "Loose list text" in markdown
+    assert markdown.index("Loose list text") < markdown.index("Regular item")
+
+
+def test_list_preserves_text_order_around_nested_list(tmp_path: Path) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item>
+          <text>Before nested list</text>
+          <list><list_item><text>Nested item</text></list_item></list>
+          <text>After nested list</text>
+        </list_item></list>
+        """,
+    )
+
+    assert markdown.count("Before nested list") == 1
+    assert markdown.count("Nested item") == 1
+    assert markdown.count("After nested list") == 1
+    assert markdown.index("Before nested list") < markdown.index("Nested item")
+    assert markdown.index("Nested item") < markdown.index("After nested list")
+
+
+def test_promotes_heading_candidate_inside_list_without_duplicate_text(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/list[0]/list_item[0]/paragraph[0]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "List heading",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item>
+          <paragraph><text>List heading</text></paragraph>
+          <text>List tail</text>
+        </list_item></list>
+        """,
+        report,
+    )
+
+    assert "## List heading" in markdown
+    assert markdown.count("List heading") == 1
+    assert markdown.count("List tail") == 1
+    assert markdown.index("## List heading") < markdown.index("List tail")
+
+
 def test_renders_rectangular_table_and_escapes_cell_pipes(tmp_path: Path) -> None:
     markdown = _render(
         tmp_path,
@@ -219,6 +283,37 @@ def test_renders_rectangular_table_and_escapes_cell_pipes(tmp_path: Path) -> Non
     assert "| Name | Path \\| URL |" in markdown
     assert "| --- | --- |" in markdown
     assert "| Menu | A / B \\| https://example.com |" in markdown
+
+
+def test_promotes_heading_candidate_inside_table_without_duplicate_or_lost_text(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/table[0]/table_row[0]/table_cell[0]/paragraph[0]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "Table heading",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        """
+        <table><table_row><table_cell>
+          <paragraph><text>Table heading</text></paragraph>
+          <text>Cell tail</text>
+        </table_cell></table_row></table>
+        """,
+        report,
+    )
+
+    assert "## Table heading" in markdown
+    assert markdown.count("Table heading") == 1
+    assert markdown.count("Cell tail") == 1
+    assert markdown.index("## Table heading") < markdown.index("Cell tail")
 
 
 def test_irregular_or_nested_table_falls_back_to_row_lists_without_text_loss(
@@ -315,6 +410,134 @@ def test_writes_utf8_with_lf_line_endings(tmp_path: Path) -> None:
     assert "한글.pdf".encode() in data
     assert b"\r" not in data
     assert b"\n" in data
+
+
+@pytest.mark.parametrize(
+    ("source", "escaped"),
+    [
+        ("```python", r"\```python"),
+        ("~~~", r"\~~~"),
+        ("---", r"\---"),
+        ("***", r"\***"),
+        ("___", r"\___"),
+        ("<div>raw HTML</div>", r"\<div>raw HTML</div>"),
+        ("<!-- source comment -->", r"\<!-- source comment -->"),
+    ],
+)
+def test_escapes_commonmark_block_openers_per_source_line(
+    tmp_path: Path,
+    source: str,
+    escaped: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        f"<paragraph><text>{source.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</text></paragraph>"
+        "<paragraph><text>Following content</text></paragraph>",
+    )
+
+    assert f"\n{escaped}\n\nFollowing content\n" in markdown
+
+
+def test_replace_failure_keeps_existing_destination_and_removes_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    output = tmp_path / "semantic_document.md"
+    _write_xml(semantic, "<paragraph><text>Replacement</text></paragraph>")
+    output.write_bytes(b"existing destination")
+
+    def fail_replace(source: str | Path, destination: str | Path) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(markdown_writer_module.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        MarkdownDocumentWriter().write(
+            semantic, _report(), output, source_name="manual.pdf"
+        )
+
+    assert output.read_bytes() == b"existing destination"
+    assert list(tmp_path.glob(f".{output.name}.*.tmp")) == []
+
+
+@pytest.mark.parametrize("failure_point", ["write", "close"])
+def test_write_or_close_failure_keeps_existing_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    output = tmp_path / "semantic_document.md"
+    _write_xml(semantic, "<paragraph><text>Replacement</text></paragraph>")
+    output.write_bytes(b"existing destination")
+    real_named_temporary_file = markdown_writer_module.tempfile.NamedTemporaryFile
+
+    class FailingTemporaryFile:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._context = real_named_temporary_file(*args, **kwargs)
+            self._file: object | None = None
+
+        def __enter__(self) -> "FailingTemporaryFile":
+            self._file = self._context.__enter__()
+            self.name = self._file.name
+            return self
+
+        def write(self, value: str) -> int:
+            if failure_point == "write":
+                raise OSError("write failed")
+            return self._file.write(value)
+
+        def __exit__(
+            self,
+            exception_type: type[BaseException] | None,
+            exception: BaseException | None,
+            traceback: object,
+        ) -> bool | None:
+            result = self._context.__exit__(exception_type, exception, traceback)
+            if failure_point == "close" and exception_type is None:
+                raise OSError("close failed")
+            return result
+
+    monkeypatch.setattr(
+        markdown_writer_module.tempfile,
+        "NamedTemporaryFile",
+        FailingTemporaryFile,
+    )
+
+    with pytest.raises(OSError, match=f"{failure_point} failed"):
+        MarkdownDocumentWriter().write(
+            semantic, _report(), output, source_name="manual.pdf"
+        )
+
+    assert output.read_bytes() == b"existing destination"
+    assert list(tmp_path.glob(f".{output.name}.*.tmp")) == []
+
+
+def test_cleanup_failure_does_not_mask_primary_publication_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    output = tmp_path / "semantic_document.md"
+    _write_xml(semantic, "<paragraph><text>Replacement</text></paragraph>")
+    output.write_bytes(b"existing destination")
+
+    def fail_replace(source: str | Path, destination: str | Path) -> None:
+        raise OSError("primary replace failed")
+
+    def fail_unlink(self: Path, missing_ok: bool = False) -> None:
+        raise OSError("secondary unlink failed")
+
+    monkeypatch.setattr(markdown_writer_module.os, "replace", fail_replace)
+    monkeypatch.setattr(markdown_writer_module.Path, "unlink", fail_unlink)
+
+    with pytest.raises(OSError, match="primary replace failed"):
+        MarkdownDocumentWriter().write(
+            semantic, _report(), output, source_name="manual.pdf"
+        )
+
+    assert output.read_bytes() == b"existing destination"
 
 
 def test_atomic_publication_replaces_from_temporary_sibling(

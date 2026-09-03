@@ -14,6 +14,11 @@ from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 _WHITESPACE = re.compile(r"\s+")
 _MARKDOWN_LINE_PREFIX = re.compile(r"^(#{1,6}\s|>|[-+*]\s|\d+[.)]\s)")
+_FENCED_CODE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
+_THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
+_RAW_HTML_BLOCK_PREFIX = re.compile(
+    r"^<(?:!--|[!?]|/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]))"
+)
 _LEADING_CLOSING_PUNCTUATION = re.compile(r"^([.,:;?!)]+)(.*)$")
 _CELL_TAGS = frozenset({"table_header", "table_cell"})
 
@@ -105,59 +110,119 @@ class MarkdownDocumentWriter:
             text = cls._text_value(element)
             return [cls._escape_line_prefix(text)] if text else []
         if element.tag == "list":
-            lines = cls._render_list(element, depth=0)
+            lines = cls._render_list(element, promoted, depth=0)
             return ["\n".join(lines)] if lines else []
         if element.tag == "table":
-            return [cls._render_table(element)]
+            return [cls._render_table(element, promoted)]
         if element.tag == "figure":
             text = cls._element_text(element)
             return [cls._escape_line_prefix(text) if text else "[그림: 텍스트 없음]"]
         return cls._render_children(element, promoted)
 
     @classmethod
-    def _render_list(cls, element: ET.Element, *, depth: int) -> list[str]:
-        lines: list[str] = []
-        for item in cls._structural_children(element):
-            if item.tag != "list_item":
-                lines.extend(cls._render_list_descendants(item, depth=depth))
-                continue
-            text_parts: list[str] = []
-            nested_lists: list[ET.Element] = []
-            cls._collect_list_item(item, text_parts, nested_lists)
-            item_text = cls._join_text_parts(text_parts)
-            lines.append(f"{'  ' * depth}- {item_text}".rstrip())
-            for nested in nested_lists:
-                lines.extend(cls._render_list(nested, depth=depth + 1))
-        return lines
-
-    @classmethod
-    def _render_list_descendants(
-        cls, element: ET.Element, *, depth: int
-    ) -> list[str]:
-        if element.tag == "list":
-            return cls._render_list(element, depth=depth)
-        lines: list[str] = []
-        for child in cls._structural_children(element):
-            lines.extend(cls._render_list_descendants(child, depth=depth))
-        return lines
-
-    @classmethod
-    def _collect_list_item(
+    def _render_list(
         cls,
         element: ET.Element,
-        text_parts: list[str],
-        nested_lists: list[ET.Element],
-    ) -> None:
-        for child in cls._structural_children(element):
-            if child.tag == "list":
-                nested_lists.append(child)
-            elif child.tag == "text":
-                text_parts.append(cls._visible_text(child))
+        promoted: dict[ET.Element, dict[str, object]],
+        *,
+        depth: int,
+    ) -> list[str]:
+        lines: list[str] = []
+        text_parts: list[str] = []
+
+        def flush_text() -> None:
+            text = cls._join_text_parts(text_parts)
+            if text:
+                lines.append(cls._escape_line_prefix(text))
+            text_parts.clear()
+
+        for kind, value in cls._list_events(element, promoted):
+            if kind == "text":
+                text_parts.append(cls._visible_text(value))
+            elif kind == "list_item":
+                flush_text()
+                lines.extend(cls._render_list_item(value, promoted, depth=depth))
             else:
-                cls._collect_list_item(child, text_parts, nested_lists)
+                flush_text()
+                lines.extend(cls._render_list_block(value, promoted, depth=depth + 1))
+        flush_text()
+        return lines
 
     @classmethod
-    def _render_table(cls, table: ET.Element) -> str:
+    def _render_list_item(
+        cls,
+        item: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+        *,
+        depth: int,
+    ) -> list[str]:
+        lines: list[str] = []
+        text_parts: list[str] = []
+        emitted = False
+
+        def flush_text() -> None:
+            nonlocal emitted
+            text = cls._join_text_parts(text_parts)
+            if text:
+                lines.append(f"{'  ' * depth}- {text}")
+                emitted = True
+            text_parts.clear()
+
+        for kind, value in cls._list_events(item, promoted):
+            if kind == "text":
+                text_parts.append(cls._visible_text(value))
+            else:
+                flush_text()
+                lines.extend(cls._render_list_block(value, promoted, depth=depth + 1))
+                emitted = True
+        flush_text()
+        if not emitted:
+            lines.append(f"{'  ' * depth}-")
+        return lines
+
+    @classmethod
+    def _list_events(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> Iterable[tuple[str, ET.Element]]:
+        for child in cls._structural_children(element):
+            if child in promoted:
+                yield "block", child
+            elif child.tag == "list_item":
+                yield "list_item", child
+            elif child.tag in {"list", "table", "figure"}:
+                yield "block", child
+            elif child.tag == "text":
+                yield "text", child
+            else:
+                yield from cls._list_events(child, promoted)
+
+    @classmethod
+    def _render_list_block(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+        *,
+        depth: int,
+    ) -> list[str]:
+        if element.tag == "list":
+            return cls._render_list(element, promoted, depth=depth)
+        return [
+            line
+            for block in cls._render_element(element, promoted)
+            for line in block.splitlines()
+        ]
+
+    @classmethod
+    def _render_table(
+        cls,
+        table: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> str:
+        if any(element in promoted for element in table.iter()):
+            return cls._render_table_with_promotions(table, promoted)
+
         table_children = cls._structural_children(table)
         rows = [
             child
@@ -211,6 +276,74 @@ class MarkdownDocumentWriter:
             text = cls._element_text(table)
             lines.append(f"- 행 1: {text}".rstrip())
         return "\n".join(lines)
+
+    @classmethod
+    def _render_table_with_promotions(
+        cls,
+        table: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> str:
+        lines: list[str] = []
+        row_index = 0
+        for child in cls._structural_children(table):
+            if child in promoted:
+                lines.extend(
+                    line
+                    for block in cls._render_element(child, promoted)
+                    for line in block.splitlines()
+                )
+                continue
+            if child.tag == "table_row":
+                row_index += 1
+                prefix = f"- 행 {row_index}: "
+            else:
+                prefix = "- "
+            lines.extend(cls._render_table_sequence(child, promoted, prefix=prefix))
+        return "\n".join(lines)
+
+    @classmethod
+    def _render_table_sequence(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+        *,
+        prefix: str,
+    ) -> list[str]:
+        lines: list[str] = []
+        text_parts: list[str] = []
+
+        def flush_text() -> None:
+            text = cls._join_text_parts(text_parts)
+            if text:
+                lines.append(f"{prefix}{text}")
+            text_parts.clear()
+
+        for kind, value in cls._table_events(element, promoted):
+            if kind == "text":
+                text_parts.append(cls._visible_text(value))
+                continue
+            flush_text()
+            lines.extend(
+                line
+                for block in cls._render_element(value, promoted)
+                for line in block.splitlines()
+            )
+        flush_text()
+        return lines
+
+    @classmethod
+    def _table_events(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> Iterable[tuple[str, ET.Element]]:
+        for child in cls._structural_children(element):
+            if child in promoted or child.tag in {"list", "table", "figure"}:
+                yield "block", child
+            elif child.tag == "text":
+                yield "text", child
+            else:
+                yield from cls._table_events(child, promoted)
 
     @staticmethod
     def _structural_children(element: ET.Element) -> list[ET.Element]:
@@ -274,7 +407,12 @@ class MarkdownDocumentWriter:
 
     @staticmethod
     def _escape_line_prefix(value: str) -> str:
-        if _MARKDOWN_LINE_PREFIX.match(value):
+        if (
+            _MARKDOWN_LINE_PREFIX.match(value)
+            or _FENCED_CODE_PREFIX.match(value)
+            or _THEMATIC_BREAK.match(value)
+            or _RAW_HTML_BLOCK_PREFIX.match(value)
+        ):
             return f"\\{value}"
         return value
 
@@ -298,4 +436,7 @@ class MarkdownDocumentWriter:
             temporary_path = None
         finally:
             if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError:
+                    pass

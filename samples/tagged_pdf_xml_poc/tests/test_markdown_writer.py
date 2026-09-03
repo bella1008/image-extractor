@@ -167,6 +167,22 @@ def test_joins_fragment_punctuation_without_blanket_spaces(tmp_path: Path) -> No
     assert "Open User Guide )" not in markdown
 
 
+def test_trailing_fragment_whitespace_moves_after_closing_punctuation(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph><text>A </text><text>.B </text><text>,C </text><text>:D </text><text>;E </text><text>?F </text><text>!G </text><text>)</text></paragraph>
+        <paragraph><text>Ordinary </text><text>word spacing</text></paragraph>
+        """,
+    )
+
+    assert "A. B, C: D; E? F! G)" in markdown
+    assert "A .B ,C :D ;E ?F !G )" not in markdown
+    assert "Ordinary word spacing" in markdown
+
+
 def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(
     tmp_path: Path,
 ) -> None:

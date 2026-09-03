@@ -14,6 +14,7 @@ from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 _WHITESPACE = re.compile(r"\s+")
 _MARKDOWN_LINE_PREFIX = re.compile(r"^(#{1,6}\s|>|[-+*]\s|\d+[.)]\s)")
+_LEADING_CLOSING_PUNCTUATION = re.compile(r"^([.,:;?!)]+)(.*)$")
 _CELL_TAGS = frozenset({"table_header", "table_cell"})
 
 
@@ -228,6 +229,18 @@ class MarkdownDocumentWriter:
             for part in parts
             if part and part.strip()
         ]
+        for index in range(1, len(normalized)):
+            previous = normalized[index - 1]
+            if not previous[-1].isspace():
+                continue
+            match = _LEADING_CLOSING_PUNCTUATION.match(normalized[index].lstrip())
+            if match is None:
+                continue
+            punctuation, remainder = match.groups()
+            normalized[index - 1] = previous.rstrip()
+            normalized[index] = (
+                f"{punctuation} {remainder.lstrip()}" if remainder else f"{punctuation} "
+            )
         joined, _ = join_text_parts(tuple(normalized))
         return joined.strip()
 

@@ -241,6 +241,71 @@ def test_list_preserves_text_order_around_nested_list(tmp_path: Path) -> None:
     assert "\n  After nested list\n" in markdown
 
 
+def test_block_only_list_item_emits_parent_marker_before_nested_block(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item>
+          <list><list_item><text>Nested only</text></list_item></list>
+        </list_item></list>
+        """,
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "-\n  - Nested only\n"
+    assert sum(line == "-" or line.startswith("- ") for line in body.splitlines()) == 1
+
+
+def test_block_first_list_item_keeps_later_text_as_indented_continuation(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item>
+          <list><list_item><text>Nested first</text></list_item></list>
+          <text>After block</text>
+        </list_item></list>
+        """,
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "-\n  - Nested first\n  After block\n"
+    assert sum(line == "-" or line.startswith("- ") for line in body.splitlines()) == 1
+
+
+def test_promoted_heading_first_list_item_keeps_one_marker_and_indented_tail(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/list[0]/list_item[0]/paragraph[0]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "Promoted first",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item>
+          <paragraph><text>Promoted first</text></paragraph>
+          <text>Tail text</text>
+        </list_item></list>
+        """,
+        report,
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "-\n  ## Promoted first\n  Tail text\n"
+    assert sum(line == "-" or line.startswith("- ") for line in body.splitlines()) == 1
+
+
 def test_promotes_heading_candidate_inside_list_without_duplicate_text(
     tmp_path: Path,
 ) -> None:

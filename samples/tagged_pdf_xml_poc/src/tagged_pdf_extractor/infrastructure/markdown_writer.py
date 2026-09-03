@@ -179,11 +179,19 @@ class MarkdownDocumentWriter:
                 has_content = True
             text_parts.clear()
 
+        def ensure_marker() -> None:
+            nonlocal has_content, marker_emitted
+            if not marker_emitted:
+                lines.append(f"{'  ' * depth}-")
+                marker_emitted = True
+                has_content = True
+
         for kind, value in cls._list_events(item, promoted):
             if kind == "text":
                 text_parts.append(cls._visible_text(value))
             else:
                 flush_text()
+                ensure_marker()
                 lines.extend(cls._render_list_block(value, promoted, depth=depth + 1))
                 has_content = True
         flush_text()
@@ -219,8 +227,9 @@ class MarkdownDocumentWriter:
     ) -> list[str]:
         if element.tag == "list":
             return cls._render_list(element, promoted, depth=depth)
+        indentation = "  " * depth
         return [
-            line
+            f"{indentation}{line}"
             for block in cls._render_element(element, promoted)
             for line in block.splitlines()
         ]

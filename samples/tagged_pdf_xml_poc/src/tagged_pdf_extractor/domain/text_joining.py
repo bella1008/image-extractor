@@ -1,8 +1,8 @@
 import re
 
 
-_WORD_OR_CLOSING = re.compile(r"[\w\)\]\}»】〕〉》）］｝]$", re.UNICODE)
-_WORD_OR_OPENING = re.compile(r"^[\w\(\[\{«【〔〈《（［｛]", re.UNICODE)
+_WORD_OR_CLOSING = re.compile(r"[\w\)\]\}]$", re.UNICODE)
+_WORD_OR_OPENING = re.compile(r"^[\w\(\[\{]", re.UNICODE)
 
 
 def join_text_parts(

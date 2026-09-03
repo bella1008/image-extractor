@@ -19,7 +19,7 @@ def test_inserts_space_between_adjacent_words() -> None:
     text, decisions = join_text_parts(("This is", "a sentence."))
 
     assert text == "This is a sentence."
-    assert decisions[-1] == {"boundary": 0, "action": "insert_space"}
+    assert decisions == ({"boundary": 0, "action": "insert_space"},)
 
 
 def test_empty_parts_return_empty_text_and_no_decisions() -> None:

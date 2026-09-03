@@ -63,6 +63,8 @@ class TaggedPdfReader:
         if raw_struct_root is None:
             raise TaggedPdfError("PDF has no /StructTreeRoot")
         struct_root = self.resolve(raw_struct_root)
+        if struct_root is None:
+            raise TaggedPdfError("PDF has no /StructTreeRoot")
 
         pages = list(reader.pages)
         page_indexes = {

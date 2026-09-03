@@ -99,6 +99,28 @@ def test_rejects_pdf_without_structure_tree(
     assert str(exc_info.value) == "PDF has no /StructTreeRoot"
 
 
+def test_rejects_structure_tree_reference_that_resolves_to_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class NullStructureTreeReference:
+        def get_object(self):
+            return None
+
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": NullStructureTreeReference()}}
+        pages: list[Any] = []
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    with pytest.raises(TaggedPdfError) as exc_info:
+        TaggedPdfReader().read(tmp_path / "null-structure-tree.pdf")
+
+    assert str(exc_info.value) == "PDF has no /StructTreeRoot"
+
+
 def test_reads_pypdf_false_marked_value_as_false(tmp_path: Path) -> None:
     def empty_structure(_writer: PdfWriter, _pages: list[Any]):
         return ArrayObject(), None

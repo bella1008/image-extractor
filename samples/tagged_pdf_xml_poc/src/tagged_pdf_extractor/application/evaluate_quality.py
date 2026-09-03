@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
@@ -36,9 +37,8 @@ _BODY_ROLES = frozenset(
 _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
 _EXACT_COMPARISON_THRESHOLD = 8_192
-_COMPARISON_CHUNK_SIZE = 2_048
-_COMPARISON_WINDOW_MARGIN = 0
-_COMPARISON_DRIFT_ALLOWANCE = 4_096
+_BIT_PARALLEL_MAX_UNIQUE_CHARACTERS = 2_048
+_BIT_PARALLEL_MAX_MASK_BYTES = 8 * 1024 * 1024
 
 
 def _is_xml_10_character(character: str) -> bool:
@@ -73,6 +73,13 @@ class _Traversal:
         self.forbidden_xml_control_field_count += count > 0
 
 
+@dataclass(frozen=True)
+class _Comparison:
+    ratio: float
+    mode: str
+    parameters: dict[str, Any]
+
+
 class QualityEvaluator:
     def evaluate(
         self,
@@ -93,14 +100,7 @@ class QualityEvaluator:
         )
         normalized_tagged = self._normalize_for_measurement(tagged_text)
         normalized_baseline = self._normalize_for_measurement(baseline_text)
-        (
-            character_match_ratio,
-            metric_mode,
-            chunk_size,
-            window_margin,
-            window_size,
-            drift_allowance,
-        ) = self._character_match_ratio(
+        comparison = self._character_match_ratio(
             normalized_tagged, normalized_baseline
         )
 
@@ -128,12 +128,9 @@ class QualityEvaluator:
             "unknown_role_count": traversal.unknown_role_count,
             "empty_element_count": traversal.empty_element_count,
             "unresolved_mcid_count": len(unresolved),
-            "character_match_ratio": character_match_ratio,
-            "character_match_metric_mode": metric_mode,
-            "character_match_chunk_size": chunk_size,
-            "character_match_window_margin": window_margin,
-            "character_match_window_size": window_size,
-            "character_match_drift_allowance": drift_allowance,
+            "character_match_ratio": comparison.ratio,
+            "comparison_mode": comparison.mode,
+            "comparison_parameters": comparison.parameters,
             "tagged_character_count": len(normalized_tagged),
             "baseline_character_count": len(normalized_baseline),
             "special_characters": {
@@ -221,34 +218,24 @@ class QualityEvaluator:
     @staticmethod
     def _character_match_ratio(
         tagged_text: str, baseline_text: str
-    ) -> tuple[
-        float,
-        str,
-        int | None,
-        int | None,
-        int | None,
-        int | None,
-    ]:
+    ) -> _Comparison:
         if not baseline_text:
-            return (
-                1.0 if not tagged_text else 0.0,
-                "exact",
-                None,
-                None,
-                None,
-                None,
+            return _Comparison(
+                ratio=1.0 if not tagged_text else 0.0,
+                mode="exact_sequence_matcher",
+                parameters={
+                    "autojunk": False,
+                    "exact_threshold": _EXACT_COMPARISON_THRESHOLD,
+                },
             )
         if max(len(baseline_text), len(tagged_text)) > _EXACT_COMPARISON_THRESHOLD:
-            matched = QualityEvaluator._sequential_matched_size(
+            matched, mode, parameters = QualityEvaluator._large_lcs_length(
                 baseline_text, tagged_text
             )
-            return (
-                matched / len(baseline_text),
-                "sequential_monotonic_window",
-                _COMPARISON_CHUNK_SIZE,
-                _COMPARISON_WINDOW_MARGIN,
-                _COMPARISON_CHUNK_SIZE + _COMPARISON_DRIFT_ALLOWANCE,
-                _COMPARISON_DRIFT_ALLOWANCE,
+            return _Comparison(
+                ratio=matched / len(baseline_text),
+                mode=mode,
+                parameters=parameters,
             )
         matched = sum(
             block.size
@@ -256,30 +243,87 @@ class QualityEvaluator:
                 None, baseline_text, tagged_text, autojunk=False
             ).get_matching_blocks()
         )
-        return matched / len(baseline_text), "exact", None, None, None, None
+        return _Comparison(
+            ratio=matched / len(baseline_text),
+            mode="exact_sequence_matcher",
+            parameters={
+                "autojunk": False,
+                "exact_threshold": _EXACT_COMPARISON_THRESHOLD,
+            },
+        )
 
     @staticmethod
-    def _sequential_matched_size(baseline_text: str, tagged_text: str) -> int:
-        matched = 0
-        tagged_cursor = 0
-        window_size = _COMPARISON_CHUNK_SIZE + _COMPARISON_DRIFT_ALLOWANCE
-        for start in range(0, len(baseline_text), _COMPARISON_CHUNK_SIZE):
-            baseline_chunk = baseline_text[start : start + _COMPARISON_CHUNK_SIZE]
-            tagged_window = tagged_text[
-                tagged_cursor : tagged_cursor + window_size
-            ]
-            blocks = SequenceMatcher(
-                None, baseline_chunk, tagged_window, autojunk=False
-            ).get_matching_blocks()
-            consumed_end = 0
-            for block in blocks:
-                if block.size == 0:
-                    continue
-                matched += block.size
-                consumed_end = block.b + block.size
-            if consumed_end:
-                tagged_cursor += consumed_end
-        return matched
+    def _large_lcs_length(
+        baseline_text: str, tagged_text: str
+    ) -> tuple[int, str, dict[str, Any]]:
+        """Return exact LCS coverage without unbounded SequenceMatcher work.
+
+        Full-document ``SequenceMatcher(autojunk=False)`` took about 224 seconds
+        on the POC sample, while bounded alignment windows proved inexact after
+        insertions and deletions. Large inputs therefore use exact LCS
+        algorithms only: a bigint bitset when its mask table is bounded, or
+        sparse Hunt-Szymanski/LIS for high-cardinality text.
+        """
+        if len(baseline_text) <= len(tagged_text):
+            indexed_text, iterated_text = baseline_text, tagged_text
+        else:
+            indexed_text, iterated_text = tagged_text, baseline_text
+
+        unique_character_count = len(set(indexed_text))
+        bytes_per_mask = (len(indexed_text) + 7) // 8 + 32
+        estimated_mask_bytes = unique_character_count * bytes_per_mask
+        common_parameters = {
+            "exact_threshold": _EXACT_COMPARISON_THRESHOLD,
+            "indexed_dimension": "shorter",
+            "indexed_length": len(indexed_text),
+            "iterated_length": len(iterated_text),
+            "unique_character_count": unique_character_count,
+            "estimated_mask_bytes": estimated_mask_bytes,
+            "max_unique_characters": _BIT_PARALLEL_MAX_UNIQUE_CHARACTERS,
+            "max_mask_bytes": _BIT_PARALLEL_MAX_MASK_BYTES,
+        }
+        if (
+            unique_character_count <= _BIT_PARALLEL_MAX_UNIQUE_CHARACTERS
+            and estimated_mask_bytes <= _BIT_PARALLEL_MAX_MASK_BYTES
+        ):
+            return (
+                QualityEvaluator._bit_parallel_lcs(indexed_text, iterated_text),
+                "bit_parallel_lcs",
+                {**common_parameters, "bitset_dimension": "shorter"},
+            )
+        return (
+            QualityEvaluator._sparse_lcs(indexed_text, iterated_text),
+            "sparse_lcs",
+            {**common_parameters, "fallback_reason": "bit_mask_memory_bound"},
+        )
+
+    @staticmethod
+    def _bit_parallel_lcs(indexed_text: str, iterated_text: str) -> int:
+        masks: dict[str, int] = {}
+        for index, character in enumerate(indexed_text):
+            masks[character] = masks.get(character, 0) | (1 << index)
+
+        state = 0
+        for character in iterated_text:
+            x = masks.get(character, 0) | state
+            state = x & ~(x - ((state << 1) | 1))
+        return state.bit_count()
+
+    @staticmethod
+    def _sparse_lcs(indexed_text: str, iterated_text: str) -> int:
+        positions: dict[str, list[int]] = {}
+        for index, character in enumerate(indexed_text):
+            positions.setdefault(character, []).append(index)
+
+        increasing_tails: list[int] = []
+        for character in iterated_text:
+            for position in reversed(positions.get(character, ())):
+                insertion_index = bisect_left(increasing_tails, position)
+                if insertion_index == len(increasing_tails):
+                    increasing_tails.append(position)
+                else:
+                    increasing_tails[insertion_index] = position
+        return len(increasing_tails)
 
     @staticmethod
     def _has_useful_mcid_context(diagnostic: Diagnostic) -> bool:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
+import random
 from difflib import SequenceMatcher
+from pathlib import Path
 
 import pymupdf
 import pytest
@@ -68,6 +69,19 @@ def _body_only_document(text: str) -> TaggedDocument:
             children=(ContentFragment(0, 1, (text,)),),
         )
     )
+
+
+def _lcs_oracle(left: str, right: str) -> int:
+    previous = [0] * (len(right) + 1)
+    for left_character in left:
+        current = [0]
+        for index, right_character in enumerate(right, start=1):
+            if left_character == right_character:
+                current.append(previous[index - 1] + 1)
+            else:
+                current.append(max(previous[index], current[-1]))
+        previous = current
+    return previous[-1]
 
 
 def test_pymupdf_baseline_joins_page_text_with_newline(tmp_path: Path) -> None:
@@ -229,8 +243,11 @@ def test_small_character_comparison_uses_exact_sequence_matcher_semantics() -> N
     )
 
     assert report.metrics["character_match_ratio"] == expected_matched / len(baseline)
-    assert report.metrics["character_match_metric_mode"] == "exact"
-    assert report.metrics["character_match_chunk_size"] is None
+    assert report.metrics["comparison_mode"] == "exact_sequence_matcher"
+    assert report.metrics["comparison_parameters"] == {
+        "autojunk": False,
+        "exact_threshold": 8_192,
+    }
 
 
 def test_large_character_comparison_is_deterministic_and_auditable() -> None:
@@ -244,13 +261,11 @@ def test_large_character_comparison_is_deterministic_and_auditable() -> None:
     assert first.metrics["character_match_ratio"] == second.metrics[
         "character_match_ratio"
     ]
-    assert first.metrics["character_match_metric_mode"] == (
-        "sequential_monotonic_window"
-    )
-    assert first.metrics["character_match_chunk_size"] > 0
-    assert first.metrics["character_match_window_margin"] == 0
-    assert first.metrics["character_match_window_size"] == 6_144
-    assert first.metrics["character_match_drift_allowance"] == 4_096
+    assert first.metrics["comparison_mode"] == "bit_parallel_lcs"
+    assert first.metrics["comparison_parameters"]["bitset_dimension"] == "shorter"
+    assert "character_match_chunk_size" not in first.metrics
+    assert "character_match_window_size" not in first.metrics
+    assert "character_match_drift_allowance" not in first.metrics
 
 
 def test_repeated_text_severe_deletion_cannot_reuse_tagged_characters() -> None:
@@ -272,7 +287,7 @@ def test_repeated_text_severe_deletion_cannot_reuse_tagged_characters() -> None:
 
 @pytest.mark.parametrize("amount", (256, 1_024))
 @pytest.mark.parametrize("position_name", ("beginning", "middle", "end"))
-def test_sequential_comparison_retains_full_coverage_after_pure_insertion(
+def test_large_lcs_retains_full_coverage_after_pure_insertion(
     amount: int, position_name: str
 ) -> None:
     baseline = _nonrepetitive_text()
@@ -289,7 +304,7 @@ def test_sequential_comparison_retains_full_coverage_after_pure_insertion(
 
 @pytest.mark.parametrize("amount", (256, 1_024))
 @pytest.mark.parametrize("position_name", ("beginning", "middle", "end"))
-def test_sequential_comparison_tracks_theoretical_pure_deletion_coverage(
+def test_large_lcs_tracks_theoretical_pure_deletion_coverage(
     amount: int, position_name: str
 ) -> None:
     baseline = _nonrepetitive_text()
@@ -311,41 +326,28 @@ def test_sequential_comparison_tracks_theoretical_pure_deletion_coverage(
     )
 
 
-def test_fully_deleted_baseline_chunk_does_not_consume_tagged_text() -> None:
-    baseline = _nonrepetitive_text()
-    tagged = baseline[2_048:]
+def test_reviewer_leading_deletion_counterexample_is_exact() -> None:
+    baseline = _nonrepetitive_text(12_288)
+    tagged = baseline[4_096:]
 
     report = QualityEvaluator().evaluate(
         _body_only_document(tagged), baseline, xml_round_trip_ok=True
     )
 
     assert report.metrics["character_match_ratio"] == pytest.approx(
-        len(tagged) / len(baseline), abs=1 / len(baseline)
+        2 / 3
     )
+    assert report.metrics["comparison_mode"] == "sparse_lcs"
 
 
-def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> None:
+def test_large_modes_never_call_sequence_matcher(monkeypatch) -> None:
     import tagged_pdf_extractor.application.evaluate_quality as quality_module
 
-    calls: list[tuple[str, str, bool]] = []
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("large comparison must not use SequenceMatcher")
 
-    class FakeMatcher:
-        def __init__(self, isjunk, baseline, tagged, autojunk):
-            assert isjunk is None
-            calls.append((baseline, tagged, autojunk))
-
-        def get_matching_blocks(self):
-            baseline, tagged, _ = calls[-1]
-            size = min(len(baseline), len(tagged))
-            return (
-                type("Block", (), {"b": 0, "size": size})(),
-                type("Block", (), {"b": size, "size": 0})(),
-            )
-
-    monkeypatch.setattr(quality_module, "SequenceMatcher", FakeMatcher)
-    long_text = _nonrepetitive_text(
-        quality_module._EXACT_COMPARISON_THRESHOLD + 1
-    )
+    monkeypatch.setattr(quality_module, "SequenceMatcher", fail_if_called)
+    long_text = "abcd" * 2_100
 
     report = QualityEvaluator().evaluate(
         _body_only_document(long_text),
@@ -353,28 +355,88 @@ def test_large_comparison_bounds_every_sequence_matcher_call(monkeypatch) -> Non
         xml_round_trip_ok=True,
     )
 
-    assert len(calls) > 1
-    assert all(autojunk is False for _, _, autojunk in calls)
-    assert max(len(baseline) for baseline, _, _ in calls) <= (
-        quality_module._COMPARISON_CHUNK_SIZE
-    )
-    assert max(len(tagged) for _, tagged, _ in calls) <= (
-        quality_module._COMPARISON_CHUNK_SIZE
-        + quality_module._COMPARISON_DRIFT_ALLOWANCE
-    )
-    assert "".join(baseline for baseline, _, _ in calls) == long_text
-    assert all(
-        tagged.startswith(baseline)
-        for baseline, tagged, _ in calls
-    )
     assert report.metrics["character_match_ratio"] == 1.0
-    assert report.metrics["character_match_metric_mode"] == (
-        "sequential_monotonic_window"
+    assert report.metrics["comparison_mode"] == "bit_parallel_lcs"
+
+
+def test_bit_parallel_large_mode_matches_dynamic_programming_oracle(
+    monkeypatch,
+) -> None:
+    import tagged_pdf_extractor.application.evaluate_quality as quality_module
+
+    monkeypatch.setattr(quality_module, "_EXACT_COMPARISON_THRESHOLD", 0)
+    generator = random.Random(260903)
+    cases: list[tuple[str, str]] = []
+    alphabet = "abCDβU0001f600\x01"
+    for _ in range(20):
+        baseline = "".join(generator.choice(alphabet) for _ in range(28))
+        tagged = "".join(generator.choice(alphabet) for _ in range(31))
+        cases.append((baseline, tagged))
+    cases.append(("abcdefghij", "defabcghij"))
+
+    for baseline, tagged in cases:
+        report = QualityEvaluator().evaluate(
+            _body_only_document(tagged), baseline, xml_round_trip_ok=True
+        )
+        expected = _lcs_oracle(baseline, tagged) / len(baseline)
+        assert report.metrics["character_match_ratio"] == expected
+        assert report.metrics["comparison_mode"] == "bit_parallel_lcs"
+
+
+def test_sparse_fallback_matches_dynamic_programming_oracle(monkeypatch) -> None:
+    import tagged_pdf_extractor.application.evaluate_quality as quality_module
+
+    monkeypatch.setattr(quality_module, "_EXACT_COMPARISON_THRESHOLD", 0)
+    monkeypatch.setattr(
+        quality_module, "_BIT_PARALLEL_MAX_UNIQUE_CHARACTERS", 2
     )
-    assert report.metrics["character_match_window_size"] == (
-        quality_module._COMPARISON_CHUNK_SIZE
-        + quality_module._COMPARISON_DRIFT_ALLOWANCE
+    baseline = "abcdefghijklmno"
+    tagged = "acegikmobdfhjln"
+
+    report = QualityEvaluator().evaluate(
+        _body_only_document(tagged), baseline, xml_round_trip_ok=True
     )
+
+    assert report.metrics["character_match_ratio"] == (
+        _lcs_oracle(baseline, tagged) / len(baseline)
+    )
+    assert report.metrics["comparison_mode"] == "sparse_lcs"
+    assert report.metrics["comparison_parameters"]["fallback_reason"] == (
+        "bit_mask_memory_bound"
+    )
+
+
+def test_bit_parallel_lcs_handles_unicode_and_xml_controls() -> None:
+    baseline = ("A\x01βU0001f600" * 2_100) + "tail"
+    tagged = baseline[:3_000] + ("\x02" * 256) + baseline[3_000:]
+
+    report = QualityEvaluator().evaluate(
+        _body_only_document(tagged), baseline, xml_round_trip_ok=True
+    )
+
+    assert report.metrics["character_match_ratio"] == 1.0
+    assert report.metrics["comparison_mode"] == "bit_parallel_lcs"
+
+
+@pytest.mark.parametrize(
+    ("baseline", "tagged"),
+    (
+        ("abcd" * 2_100, "abc" * 700),
+        (_nonrepetitive_text(), _nonrepetitive_text()[1_024:]),
+        ("x" * 8_193, "x" * 2_048),
+    ),
+    ids=("repeated-pattern", "high-cardinality", "single-character"),
+)
+def test_large_lcs_ratio_obeys_coverage_invariants(
+    baseline: str, tagged: str
+) -> None:
+    report = QualityEvaluator().evaluate(
+        _body_only_document(tagged), baseline, xml_round_trip_ok=True
+    )
+    ratio = report.metrics["character_match_ratio"]
+
+    assert 0.0 <= ratio <= 1.0
+    assert ratio <= len(tagged) / len(baseline)
 
 
 def test_empty_figure_is_empty_but_does_not_satisfy_body_gate() -> None:

@@ -24,7 +24,7 @@ def map_role(source_role: str, role_map: dict[str, str]) -> tuple[str, int | Non
     resolved = role_map.get(source_role, source_role)
     if resolved == "H":
         return "heading", None
-    if len(resolved) == 2 and resolved[0] == "H" and resolved[1].isdigit():
+    if len(resolved) == 2 and resolved[0] == "H" and resolved[1] in "0123456789":
         return "heading", int(resolved[1])
     if resolved == "Title":
         return "heading", 1

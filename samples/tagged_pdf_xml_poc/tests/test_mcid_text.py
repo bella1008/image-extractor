@@ -11,18 +11,23 @@ from pypdf.generic import (
 )
 
 from tagged_pdf_extractor.domain.models import Diagnostic
+from tagged_pdf_extractor.infrastructure import mcid_text
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextCollector
 
 
-class FakePage:
-    def extract_text(self, *, visitor_operand_before, visitor_text):
-        visitor_operand_before(b"BDC", ["/P", {"/MCID": 7}], None, None)
-        visitor_text("Settings >", None, None, None, 10)
-        visitor_operand_before(b"BDC", ["/Span", {}], None, None)
-        visitor_text(" General", None, None, None, 10)
-        visitor_operand_before(b"EMC", [], None, None)
-        visitor_operand_before(b"EMC", [], None, None)
-        return "Settings > General"
+class FakeRunner:
+    def __init__(self, events: list[tuple[str, object]]) -> None:
+        self.events = events
+
+    def run(self, page, *, on_boundary, on_text, on_xobject=None) -> None:
+        for kind, value in self.events:
+            if kind == "boundary":
+                operator, operands = value
+                on_boundary(operator, operands)
+            elif kind == "text":
+                on_text(value)
+            elif kind == "xobject" and on_xobject is not None:
+                on_xobject(value)
 
 
 class MalformedMcid:
@@ -78,36 +83,49 @@ def _in_memory_page(content_data: bytes, form_data: bytes | None = None):
 
 
 def test_collects_text_under_inherited_mcid() -> None:
-    result = McidTextCollector().collect(FakePage(), page_index=0)
+    runner = FakeRunner(
+        [
+            ("boundary", (b"BDC", ["/P", {"/MCID": 7}])),
+            ("text", "Settings >"),
+            ("boundary", (b"BDC", ["/Span", {}])),
+            ("text", " General"),
+            ("boundary", (b"EMC", [])),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
+
+    result = McidTextCollector(runner=runner).collect(object(), page_index=0)
 
     assert result.parts_by_mcid == {7: ("Settings >", " General")}
     assert result.diagnostics == ()
 
 
 def test_collects_direct_mcid_from_bmc_properties() -> None:
-    class BmcPage:
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            visitor_operand_before(b"BMC", ["/P", {"/MCID": 9}], None, None)
-            visitor_text("Tagged", None, None, None, 10)
-            visitor_operand_before(b"EMC", [], None, None)
-            return "Tagged"
+    runner = FakeRunner(
+        [
+            ("boundary", (b"BMC", ["/P", {"/MCID": 9}])),
+            ("text", "Tagged"),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
 
-    result = McidTextCollector().collect(BmcPage(), page_index=0)
+    result = McidTextCollector(runner=runner).collect(object(), page_index=0)
 
     assert result.parts_by_mcid == {9: ("Tagged",)}
     assert result.diagnostics == ()
 
 
 def test_records_valid_mcid_even_when_it_has_no_text() -> None:
-    class NonTextPage:
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            visitor_operand_before(b"BMC", ["/Figure", {"/MCID": 5}], None, None)
-            visitor_operand_before(b"EMC", [], None, None)
-            visitor_operand_before(b"BDC", ["/Span", {"/MCID": 6}], None, None)
-            visitor_operand_before(b"EMC", [], None, None)
-            return ""
+    runner = FakeRunner(
+        [
+            ("boundary", (b"BMC", ["/Figure", {"/MCID": 5}])),
+            ("boundary", (b"EMC", [])),
+            ("boundary", (b"BDC", ["/Span", {"/MCID": 6}])),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
 
-    result = McidTextCollector().collect(NonTextPage(), page_index=0)
+    result = McidTextCollector(runner=runner).collect(object(), page_index=0)
 
     assert result.parts_by_mcid == {}
     assert result.seen_mcids == frozenset({5, 6})
@@ -133,15 +151,19 @@ def test_resolves_mcid_from_named_page_property_list() -> None:
                 }
             )
 
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            visitor_operand_before(
-                b"BDC", [NameObject("/P"), NameObject("/MC0")], None, None
-            )
-            visitor_text("Resolved", None, None, None, 10)
-            visitor_operand_before(b"EMC", [], None, None)
-            return "Resolved"
+    page = NamedPropertyPage()
+    runner = FakeRunner(
+        [
+            (
+                "boundary",
+                (b"BDC", [NameObject("/P"), NameObject("/MC0")]),
+            ),
+            ("text", "Resolved"),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
 
-    result = McidTextCollector().collect(NamedPropertyPage(), page_index=0)
+    result = McidTextCollector(runner=runner).collect(page, page_index=0)
 
     assert result.parts_by_mcid == {12: ("Resolved",)}
     assert result.diagnostics == ()
@@ -171,12 +193,15 @@ def test_collect_does_not_mutate_original_page_content_operations() -> None:
 
 
 def test_reports_form_xobject_under_active_mcid() -> None:
-    page = _in_memory_page(
-        b"/P << /MCID 4 >> BDC /Fm0 Do EMC",
-        form_data=b"BT /F1 12 Tf (Form text) Tj ET",
+    runner = FakeRunner(
+        [
+            ("boundary", (b"BDC", ["/P", {"/MCID": 4}])),
+            ("xobject", "/Fm0"),
+            ("boundary", (b"EMC", [])),
+        ]
     )
 
-    result = McidTextCollector().collect(page, page_index=6)
+    result = McidTextCollector(runner=runner).collect(object(), page_index=6)
 
     assert result.diagnostics == (
         Diagnostic(
@@ -189,18 +214,19 @@ def test_reports_form_xobject_under_active_mcid() -> None:
 
 
 def test_restores_parent_mcid_after_nested_direct_mcid() -> None:
-    class NestedMcidPage:
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            visitor_operand_before(b"BDC", ["/P", {"/MCID": 7}], None, None)
-            visitor_text("Parent before", None, None, None, 10)
-            visitor_operand_before(b"BDC", ["/Span", {"/MCID": 8}], None, None)
-            visitor_text("Child", None, None, None, 10)
-            visitor_operand_before(b"EMC", [], None, None)
-            visitor_text("Parent after", None, None, None, 10)
-            visitor_operand_before(b"EMC", [], None, None)
-            return "Parent beforeChildParent after"
+    runner = FakeRunner(
+        [
+            ("boundary", (b"BDC", ["/P", {"/MCID": 7}])),
+            ("text", "Parent before"),
+            ("boundary", (b"BDC", ["/Span", {"/MCID": 8}])),
+            ("text", "Child"),
+            ("boundary", (b"EMC", [])),
+            ("text", "Parent after"),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
 
-    result = McidTextCollector().collect(NestedMcidPage(), page_index=0)
+    result = McidTextCollector(runner=runner).collect(object(), page_index=0)
 
     assert result.parts_by_mcid == {
         7: ("Parent before", "Parent after"),
@@ -222,23 +248,27 @@ def test_restores_parent_mcid_after_nested_direct_mcid() -> None:
 def test_invalid_mcid_warns_and_inherits_parent(
     invalid_mcid, value_type: str, value_repr: str, parent_mcid: int | None
 ) -> None:
-    class InvalidMcidPage:
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            if parent_mcid is not None:
-                visitor_operand_before(
-                    b"BDC", ["/P", {"/MCID": parent_mcid}], None, None
-                )
-            visitor_operand_before(
-                b"BDC", ["/Span", {"/MCID": invalid_mcid}], None, None
-            )
-            visitor_text("Child", None, None, None, 10)
-            visitor_operand_before(b"EMC", [], None, None)
-            if parent_mcid is not None:
-                visitor_text("Parent", None, None, None, 10)
-                visitor_operand_before(b"EMC", [], None, None)
-            return "ChildParent"
+    events: list[tuple[str, object]] = []
+    if parent_mcid is not None:
+        events.append(("boundary", (b"BDC", ["/P", {"/MCID": parent_mcid}])))
+    events.extend(
+        [
+            ("boundary", (b"BDC", ["/Span", {"/MCID": invalid_mcid}])),
+            ("text", "Child"),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
+    if parent_mcid is not None:
+        events.extend(
+            [
+                ("text", "Parent"),
+                ("boundary", (b"EMC", [])),
+            ]
+        )
 
-    result = McidTextCollector().collect(InvalidMcidPage(), page_index=4)
+    result = McidTextCollector(runner=FakeRunner(events)).collect(
+        object(), page_index=4
+    )
 
     expected_parts = {7: ("Child", "Parent")} if parent_mcid is not None else {}
     assert result.parts_by_mcid == expected_parts
@@ -257,12 +287,9 @@ def test_invalid_mcid_warns_and_inherits_parent(
 
 
 def test_reports_unmatched_emc() -> None:
-    class UnmatchedEmcPage:
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            visitor_operand_before(b"EMC", [], None, None)
-            return ""
+    runner = FakeRunner([("boundary", (b"EMC", []))])
 
-    result = McidTextCollector().collect(UnmatchedEmcPage(), page_index=3)
+    result = McidTextCollector(runner=runner).collect(object(), page_index=3)
 
     assert result.parts_by_mcid == {}
     assert result.diagnostics == (
@@ -276,13 +303,14 @@ def test_reports_unmatched_emc() -> None:
 
 
 def test_reports_unclosed_marked_content_after_extraction() -> None:
-    class UnclosedPage:
-        def extract_text(self, *, visitor_operand_before, visitor_text):
-            visitor_operand_before(b"BDC", ["/P", {"/MCID": 3}], None, None)
-            visitor_text("Open", None, None, None, 10)
-            return "Open"
+    runner = FakeRunner(
+        [
+            ("boundary", (b"BDC", ["/P", {"/MCID": 3}])),
+            ("text", "Open"),
+        ]
+    )
 
-    result = McidTextCollector().collect(UnclosedPage(), page_index=5)
+    result = McidTextCollector(runner=runner).collect(object(), page_index=5)
 
     assert result.parts_by_mcid == {3: ("Open",)}
     assert result.diagnostics == (
@@ -293,3 +321,7 @@ def test_reports_unclosed_marked_content_after_extraction() -> None:
             context={"page_index": 5, "depth": 1},
         ),
     )
+
+
+def test_synthetic_marked_content_flush_helper_is_not_exposed() -> None:
+    assert not hasattr(mcid_text, "_page_with_marked_content_flushes")

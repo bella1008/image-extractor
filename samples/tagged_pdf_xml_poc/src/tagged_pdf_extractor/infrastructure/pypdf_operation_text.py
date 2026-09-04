@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from importlib import import_module
+import math
 from typing import Any
 
 
@@ -48,7 +49,7 @@ class PypdfOperationTextRunner:
         page: Any,
         *,
         on_boundary: Callable[[bytes, list[Any]], None],
-        on_text: Callable[[str], None],
+        on_text: Callable[[str, str | None, float | None], None],
         on_xobject: Callable[[Any], None] | None = None,
     ) -> None:
         callback_failure: _CallbackRaised | None = None
@@ -97,11 +98,26 @@ class PypdfOperationTextRunner:
                 value: str,
                 _cm: Any,
                 _tm: Any,
-                _font: Any,
-                _font_size: Any,
+                _font_resource: Any,
+                font_size: Any,
             ) -> None:
                 if value:
-                    _invoke_callback(on_text, value)
+                    font = extractor.font
+                    font_name = getattr(font, "name", None)
+                    if font_name is not None:
+                        font_name = str(font_name).removeprefix("/")
+                    try:
+                        normalized_font_size = float(font_size)
+                    except (TypeError, ValueError, OverflowError):
+                        normalized_font_size = None
+                    if normalized_font_size is not None and (
+                        not math.isfinite(normalized_font_size)
+                        or normalized_font_size <= 0
+                    ):
+                        normalized_font_size = None
+                    _invoke_callback(
+                        on_text, value, font_name, normalized_font_size
+                    )
 
             extractor.initialize_extraction(
                 (0, 90, 180, 270), visitor, font_resources, fonts

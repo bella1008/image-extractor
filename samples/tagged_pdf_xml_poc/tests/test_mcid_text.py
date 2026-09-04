@@ -46,6 +46,11 @@ class IndirectValue:
         return self.value
 
 
+class BrokenIndirectValue:
+    def get_object(self) -> object:
+        raise ValueError("broken indirect object")
+
+
 def _page_with_xobject(name: object, subtype: object = ...) -> dict:
     xobject = {"/Type": "/XObject"}
     if subtype is not ...:
@@ -295,6 +300,21 @@ def test_reports_unsupported_xobject_subtype_under_active_mcid(
                 "operand_repr": "'/X0'",
                 "subtype": expected_subtype,
             },
+        ),
+    )
+
+
+def test_reports_broken_indirect_xobject_subtype_as_unresolved() -> None:
+    page = _page_with_xobject("/X0", BrokenIndirectValue())
+
+    result = _collect_xobject(page, "/X0")
+
+    assert result.diagnostics == (
+        Diagnostic(
+            severity="warning",
+            code="tagged_xobject_unresolved",
+            message="Tagged XObject reference could not be resolved",
+            context={"page_index": 6, "operand_repr": "'/X0'"},
         ),
     )
 

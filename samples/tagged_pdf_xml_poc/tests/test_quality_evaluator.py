@@ -897,6 +897,26 @@ def test_each_unresolved_reference_code_fails_resolved_references_gate(
     assert report.status == "fail"
 
 
+def test_unresolved_tagged_xobject_fails_reference_and_text_loss_gates() -> None:
+    diagnostic = Diagnostic(
+        "warning",
+        "tagged_xobject_unresolved",
+        "Tagged XObject reference could not be resolved",
+        {"page_index": 6, "operand_repr": "'/Missing'"},
+    )
+    document = _passing_document()
+    object.__setattr__(document, "diagnostics", (diagnostic,))
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.hard_gates["resolved_references"] is False
+    assert report.metrics["unresolved_reference_count"] == 1
+    assert report.hard_gates["resolved_references_reported"] is True
+    assert report.hard_gates["no_known_text_loss"] is False
+
+
 @pytest.mark.parametrize(
     "code",
     (

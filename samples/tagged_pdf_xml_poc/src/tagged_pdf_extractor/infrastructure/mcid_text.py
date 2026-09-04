@@ -30,6 +30,24 @@ def _mapping_value(mapping: Any, key: Any) -> Any:
         return None
 
 
+def _resolved_mapping_value(mapping: Any, key: Any) -> tuple[bool, Any]:
+    mapping = _get_object(mapping)
+    get = getattr(mapping, "get", None)
+    if not callable(get):
+        return False, None
+    try:
+        value = get(key)
+    except Exception:
+        return False, None
+    get_object = getattr(value, "get_object", None)
+    if not callable(get_object):
+        return True, value
+    try:
+        return True, get_object()
+    except Exception:
+        return False, None
+
+
 def _resolve_properties(page: Any, operand: Any) -> Any:
     properties = _get_object(operand)
     if callable(getattr(properties, "get", None)):
@@ -144,7 +162,19 @@ class McidTextCollector:
                 )
                 return
 
-            subtype = _mapping_value(xobject, "/Subtype")
+            subtype_resolved, subtype = _resolved_mapping_value(
+                xobject, "/Subtype"
+            )
+            if not subtype_resolved:
+                diagnostics.append(
+                    Diagnostic(
+                        severity="warning",
+                        code="tagged_xobject_unresolved",
+                        message="Tagged XObject reference could not be resolved",
+                        context=context,
+                    )
+                )
+                return
             subtype_name = str(subtype) if subtype is not None else None
             if subtype_name == "/Image":
                 return

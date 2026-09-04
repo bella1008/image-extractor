@@ -86,7 +86,7 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 - 표준 `H`, `H1`~`H6`, `Title` 또는 검증된 RoleMap 대응 heading이 있어야 합니다. `H0`, `H7`~`H9`는 heading이 아닙니다.
 - XML 직렬화와 왕복 검증이 성공해야 합니다.
 - `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`가 모두 0이어야 합니다.
-- 알려진 텍스트 손실 진단인 `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`, `unsupported_stream_mcr`, `tagged_form_xobject_unsupported`, `invalid_mcid`, `unsupported_structure_kid`가 모두 0이어야 합니다. 이 목록은 `domain/quality_diagnostics.py`에서 중앙 관리합니다. 단순 marked-content 범위 균형 경고는 그 자체로 텍스트 손실을 뜻하지 않으므로 포함하지 않습니다.
+- 알려진 텍스트 손실 진단인 `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`, `unsupported_stream_mcr`, `tagged_form_xobject_unsupported`, `tagged_xobject_unresolved`, `tagged_xobject_unsupported`, `invalid_mcid`, `unsupported_structure_kid`가 모두 0이어야 합니다. 이 목록은 `domain/quality_diagnostics.py`에서 중앙 관리합니다. 단순 marked-content 범위 균형 경고는 그 자체로 텍스트 손실을 뜻하지 않으므로 포함하지 않습니다.
 - 기준 텍스트에 등장한 필수 문자 `>`, `→`, `/`, `&`, `:`, `[`, `]`, `(`, `)`는 태그 텍스트에 기준 개수 이상 있어야 합니다. 기준에 없는 문자는 실패 원인이 아닙니다.
 
 `resolved_references_reported`는 발견된 참조 진단에 조사 가능한 context가 있는지 별도로 보여주지만, context가 충분해도 미해결 참조가 하나라도 있으면 `resolved_references=false`로 실패합니다.
@@ -142,9 +142,9 @@ ZA 결과는 `status=fail`입니다. 구조 요소 810개, 텍스트 조각 891�
 
 ### ZG
 
-ZG 결과는 `status=fail`입니다. 구조 요소 6,148개, 텍스트 조각 6,696개, body 4,673개이며, 52개 페이지 모두 제어문자 0개입니다. unresolved MCID는 0개이고 특수문자 보존 게이트도 통과합니다.
+ZG 결과는 `status=fail`입니다. 구조 요소 6,148개, 텍스트 조각 6,696개, body 4,673개이며, 52개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다. 남은 실패는 `has_heading=false` 하나입니다.
 
-남은 실패는 `has_heading=false`와 `no_known_text_loss=false`입니다. 후자는 아직 지원하지 않는 tagged Form XObject 진단 10건 때문입니다. 진단은 `/Im0`에 대해 페이지 인덱스 8, 9, 18, 19, 28, 29, 38, 39, 48, 49에서 발생하며 숨기거나 통과 처리하지 않습니다.
+최종 검토에서 페이지 인덱스 8, 9, 18, 19, 28, 29, 38, 39, 48, 49의 `/Im0`는 모두 `/Subtype /Image`로 확인했습니다. Image XObject는 중첩 PDF 텍스트 연산 스트림이 없으므로 텍스트 손실 진단 대상이 아닙니다. 실제 `/Subtype /Form`은 재귀 추출을 지원하지 않는 동안 `tagged_form_xobject_unsupported`로 계속 보고하며, 참조를 해석하지 못하거나 subtype을 지원하지 못한 경우도 각각 별도 손실 진단으로 보고합니다.
 
 ## 검증
 

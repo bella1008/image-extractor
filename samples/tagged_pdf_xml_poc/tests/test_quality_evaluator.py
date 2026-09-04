@@ -905,6 +905,8 @@ def test_each_unresolved_reference_code_fails_resolved_references_gate(
         "unsupported_objr",
         "unsupported_stream_mcr",
         "tagged_form_xobject_unsupported",
+        "tagged_xobject_unresolved",
+        "tagged_xobject_unsupported",
         "invalid_mcid",
         "unsupported_structure_kid",
     ),

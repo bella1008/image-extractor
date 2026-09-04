@@ -118,7 +118,7 @@ def test_za_retains_complete_structure_and_clean_page_text() -> None:
     _assert_common_layout_quality(document, report, {"0", "1"})
 
 
-def test_zg_retains_all_pages_and_keeps_form_xobject_diagnostics_visible() -> None:
+def test_zg_retains_all_pages_without_false_image_xobject_loss() -> None:
     path = _resolve_sample("ZG")
     if path is None:
         pytest.skip("ZG tagged PDF sample is not available")
@@ -127,17 +127,17 @@ def test_zg_retains_all_pages_and_keeps_form_xobject_diagnostics_visible() -> No
     _assert_common_layout_quality(
         document, report, {str(page_index) for page_index in range(52)}
     )
-    diagnostics = [
-        diagnostic
-        for diagnostic in report.diagnostics
-        if diagnostic.code == "tagged_form_xobject_unsupported"
-    ]
-
-    assert len(diagnostics) == 10
-    assert [diagnostic.context for diagnostic in diagnostics] == [
-        {"page_index": page_index, "operand_repr": "'/Im0'"}
-        for page_index in (8, 9, 18, 19, 28, 29, 38, 39, 48, 49)
-    ]
-    assert report.hard_gates["no_known_text_loss"] is False
-    assert all("page_index" in diagnostic.context for diagnostic in diagnostics)
-    assert all("operand_repr" in diagnostic.context for diagnostic in diagnostics)
+    assert report.diagnostics == ()
+    assert report.metrics["extraction_loss_diagnostic_total"] == 0
+    assert report.hard_gates == {
+        "is_marked": True,
+        "has_structure": True,
+        "has_body": True,
+        "has_heading": False,
+        "resolved_references": True,
+        "resolved_references_reported": True,
+        "xml_round_trip": True,
+        "special_character_counts_preserved": True,
+        "no_known_text_loss": True,
+    }
+    assert report.status == "fail"

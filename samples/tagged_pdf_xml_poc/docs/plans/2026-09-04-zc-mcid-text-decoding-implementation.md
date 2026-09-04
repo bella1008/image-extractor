@@ -438,6 +438,8 @@ assert report.metrics["body_count"] > 0
 
 For ZG, keep `tagged_form_xobject_unsupported` as a separately reported known blocker; do not hide it or redefine `no_known_text_loss` as passing.
 
+> Final-review correction (2026-09-04): direct resource inspection showed that all ten referenced ZG `/Im0` objects are `/Subtype /Image`, not `/Form`. The collector now resolves the actual subtype; these images are not text-loss blockers, while true Forms remain `tagged_form_xobject_unsupported`.
+
 - [ ] **Step 2: Run the cross-layout tests**
 
 ```powershell

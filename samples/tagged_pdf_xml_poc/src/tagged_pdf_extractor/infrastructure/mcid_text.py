@@ -39,6 +39,15 @@ def _resolve_properties(page: Any, operand: Any) -> Any:
     return _mapping_value(named_properties, properties)
 
 
+def _resolve_xobject(page: Any, operand: Any) -> Any:
+    resources = _mapping_value(page, "/Resources")
+    xobjects = _mapping_value(resources, "/XObject")
+    xobject = _mapping_value(xobjects, operand)
+    if not callable(getattr(xobject, "get", None)):
+        return None
+    return xobject
+
+
 def _safe_repr(value: Any) -> str:
     try:
         return repr(value)
@@ -107,18 +116,48 @@ class McidTextCollector:
                 parts.setdefault(stack[-1], []).append(value)
 
         def on_xobject(operand: Any) -> None:
-            if stack and stack[-1] is not None:
+            if not stack or stack[-1] is None:
+                return
+
+            context = {
+                "page_index": page_index,
+                "operand_repr": _safe_repr(operand),
+            }
+            xobject = _resolve_xobject(page, operand)
+            if xobject is None:
+                diagnostics.append(
+                    Diagnostic(
+                        severity="warning",
+                        code="tagged_xobject_unresolved",
+                        message="Tagged XObject reference could not be resolved",
+                        context=context,
+                    )
+                )
+                return
+
+            subtype = _mapping_value(xobject, "/Subtype")
+            subtype_name = str(subtype) if subtype is not None else None
+            if subtype_name == "/Image":
+                return
+            if subtype_name == "/Form":
                 diagnostics.append(
                     Diagnostic(
                         severity="warning",
                         code="tagged_form_xobject_unsupported",
                         message="Form XObject under tagged content is unsupported",
-                        context={
-                            "page_index": page_index,
-                            "operand_repr": _safe_repr(operand),
-                        },
+                        context=context,
                     )
                 )
+                return
+
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="tagged_xobject_unsupported",
+                    message="Tagged XObject subtype is unsupported",
+                    context={**context, "subtype": subtype_name},
+                )
+            )
 
         try:
             self.runner.run(

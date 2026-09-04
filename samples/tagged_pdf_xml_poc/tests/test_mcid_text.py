@@ -38,6 +38,25 @@ class MalformedMcid:
         return "<malformed>"
 
 
+class IndirectValue:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def get_object(self) -> object:
+        return self.value
+
+
+def _page_with_xobject(name: object, subtype: object = ...) -> dict:
+    xobject = {"/Type": "/XObject"}
+    if subtype is not ...:
+        xobject["/Subtype"] = subtype
+    return {
+        "/Resources": IndirectValue(
+            {"/XObject": IndirectValue({name: IndirectValue(xobject)})}
+        )
+    }
+
+
 def _font_resources() -> DictionaryObject:
     return DictionaryObject(
         {
@@ -192,16 +211,24 @@ def test_collect_does_not_mutate_original_page_content_operations() -> None:
     assert all(operator != b"cm" for _, operator in original_operations)
 
 
-def test_reports_form_xobject_under_active_mcid() -> None:
-    runner = FakeRunner(
-        [
-            ("boundary", (b"BDC", ["/P", {"/MCID": 4}])),
-            ("xobject", "/Fm0"),
-            ("boundary", (b"EMC", [])),
-        ]
-    )
+def _collect_xobject(page: object, operand: object, *, active_mcid: bool = True):
+    events: list[tuple[str, object]] = []
+    if active_mcid:
+        events.append(("boundary", (b"BDC", ["/P", {"/MCID": 4}])))
+    events.append(("xobject", operand))
+    if active_mcid:
+        events.append(("boundary", (b"EMC", [])))
+    return McidTextCollector(runner=FakeRunner(events)).collect(page, page_index=6)
 
-    result = McidTextCollector(runner=runner).collect(object(), page_index=6)
+
+def test_ignores_image_xobject_under_active_mcid() -> None:
+    result = _collect_xobject(_page_with_xobject("/Im0", "/Image"), "/Im0")
+
+    assert result.diagnostics == ()
+
+
+def test_reports_form_xobject_under_active_mcid() -> None:
+    result = _collect_xobject(_page_with_xobject("/Fm0", "/Form"), "/Fm0")
 
     assert result.diagnostics == (
         Diagnostic(
@@ -211,6 +238,59 @@ def test_reports_form_xobject_under_active_mcid() -> None:
             context={"page_index": 6, "operand_repr": "'/Fm0'"},
         ),
     )
+
+
+def test_reports_unresolved_xobject_under_active_mcid() -> None:
+    result = _collect_xobject(_page_with_xobject("/Other", "/Image"), "/Missing")
+
+    assert result.diagnostics == (
+        Diagnostic(
+            severity="warning",
+            code="tagged_xobject_unresolved",
+            message="Tagged XObject reference could not be resolved",
+            context={"page_index": 6, "operand_repr": "'/Missing'"},
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("subtype", "expected_subtype"),
+    [(..., None), ("/PS", "/PS")],
+)
+def test_reports_unsupported_xobject_subtype_under_active_mcid(
+    subtype: object, expected_subtype: str | None
+) -> None:
+    result = _collect_xobject(_page_with_xobject("/X0", subtype), "/X0")
+
+    assert result.diagnostics == (
+        Diagnostic(
+            severity="warning",
+            code="tagged_xobject_unsupported",
+            message="Tagged XObject subtype is unsupported",
+            context={
+                "page_index": 6,
+                "operand_repr": "'/X0'",
+                "subtype": expected_subtype,
+            },
+        ),
+    )
+
+
+def test_ignores_xobject_without_active_mcid() -> None:
+    result = _collect_xobject(
+        _page_with_xobject("/Fm0", "/Form"), "/Fm0", active_mcid=False
+    )
+
+    assert result.diagnostics == ()
+
+
+def test_resolves_named_indirect_xobject_resources() -> None:
+    result = _collect_xobject(
+        _page_with_xobject(NameObject("/Im0"), NameObject("/Image")),
+        NameObject("/Im0"),
+    )
+
+    assert result.diagnostics == ()
 
 
 def test_restores_parent_mcid_after_nested_direct_mcid() -> None:

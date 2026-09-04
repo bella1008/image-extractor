@@ -1,5 +1,6 @@
 from io import BytesIO
 
+import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (
     ArrayObject,
@@ -9,9 +10,27 @@ from pypdf.generic import (
     NumberObject,
 )
 
+import tagged_pdf_extractor.infrastructure.pypdf_operation_text as operation_module
 from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
+    PypdfOperationTextError,
     PypdfOperationTextRunner,
 )
+
+
+class CallbackError(RuntimeError):
+    pass
+
+
+class SameContentPage:
+    def __init__(self, page) -> None:
+        self.page = page
+        self.content = page.get_contents()
+
+    def get_inherited(self, key: str, default=None):
+        return self.page.get_inherited(key=key, default=default)
+
+    def get_contents(self):
+        return self.content
 
 
 def _font_resources() -> DictionaryObject:
@@ -53,15 +72,29 @@ def _in_memory_page(content_data: bytes, form_data: bytes | None = None):
     return PdfReader(output).pages[0]
 
 
-def test_runner_flushes_before_mcid_boundaries_without_synthetic_cm() -> None:
-    page = _in_memory_page(
+def test_runner_flushes_before_mcid_boundaries_without_synthetic_cm(
+    monkeypatch,
+) -> None:
+    source_page = _in_memory_page(
         b"BT /F1 12 Tf "
         b"/P << /MCID 2 >> BDC (First) Tj EMC "
         b"/P << /MCID 3 >> BDC (Deuxieme) Tj EMC ET"
     )
-    original = list(page.get_contents().operations)
+    page = SameContentPage(source_page)
+    original = list(page.content.operations)
+    processed: list[bytes] = []
     active: list[int | None] = []
     captured: dict[int, list[str]] = {}
+
+    from pypdf._text_extraction._text_extractor import TextExtraction
+
+    original_process_operation = TextExtraction.process_operation
+
+    def process_operation(self, operator: bytes, operands: list[object]) -> None:
+        processed.append(operator)
+        original_process_operation(self, operator, operands)
+
+    monkeypatch.setattr(TextExtraction, "process_operation", process_operation)
 
     def boundary(operator: bytes, operands: list[object]) -> None:
         if operator == b"BDC":
@@ -79,12 +112,27 @@ def test_runner_flushes_before_mcid_boundaries_without_synthetic_cm() -> None:
         2: "First",
         3: "Deuxieme",
     }
-    assert page.get_contents().operations == original
+    assert page.get_contents() is page.content
+    assert page.content.operations == original
     assert all(operator != b"cm" for _, operator in original)
+    assert b"cm" not in processed
 
 
 def test_runner_preserves_explicit_word_spacing_from_tj_array() -> None:
     page = _in_memory_page(b"BT /F1 12 Tf [(First) -600 (Second)] TJ ET")
+    captured: list[str] = []
+
+    PypdfOperationTextRunner().run(
+        page, on_boundary=lambda _operator, _operands: None, on_text=captured.append
+    )
+
+    assert "".join(captured) == "First Second"
+
+
+def test_runner_uses_pypdf_space_width_fallback_for_font_without_widths() -> None:
+    page = _in_memory_page(b"BT /F1 12 Tf [(First) -110 (Second)] TJ ET")
+    font = page["/Resources"]["/Font"]["/F1"].get_object()
+    font[NameObject("/BaseFont")] = NameObject("/UnlistedFont")
     captured: list[str] = []
 
     PypdfOperationTextRunner().run(
@@ -144,12 +192,13 @@ def test_runner_preserves_text_across_bt_and_et() -> None:
 
 def test_runner_reports_do_without_recursing_into_form_xobject() -> None:
     page = _in_memory_page(
-        b"/P << /MCID 6 >> BDC /Fm0 Do EMC",
+        b"/P << /MCID 6 >> BDC BT /F1 12 Tf (Before form) Tj /Fm0 Do ET EMC",
         form_data=b"BT /F1 12 Tf (Form text) Tj ET",
     )
     active: list[int] = []
     captured: list[str] = []
     xobjects: list[tuple[int, str]] = []
+    events: list[tuple[str, str]] = []
 
     def boundary(operator: bytes, operands: list[object]) -> None:
         if operator == b"BDC":
@@ -159,13 +208,142 @@ def test_runner_reports_do_without_recursing_into_form_xobject() -> None:
 
     def xobject(operand: object) -> None:
         xobjects.append((active[-1], str(operand)))
+        events.append(("xobject", str(operand)))
+
+    def text(value: str) -> None:
+        captured.append(value)
+        events.append(("text", value))
 
     PypdfOperationTextRunner().run(
         page,
         on_boundary=boundary,
-        on_text=captured.append,
+        on_text=text,
         on_xobject=xobject,
     )
 
     assert xobjects == [(6, "/Fm0")]
+    assert events[:2] == [("text", "Before form"), ("xobject", "/Fm0")]
     assert "Form text" not in "".join(captured)
+
+
+def test_runner_resolves_inherited_resources_with_indirect_font() -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    fonts = DictionaryObject({NameObject("/F1"): writer._add_object(font)})
+    resources = DictionaryObject(
+        {NameObject("/Font"): writer._add_object(fonts)}
+    )
+    parent = page["/Parent"].get_object()
+    parent[NameObject("/Resources")] = writer._add_object(resources)
+    del page["/Resources"]
+    content = DecodedStreamObject()
+    content.set_data(b"BT /F1 12 Tf (Inherited) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(content)
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    inherited_page = PdfReader(output).pages[0]
+    captured: list[str] = []
+
+    PypdfOperationTextRunner().run(
+        inherited_page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=captured.append,
+    )
+
+    assert "".join(captured) == "Inherited"
+
+
+@pytest.mark.parametrize(
+    "content_data",
+    [
+        b"BT /F1 12 Tf 14 TL (First) Tj (Second) ' ET",
+        b'BT /F1 12 Tf 14 TL (First) Tj 0 0 (Second) " ET',
+        b"BT /F1 12 Tf (First) Tj 0 -14 TD (Second) Tj ET",
+    ],
+    ids=["quote", "double_quote", "TD"],
+)
+def test_runner_shorthand_expansion_matches_pypdf(content_data: bytes) -> None:
+    page = _in_memory_page(content_data)
+    expected = page.extract_text()
+    captured: list[str] = []
+
+    PypdfOperationTextRunner().run(
+        page, on_boundary=lambda _operator, _operands: None, on_text=captured.append
+    )
+
+    assert "".join(captured) == expected
+
+
+def test_runner_propagates_on_text_exception_unchanged() -> None:
+    page = _in_memory_page(b"BT /F1 12 Tf (Text) Tj ET")
+    expected = CallbackError("on_text failed")
+
+    def on_text(_value: str) -> None:
+        raise expected
+
+    with pytest.raises(CallbackError) as raised:
+        PypdfOperationTextRunner().run(
+            page, on_boundary=lambda _operator, _operands: None, on_text=on_text
+        )
+
+    assert raised.value is expected
+
+
+def test_runner_propagates_on_boundary_exception_unchanged() -> None:
+    page = _in_memory_page(b"/P << /MCID 2 >> BDC EMC")
+    expected = CallbackError("on_boundary failed")
+
+    def on_boundary(_operator: bytes, _operands: list[object]) -> None:
+        raise expected
+
+    with pytest.raises(CallbackError) as raised:
+        PypdfOperationTextRunner().run(
+            page, on_boundary=on_boundary, on_text=lambda _value: None
+        )
+
+    assert raised.value is expected
+
+
+def test_runner_propagates_on_xobject_exception_unchanged() -> None:
+    page = _in_memory_page(b"/Fm0 Do", form_data=b"")
+    expected = CallbackError("on_xobject failed")
+
+    def on_xobject(_operand: object) -> None:
+        raise expected
+
+    with pytest.raises(CallbackError) as raised:
+        PypdfOperationTextRunner().run(
+            page,
+            on_boundary=lambda _operator, _operands: None,
+            on_text=lambda _value: None,
+            on_xobject=on_xobject,
+        )
+
+    assert raised.value is expected
+
+
+def test_runner_wraps_missing_private_pypdf_helper_at_run_time(monkeypatch) -> None:
+    page = _in_memory_page(b"BT /F1 12 Tf (Text) Tj ET")
+    missing = ImportError("pypdf private helper missing")
+
+    def unavailable(_module_name: str):
+        raise missing
+
+    monkeypatch.setattr(operation_module, "import_module", unavailable, raising=False)
+
+    with pytest.raises(PypdfOperationTextError) as raised:
+        PypdfOperationTextRunner().run(
+            page,
+            on_boundary=lambda _operator, _operands: None,
+            on_text=lambda _value: None,
+        )
+
+    assert raised.value.__cause__ is missing

@@ -1,12 +1,33 @@
 from collections.abc import Callable
+from importlib import import_module
 from typing import Any
-
-from pypdf._font import Font
-from pypdf._text_extraction._text_extractor import TextExtraction
 
 
 class PypdfOperationTextError(RuntimeError):
     pass
+
+
+def _load_pypdf_text_helpers() -> tuple[Any, Any]:
+    try:
+        font_module = import_module("pypdf._font")
+        text_module = import_module("pypdf._text_extraction._text_extractor")
+        return getattr(font_module, "Font"), getattr(text_module, "TextExtraction")
+    except (ImportError, AttributeError) as exc:
+        raise PypdfOperationTextError(
+            "Required private pypdf text helpers are unavailable"
+        ) from exc
+
+
+class _CallbackRaised(Exception):
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+
+def _invoke_callback(callback: Callable[..., None], *args: Any) -> None:
+    try:
+        callback(*args)
+    except BaseException as exc:
+        raise _CallbackRaised(exc) from None
 
 
 class PypdfOperationTextRunner:
@@ -21,6 +42,7 @@ class PypdfOperationTextRunner:
         on_xobject: Callable[[Any], None] | None = None,
     ) -> None:
         try:
+            Font, TextExtraction = _load_pypdf_text_helpers()
             resources = page.get_inherited(key="/Resources", default=None)
             if resources is None:
                 raise KeyError("page has no inherited /Resources")
@@ -29,7 +51,7 @@ class PypdfOperationTextRunner:
                 resources = get_resources_object()
 
             font_resources: dict[str, Any] = {}
-            fonts: dict[str, Font] = {}
+            fonts: dict[str, Any] = {}
             font_resource_dict = resources.get("/Font", {})
             get_font_dict_object = getattr(font_resource_dict, "get_object", None)
             if callable(get_font_dict_object):
@@ -37,7 +59,10 @@ class PypdfOperationTextRunner:
             for font_name in font_resource_dict:
                 font_object = font_resource_dict[font_name].get_object()
                 font_resources[font_name] = font_object
-                fonts[font_name] = Font.from_font_resource(font_object)
+                font = Font.from_font_resource(font_object)
+                if font.character_widths.get(font.space_char, 0) == 0:
+                    font.space_width = 200.0
+                fonts[font_name] = font
 
             content = page.get_contents()
             if content is None:
@@ -54,7 +79,7 @@ class PypdfOperationTextRunner:
                 _font_size: Any,
             ) -> None:
                 if value:
-                    on_text(value)
+                    _invoke_callback(on_text, value)
 
             extractor.initialize_extraction(
                 (0, 90, 180, 270), visitor, font_resources, fonts
@@ -63,7 +88,7 @@ class PypdfOperationTextRunner:
             for operands, operator in operations:
                 if operator in (b"BMC", b"BDC", b"EMC"):
                     extractor._flush_text()
-                    on_boundary(operator, operands)
+                    _invoke_callback(on_boundary, operator, operands)
                 elif operator == b"'":
                     extractor.process_operation(b"T*", [])
                     extractor.process_operation(b"Tj", operands)
@@ -91,11 +116,13 @@ class PypdfOperationTextRunner:
                     extractor._flush_text()
                     if on_xobject is not None:
                         operand = operands[0] if operands else None
-                        on_xobject(operand)
+                        _invoke_callback(on_xobject, operand)
                 else:
                     extractor.process_operation(operator, operands)
 
             extractor._flush_text()
+        except _CallbackRaised as exc:
+            raise exc.error
         except PypdfOperationTextError:
             raise
         except Exception as exc:

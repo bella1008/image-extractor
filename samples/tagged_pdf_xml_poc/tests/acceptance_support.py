@@ -15,6 +15,9 @@ HEADING_ONLY_FAILURE_HARD_GATES = {
     "no_known_text_loss": True,
     "no_forbidden_xml_controls": True,
     "special_character_counts_preserved": True,
+    "numbered_heading_series_valid": True,
+    "numbered_heading_series_counts_consistent": True,
+    "numbered_heading_typography_valid": True,
 }
 
 

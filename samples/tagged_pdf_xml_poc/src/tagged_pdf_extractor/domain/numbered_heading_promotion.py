@@ -22,15 +22,19 @@ _MIN_SERIES_CANDIDATES = 2
 _MAX_LABEL_BODY_RELATIVE_DIFFERENCE = 0.10
 _MIN_HEADING_BODY_RATIO = 1.5
 _POLICY_BOUNDARY_REL_TOLERANCE = 1e-12
-_OWNED_DIAGNOSTIC_CODES = frozenset(
+NUMBERED_HEADING_TYPOGRAPHY_DIAGNOSTIC_CODES = frozenset(
     {
-        "numbered_heading_sequence_invalid",
         "numbered_heading_typography_insufficient",
         "numbered_heading_label_body_size_mismatch",
         "numbered_heading_font_ratio_below_threshold",
-        "numbered_heading_series_count_mismatch",
     }
 )
+_OWNED_DIAGNOSTIC_CODES = frozenset(
+    {
+        "numbered_heading_sequence_invalid",
+        "numbered_heading_series_count_mismatch",
+    }
+) | NUMBERED_HEADING_TYPOGRAPHY_DIAGNOSTIC_CODES
 
 
 @dataclass(frozen=True)

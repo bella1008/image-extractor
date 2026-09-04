@@ -2,12 +2,19 @@ from pathlib import Path
 
 import pytest
 
-from tagged_pdf_extractor.domain.models import ExtractionArtifacts, QualityReport
+from tagged_pdf_extractor.application.extract_document import ExtractDocument
+from tagged_pdf_extractor.domain.models import (
+    ExtractionArtifacts,
+    HeadingPromotion,
+    QualityReport,
+    TaggedDocument,
+)
 from tagged_pdf_extractor.infrastructure.output_bundle import (
     BundlePublicationErrorGroup,
     BundleTransactionError,
     OutputCollisionError,
 )
+from tagged_pdf_extractor.ports.output_writer import OutputValidation
 
 
 def _artifacts(root: Path) -> ExtractionArtifacts:
@@ -29,6 +36,105 @@ def _install_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, status: str
         "run",
         lambda self, pdf, output, overwrite=False: (object(), report, artifacts),
     )
+
+
+def test_extract_document_promotes_once_and_passes_promoted_document_everywhere(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tagged_pdf_extractor.application.extract_document as use_case_module
+
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+    output = tmp_path / "out"
+    original = TaggedDocument(source, True, "en", (), ())
+    promotion = HeadingPromotion(
+        child_path=(0,),
+        level=2,
+        label="01",
+        title="Package Content",
+        series_index=0,
+        heading_font_size=12.0,
+        body_font_size=8.0,
+        font_size_ratio=1.5,
+        promotion_reason="numbered_chapter_structure_sequence_typography",
+    )
+    promoted = TaggedDocument(
+        source,
+        True,
+        "en",
+        (),
+        (),
+        heading_promotions=(promotion,),
+    )
+    report = QualityReport(
+        "pass", {}, {"has_heading": True}, (), ({"element_path": "/"},)
+    )
+    artifacts = _artifacts(output)
+    promotion_calls: list[TaggedDocument] = []
+    observed: list[tuple[str, object]] = []
+
+    def promote(document: TaggedDocument) -> TaggedDocument:
+        promotion_calls.append(document)
+        return promoted
+
+    monkeypatch.setattr(
+        use_case_module, "promote_numbered_chapter_headings", promote
+    )
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            observed.append(("read", path))
+            return original
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            observed.append(("baseline", path))
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(
+            self,
+            document: TaggedDocument,
+            baseline: str,
+            xml_round_trip_ok: bool,
+        ) -> QualityReport:
+            observed.append(
+                ("evaluate", (document, baseline, xml_round_trip_ok))
+            )
+            return report
+
+    class Writer:
+        def validate(self, document: TaggedDocument) -> OutputValidation:
+            observed.append(("validate", document))
+            return OutputValidation(report.join_decisions)
+
+        def write(
+            self,
+            document: TaggedDocument,
+            actual_report: QualityReport,
+            output_dir: Path,
+            overwrite: bool = False,
+        ) -> ExtractionArtifacts:
+            observed.append(
+                ("write", (document, actual_report, output_dir, overwrite))
+            )
+            return artifacts
+
+    result = ExtractDocument(Reader(), Baseline(), Evaluator(), Writer()).run(
+        source, output, overwrite=True
+    )
+
+    assert promotion_calls == [original]
+    assert original.heading_promotions == ()
+    assert result == (promoted, report, artifacts)
+    assert observed == [
+        ("read", source),
+        ("baseline", source),
+        ("validate", promoted),
+        ("evaluate", (promoted, "baseline", True)),
+        ("write", (promoted, report, output, True)),
+    ]
 
 
 def test_cli_requires_pdf_and_output_paths() -> None:

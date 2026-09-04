@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pymupdf
@@ -14,6 +15,8 @@ from tagged_pdf_extractor.application.evaluate_quality import (
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    HeadingPromotion,
+    NumberedHeadingSeriesAudit,
     StructureElement,
     TaggedDocument,
 )
@@ -71,6 +74,45 @@ def _body_only_document(text: str) -> TaggedDocument:
             "paragraph",
             children=(ContentFragment(0, 1, (text,)),),
         )
+    )
+
+
+def _promotion(
+    child_path: tuple[int, ...],
+    label: str,
+    title: str,
+    *,
+    series_index: int = 0,
+) -> HeadingPromotion:
+    return HeadingPromotion(
+        child_path=child_path,
+        level=2,
+        label=label,
+        title=title,
+        series_index=series_index,
+        heading_font_size=12.0,
+        body_font_size=8.0,
+        font_size_ratio=1.5,
+        promotion_reason="numbered_chapter_structure_sequence_typography",
+    )
+
+
+def _numbered_item(label: str, title: str) -> StructureElement:
+    return StructureElement(
+        "LI",
+        "list_item",
+        children=(
+            StructureElement(
+                "Lbl",
+                "label",
+                children=(ContentFragment(0, None, (label,)),),
+            ),
+            StructureElement(
+                "LBody",
+                "list_body",
+                children=(ContentFragment(0, None, (title,)),),
+            ),
+        ),
     )
 
 
@@ -171,24 +213,34 @@ def test_traverses_each_child_sequence_once_and_records_unambiguous_join_paths()
             ContentFragment(0, None, ("Second", "part")),
         )
     )
+    promoted_children = SinglePassChildren(
+        (ContentFragment(0, 3, ("03", "Title")),)
+    )
     root_children = SinglePassChildren(
         (
             StructureElement("H1", "heading", 1, children=heading_children),
             StructureElement("P", "paragraph", children=body_children),
+            StructureElement("LI", "list_item", children=promoted_children),
         )
     )
     document = _document()
     object.__setattr__(document, "children", root_children)
+    object.__setattr__(
+        document,
+        "heading_promotions",
+        (_promotion((2,), "03", "Title"),),
+    )
 
     report = QualityEvaluator().evaluate(
         document,
-        "Head ing First part Second part",
+        "Head ing First part Second part 03 Title",
         xml_round_trip_ok=True,
     )
 
     assert root_children.iterations == 1
     assert heading_children.iterations == 1
     assert body_children.iterations == 1
+    assert promoted_children.iterations == 1
     assert [
         (decision["element_path"], decision["fragment_child_index"])
         for decision in report.join_decisions
@@ -196,8 +248,206 @@ def test_traverses_each_child_sequence_once_and_records_unambiguous_join_paths()
         ("/heading[0]", 0),
         ("/paragraph[1]", 0),
         ("/paragraph[1]", 1),
+        ("/list_item[2]", 0),
     ]
     assert report.metrics["character_match_ratio"] == 1.0
+
+
+def test_numbered_promotions_are_counted_and_reported_as_heading_evidence() -> None:
+    document = _document(
+        StructureElement(
+            "L",
+            "list",
+            children=(
+                _numbered_item("01", "Package Content"),
+                _numbered_item("02", "Connecting the TV"),
+            ),
+        )
+    )
+    document = replace(
+        document,
+        heading_promotions=(
+            _promotion((0, 0), "01", "Package Content"),
+            _promotion((0, 1), "02", "Connecting the TV"),
+        ),
+        numbered_heading_series=(
+            NumberedHeadingSeriesAudit(0, ("01", "02"), True),
+        ),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document,
+        "01 Package Content 02 Connecting the TV",
+        xml_round_trip_ok=True,
+    )
+
+    assert report.metrics["heading_count"] == 2
+    assert report.metrics["numbered_heading_promotion_count"] == 2
+    assert report.hard_gates["has_heading"] is True
+    assert report.heading_hierarchy == (
+        {
+            "structure_path": "/list[0]/list_item[0]",
+            "source_role": "LI",
+            "semantic_role": "list_item",
+            "level": 2,
+            "joined_text": "01 Package Content",
+            "title": "Package Content",
+            "label": "01",
+            "classification": "numbered_chapter_promotion",
+            "series_index": 0,
+            "heading_font_size": 12.0,
+            "body_font_size": 8.0,
+            "font_size_ratio": 1.5,
+            "promotion_reason": "numbered_chapter_structure_sequence_typography",
+        },
+        {
+            "structure_path": "/list[0]/list_item[1]",
+            "source_role": "LI",
+            "semantic_role": "list_item",
+            "level": 2,
+            "joined_text": "02 Connecting the TV",
+            "title": "Connecting the TV",
+            "label": "02",
+            "classification": "numbered_chapter_promotion",
+            "series_index": 0,
+            "heading_font_size": 12.0,
+            "body_font_size": 8.0,
+            "font_size_ratio": 1.5,
+            "promotion_reason": "numbered_chapter_structure_sequence_typography",
+        },
+    )
+
+
+def test_one_valid_numbered_heading_series_has_consistent_count_gate() -> None:
+    document = replace(
+        _passing_document(),
+        numbered_heading_series=(
+            NumberedHeadingSeriesAudit(0, ("01", "02"), True),
+        ),
+        numbered_heading_series_consistent=None,
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["numbered_heading_series"] == [
+        {"series_index": 0, "labels": ["01", "02"], "valid_sequence": True}
+    ]
+    assert report.hard_gates["numbered_heading_series_valid"] is True
+    assert report.hard_gates["numbered_heading_series_counts_consistent"] is True
+    assert report.status == "pass"
+
+
+def test_mismatched_numbered_heading_series_counts_fail_without_hiding_promotions() -> None:
+    document = replace(
+        _passing_document(),
+        heading_promotions=(_promotion((1,), "01", "Body"),),
+        numbered_heading_series=(
+            NumberedHeadingSeriesAudit(0, ("01", "02"), True),
+            NumberedHeadingSeriesAudit(1, ("01", "02", "03"), True),
+        ),
+        numbered_heading_series_consistent=False,
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["numbered_heading_promotion_count"] == 1
+    assert report.metrics["heading_count"] == 2
+    assert report.hard_gates["numbered_heading_series_counts_consistent"] is False
+    assert report.status == "fail"
+
+
+def test_invalid_numbered_heading_sequence_fails_series_gate() -> None:
+    document = replace(
+        _passing_document(),
+        numbered_heading_series=(
+            NumberedHeadingSeriesAudit(0, ("01", "03"), False),
+        ),
+        diagnostics=(
+            Diagnostic(
+                "error",
+                "numbered_heading_sequence_invalid",
+                "invalid sequence",
+            ),
+        ),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.hard_gates["numbered_heading_series_valid"] is False
+    assert report.status == "fail"
+
+
+@pytest.mark.parametrize(
+    "code",
+    (
+        "numbered_heading_typography_insufficient",
+        "numbered_heading_label_body_size_mismatch",
+        "numbered_heading_font_ratio_below_threshold",
+    ),
+)
+def test_numbered_heading_typography_diagnostics_fail_hard_gate(code: str) -> None:
+    document = replace(
+        _passing_document(),
+        diagnostics=(Diagnostic("error", code, "typography failed"),),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.hard_gates["numbered_heading_typography_valid"] is False
+    assert report.status == "fail"
+
+
+def test_no_numbered_heading_candidates_leave_new_gates_open() -> None:
+    report = QualityEvaluator().evaluate(
+        _body_only_document("Body"), "Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["numbered_heading_promotion_count"] == 0
+    assert report.metrics["numbered_heading_series"] == []
+    assert report.hard_gates["numbered_heading_series_valid"] is True
+    assert report.hard_gates["numbered_heading_series_counts_consistent"] is True
+    assert report.hard_gates["numbered_heading_typography_valid"] is True
+    assert report.hard_gates["has_heading"] is False
+
+
+def test_actual_heading_and_numbered_promotion_count_once_each() -> None:
+    document = replace(
+        _passing_document(),
+        heading_promotions=(_promotion((1,), "01", "Body"),),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["heading_count"] == 2
+    assert [item["classification"] for item in report.heading_hierarchy] == [
+        "heading",
+        "numbered_chapter_promotion",
+    ]
+
+
+def test_promotion_does_not_double_count_an_actual_heading() -> None:
+    document = replace(
+        _passing_document(),
+        heading_promotions=(_promotion((0,), "01", "Heading"),),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Heading Body", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["heading_count"] == 1
+    assert report.metrics["numbered_heading_promotion_count"] == 1
+    assert report.heading_hierarchy[0]["classification"] == "heading"
 
 
 def test_comparison_normalizes_nfc_and_whitespace_without_mutating_raw_text() -> None:
@@ -744,6 +994,9 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "no_known_text_loss",
         "no_forbidden_xml_controls",
         "special_character_counts_preserved",
+        "numbered_heading_series_valid",
+        "numbered_heading_series_counts_consistent",
+        "numbered_heading_typography_valid",
     )
     assert report.hard_gates == {
         "is_marked": False,
@@ -756,6 +1009,9 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "no_known_text_loss": True,
         "no_forbidden_xml_controls": True,
         "special_character_counts_preserved": True,
+        "numbered_heading_series_valid": True,
+        "numbered_heading_series_counts_consistent": True,
+        "numbered_heading_typography_valid": True,
     }
     assert report.status == "fail"
 

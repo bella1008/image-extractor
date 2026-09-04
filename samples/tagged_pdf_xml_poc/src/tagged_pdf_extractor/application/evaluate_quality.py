@@ -11,9 +11,13 @@ from typing import Any
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    HeadingPromotion,
     QualityReport,
     StructureElement,
     TaggedDocument,
+)
+from tagged_pdf_extractor.domain.numbered_heading_promotion import (
+    NUMBERED_HEADING_TYPOGRAPHY_DIAGNOSTIC_CODES,
 )
 from tagged_pdf_extractor.domain.quality_diagnostics import (
     EXTRACTION_LOSS_DIAGNOSTIC_CODES,
@@ -167,7 +171,11 @@ class QualityEvaluator:
             traversal.count_text_field(source_role)
             traversal.count_text_field(mapped_role)
 
-        self._walk(document.children, "", traversal)
+        promotion_by_path = {
+            promotion.child_path: promotion
+            for promotion in document.heading_promotions
+        }
+        self._walk(document.children, "", (), promotion_by_path, traversal)
         tagged_text = " ".join(
             fragment for fragment in traversal.tagged_fragments if fragment
         )
@@ -224,11 +232,34 @@ class QualityEvaluator:
                 result["count_preserved"]
                 for result in special_characters.values()
             ),
+            "numbered_heading_series_valid": all(
+                audit.valid_sequence
+                for audit in document.numbered_heading_series
+            ),
+            "numbered_heading_series_counts_consistent": (
+                document.numbered_heading_series_consistent is not False
+            ),
+            "numbered_heading_typography_valid": not any(
+                diagnostic.code
+                in NUMBERED_HEADING_TYPOGRAPHY_DIAGNOSTIC_CODES
+                for diagnostic in document.diagnostics
+            ),
         }
         metrics = {
             "element_count": traversal.element_count,
             "fragment_count": traversal.fragment_count,
             "heading_count": traversal.heading_count,
+            "numbered_heading_promotion_count": len(
+                document.heading_promotions
+            ),
+            "numbered_heading_series": [
+                {
+                    "series_index": audit.series_index,
+                    "labels": list(audit.labels),
+                    "valid_sequence": audit.valid_sequence,
+                }
+                for audit in document.numbered_heading_series
+            ],
             "body_count": traversal.body_count,
             "body_role_node_count": traversal.body_role_node_count,
             "unknown_role_count": traversal.unknown_role_count,
@@ -279,10 +310,13 @@ class QualityEvaluator:
         self,
         children: tuple[StructureElement | ContentFragment, ...],
         parent_path: str,
+        parent_child_path: tuple[int, ...],
+        promotion_by_path: dict[tuple[int, ...], HeadingPromotion],
         traversal: _Traversal,
     ) -> bool:
         has_descendant_text = False
         for child_index, child in enumerate(children):
+            child_path = (*parent_child_path, child_index)
             if isinstance(child, ContentFragment):
                 traversal.fragment_count += 1
                 traversal.count_fragment(child)
@@ -303,7 +337,10 @@ class QualityEvaluator:
 
             traversal.element_count += 1
             traversal.source_role_counts[child.source_role] += 1
-            traversal.heading_count += child.semantic_role == "heading"
+            promotion = promotion_by_path.get(child_path)
+            is_heading = child.semantic_role == "heading"
+            is_promoted_heading = promotion is not None and not is_heading
+            traversal.heading_count += is_heading or is_promoted_heading
             is_body_role = child.semantic_role in _BODY_ROLES
             traversal.body_role_node_count += is_body_role
             traversal.unknown_role_count += child.semantic_role == "unknown"
@@ -311,12 +348,20 @@ class QualityEvaluator:
             element_path = f"{parent_path}/{child.semantic_role}[{child_index}]"
             fragment_start = len(traversal.tagged_fragments)
             heading_entry_index: int | None = None
-            if child.semantic_role == "heading" or self._is_heading_candidate(
-                child.source_role
+            if (
+                is_heading
+                or is_promoted_heading
+                or self._is_heading_candidate(child.source_role)
             ):
                 heading_entry_index = len(traversal.heading_hierarchy)
                 traversal.heading_hierarchy.append({})
-            element_has_text = self._walk(child.children, element_path, traversal)
+            element_has_text = self._walk(
+                child.children,
+                element_path,
+                child_path,
+                promotion_by_path,
+                traversal,
+            )
             if heading_entry_index is not None:
                 match = _HEADING_CANDIDATE.search(child.source_role)
                 candidate_level = (
@@ -324,13 +369,15 @@ class QualityEvaluator:
                     if match and match.group("level")
                     else None
                 )
-                traversal.heading_hierarchy[heading_entry_index] = {
+                heading_evidence = {
                     "structure_path": element_path,
                     "source_role": child.source_role,
                     "semantic_role": child.semantic_role,
                     "level": (
                         child.heading_level
-                        if child.semantic_role == "heading"
+                        if is_heading
+                        else promotion.level
+                        if is_promoted_heading
                         else candidate_level
                     ),
                     "joined_text": " ".join(
@@ -338,13 +385,31 @@ class QualityEvaluator:
                         for text in traversal.tagged_fragments[fragment_start:]
                         if text
                     ),
-                    "title": child.title,
+                    "title": (
+                        child.title
+                        if not is_promoted_heading
+                        else promotion.title
+                    ),
                     "classification": (
                         "heading"
-                        if child.semantic_role == "heading"
+                        if is_heading
+                        else "numbered_chapter_promotion"
+                        if is_promoted_heading
                         else "source_role_candidate"
                     ),
                 }
+                if is_promoted_heading:
+                    heading_evidence.update(
+                        {
+                            "label": promotion.label,
+                            "series_index": promotion.series_index,
+                            "heading_font_size": promotion.heading_font_size,
+                            "body_font_size": promotion.body_font_size,
+                            "font_size_ratio": promotion.font_size_ratio,
+                            "promotion_reason": promotion.promotion_reason,
+                        }
+                    )
+                traversal.heading_hierarchy[heading_entry_index] = heading_evidence
             traversal.body_count += is_body_role and element_has_text
             traversal.empty_element_count += not element_has_text
             has_descendant_text = has_descendant_text or element_has_text

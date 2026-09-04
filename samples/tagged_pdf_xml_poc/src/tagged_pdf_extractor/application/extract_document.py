@@ -5,6 +5,9 @@ from tagged_pdf_extractor.domain.models import (
     QualityReport,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.numbered_heading_promotion import (
+    promote_numbered_chapter_headings,
+)
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
 from tagged_pdf_extractor.ports.output_writer import (
     OutputValidation,
@@ -40,6 +43,7 @@ class ExtractDocument:
             raise IsADirectoryError(f"PDF source is not a file: {pdf_path}")
 
         document = self.reader.read(pdf_path)
+        document = promote_numbered_chapter_headings(document)
         baseline = self.baseline_reader.read_text(pdf_path)
         validation = self.writer.validate(document)
         if not isinstance(validation, OutputValidation):

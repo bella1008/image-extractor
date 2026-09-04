@@ -51,6 +51,9 @@ PDF = _resolve_zc_pdf()
 README = Path(__file__).parents[1] / "README.md"
 
 _TEXT_TOKEN = re.compile(r"\[CONTROL U\+[0-9A-F]{4,6}\]|\w+|[^\w\s]")
+_ORDERED_LIST_LABEL = re.compile(
+    r"^(?:\(?\d+[.)]?|[A-Za-z][.)]|[ivxlcdmIVXLCDM]+[.)])$"
+)
 _HEADING_PREFIX = re.compile(r"^#{2,6}\s+")
 _TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
 _FALLBACK_TABLE_ROW = re.compile(r"^-\s+행\s+\d+:\s*")
@@ -70,10 +73,26 @@ def _visible_source_text(value: str) -> str:
     )
 
 
-def _semantic_text_tokens(root: ET.Element) -> list[str]:
+def _semantic_review_tokens(root: ET.Element) -> list[str]:
+    suppressed_label_texts: set[ET.Element] = set()
+    for item in root.iter("list_item"):
+        direct_labels = [child for child in item if child.tag == "label"]
+        for index, label in enumerate(direct_labels):
+            label_text = re.sub(
+                r"\s+",
+                " ",
+                "".join(
+                    _visible_source_text(decode_data_element(text))
+                    for text in label.iter("text")
+                ),
+            ).strip()
+            if index > 0 or not _ORDERED_LIST_LABEL.fullmatch(label_text):
+                suppressed_label_texts.update(label.iter("text"))
+
     return [
         token
         for element in root.iter("text")
+        if element not in suppressed_label_texts
         for token in _TEXT_TOKEN.findall(
             _visible_source_text(decode_data_element(element))
         )
@@ -341,7 +360,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         "    ## Before Reading This Simple User Guide",
         1,
     )
-    assert _markdown_text_tokens(indented_heading) == _semantic_text_tokens(
+    assert _markdown_text_tokens(indented_heading) == _semantic_review_tokens(
         semantic_root
     )
     with pytest.raises(
@@ -356,6 +375,24 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["metrics"]["forbidden_xml_control_count"] == 0
     assert report_data["metrics"]["forbidden_xml_control_field_count"] == 0
     assert "[CONTROL U+" not in markdown
+    assert "\u0141" not in markdown
+    assert "\u0152" not in markdown
+
+    semantic_labels = {
+        re.sub(
+            r"\s+",
+            " ",
+            "".join(
+                decode_data_element(text) for text in label.iter("text")
+            ),
+        ).strip()
+        for item in semantic_root.iter("list_item")
+        for label in item
+        if label.tag == "label"
+    }
+    # After byte-safe Type0 decoding, this sample exposes the source list glyphs
+    # as bullet and en dash. Markdown suppresses them by role; XML keeps them.
+    assert {"\u2022", "\u2013"} <= semantic_labels
 
     normalized_markdown = re.sub(r"\s+", " ", markdown)
     assert "Produit de catégorie II" in normalized_markdown
@@ -374,7 +411,9 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         in normalized_markdown
     )
     assert "Wireless One Connect uniquement" in normalized_markdown
-    assert _markdown_text_tokens(markdown) == _semantic_text_tokens(semantic_root)
+    assert _markdown_text_tokens(markdown) == _semantic_review_tokens(
+        semantic_root
+    )
     assert markdown.index("Before Reading This Simple User Guide") < markdown.index(
         "Dépannage"
     )

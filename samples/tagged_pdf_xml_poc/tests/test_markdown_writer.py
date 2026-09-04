@@ -307,6 +307,102 @@ def test_renders_nested_lists_and_escapes_only_significant_line_prefixes(
     assert "\\> source line" in markdown
 
 
+def test_unordered_list_label_is_a_marker_role_not_body_text(tmp_path: Path) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item>"
+        "<label><text>\u0141</text></label>"
+        "<list_body><text>Power safety</text></list_body>"
+        "</list_item></list>",
+    )
+    source_xml = semantic.read_bytes()
+
+    markdown = MarkdownDocumentWriter.render_text(
+        semantic, _report(), source_name="manual.pdf"
+    )
+
+    assert "- Power safety" in markdown
+    assert "\u0141" not in markdown
+    assert semantic.read_bytes() == source_xml
+
+
+def test_nested_unordered_label_uses_indented_structural_bullet(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item>
+          <label><text>\u0141</text></label>
+          <list_body><text>Outer item</text>
+            <list><list_item>
+              <label><text>\u0152</text></label>
+              <list_body><text>Nested item</text></list_body>
+            </list_item></list>
+          </list_body>
+        </list_item></list>
+        """,
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "- Outer item\n  - Nested item\n"
+    assert "\u0141" not in markdown
+    assert "\u0152" not in markdown
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["2.", "1.", "1)", "(1)", "A.", "b)", "iv.", "IV)"],
+)
+def test_meaningful_ordered_list_label_is_preserved_once(
+    tmp_path: Path,
+    label: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        f"<label><text>{label}</text></label>"
+        "<list_body><text>Attach the bracket</text></list_body>"
+        "</list_item></list>",
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == f"{label} Attach the bracket\n"
+    assert body.count(label) == 1
+
+
+@pytest.mark.parametrize("label", ["Step", "*", "\u0141", "\u0152"])
+def test_arbitrary_list_labels_use_structural_bullet(
+    tmp_path: Path,
+    label: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        f"<label><text>{label}</text></label>"
+        "<list_body><text>Keep this body</text></list_body>"
+        "</list_item></list>",
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "- Keep this body\n"
+
+
+def test_unordered_label_glyphs_remain_visible_in_list_body_text(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>\u0141</text></label>"
+        "<list_body><text>Literal \u0141 and \u0152 content</text></list_body>"
+        "</list_item></list>",
+    )
+
+    assert "- Literal \u0141 and \u0152 content" in markdown
+
+
 def test_list_preserves_unexpected_direct_text(tmp_path: Path) -> None:
     markdown = _render(
         tmp_path,

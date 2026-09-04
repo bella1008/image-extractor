@@ -14,6 +14,9 @@ from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
 _WHITESPACE = re.compile(r"\s+")
+_ORDERED_LABEL = re.compile(
+    r"^(?:\(?\d+[.)]?|[A-Za-z][.)]|[ivxlcdmIVXLCDM]+[.)])$"
+)
 _MARKDOWN_LINE_PREFIX = re.compile(r"^(#{1,6}\s|>|[-+*]\s|\d+[.)]\s)")
 _FENCED_CODE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
 _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
@@ -223,6 +226,16 @@ class MarkdownDocumentWriter:
         text_parts: list[str] = []
         has_content = False
         marker_emitted = False
+        direct_labels = tuple(
+            child
+            for child in cls._structural_children(item)
+            if child.tag == "label"
+        )
+        marker = (
+            cls._list_marker(cls._element_text(direct_labels[0]))
+            if direct_labels
+            else "-"
+        )
 
         def flush_text() -> None:
             nonlocal has_content, marker_emitted
@@ -232,7 +245,7 @@ class MarkdownDocumentWriter:
                 if marker_emitted:
                     lines.append(f"{'  ' * (depth + 1)}{escaped}")
                 else:
-                    lines.append(f"{'  ' * depth}- {escaped}")
+                    lines.append(f"{'  ' * depth}{marker} {escaped}")
                     marker_emitted = True
                 has_content = True
             text_parts.clear()
@@ -240,11 +253,13 @@ class MarkdownDocumentWriter:
         def ensure_marker() -> None:
             nonlocal has_content, marker_emitted
             if not marker_emitted:
-                lines.append(f"{'  ' * depth}-")
+                lines.append(f"{'  ' * depth}{marker}")
                 marker_emitted = True
                 has_content = True
 
-        for kind, value in cls._list_events(item, promoted):
+        for kind, value in cls._list_events(
+            item, promoted, excluded=frozenset(direct_labels)
+        ):
             if kind == "text":
                 text_parts.append(cls._visible_text(value))
             else:
@@ -254,7 +269,7 @@ class MarkdownDocumentWriter:
                 has_content = True
         flush_text()
         if not has_content:
-            lines.append(f"{'  ' * depth}-")
+            lines.append(f"{'  ' * depth}{marker}")
         return lines
 
     @classmethod
@@ -262,8 +277,12 @@ class MarkdownDocumentWriter:
         cls,
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
+        *,
+        excluded: frozenset[ET.Element] = frozenset(),
     ) -> Iterable[tuple[str, ET.Element]]:
         for child in cls._structural_children(element):
+            if child in excluded:
+                continue
             if child in promoted:
                 yield "block", child
             elif child.tag == "list_item":
@@ -273,7 +292,12 @@ class MarkdownDocumentWriter:
             elif child.tag == "text":
                 yield "text", child
             else:
-                yield from cls._list_events(child, promoted)
+                yield from cls._list_events(child, promoted, excluded=excluded)
+
+    @classmethod
+    def _list_marker(cls, label_text: str) -> str:
+        normalized = cls._normalize_whitespace(label_text)
+        return normalized if _ORDERED_LABEL.fullmatch(normalized) else "-"
 
     @classmethod
     def _render_list_block(
@@ -510,9 +534,37 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _element_text(cls, element: ET.Element) -> str:
-        return cls._join_text_parts(
-            cls._visible_text(descendant) for descendant in element.iter("text")
+        return cls._join_text_parts(cls._element_text_parts(element))
+
+    @classmethod
+    def _element_text_parts(cls, element: ET.Element) -> Iterable[str]:
+        if element.tag == "text":
+            yield cls._visible_text(element)
+            return
+
+        direct_labels = (
+            tuple(
+                child
+                for child in cls._structural_children(element)
+                if child.tag == "label"
+            )
+            if element.tag == "list_item"
+            else ()
         )
+        if direct_labels:
+            marker = cls._list_marker(
+                cls._join_text_parts(
+                    cls._visible_text(text) for text in direct_labels[0].iter("text")
+                )
+            )
+            if marker != "-":
+                yield f"{marker} "
+
+        excluded = frozenset(direct_labels)
+        for child in cls._structural_children(element):
+            if child in excluded:
+                continue
+            yield from cls._element_text_parts(child)
 
     @classmethod
     def _join_text_parts(cls, parts: Iterable[str]) -> str:

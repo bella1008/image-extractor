@@ -148,6 +148,11 @@ class PypdfOperationTextRunner:
                 if operator in (b"BMC", b"BDC", b"EMC"):
                     extractor._flush_text()
                     _invoke_callback(on_boundary, operator, operands)
+                elif operator in (b"q", b"Q"):
+                    extractor._flush_text()
+                    extractor.process_operation(operator, operands)
+                    extractor.memo_cm = extractor.cm_matrix.copy()
+                    extractor.memo_tm = extractor.tm_matrix.copy()
                 elif operator == b"'":
                     extractor.process_operation(b"T*", [])
                     extractor.process_operation(b"Tj", operands)

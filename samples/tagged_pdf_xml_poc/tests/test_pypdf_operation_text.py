@@ -124,6 +124,122 @@ def test_runner_reports_effective_font_size_from_current_transform() -> None:
     assert captured == [("Scaled body", "Helvetica", 12.0)]
 
 
+def test_runner_splits_text_at_graphics_state_restore() -> None:
+    page = _in_memory_page(
+        b"BT /F1 6 Tf q 2 0 0 2 0 0 cm (A) Tj Q (B) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert captured == [
+        ("A", "Helvetica", 12.0),
+        ("B", "Helvetica", 6.0),
+    ]
+
+
+def test_runner_splits_text_at_graphics_state_save() -> None:
+    page = _in_memory_page(
+        b"BT /F1 6 Tf (A) Tj q (B) Tj Q (C) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert captured == [
+        ("A", "Helvetica", 6.0),
+        ("B", "Helvetica", 6.0),
+        ("C", "Helvetica", 6.0),
+    ]
+
+
+def test_runner_splits_nested_graphics_states_with_each_effective_size() -> None:
+    page = _in_memory_page(
+        b"BT /F1 6 Tf "
+        b"q 2 0 0 2 0 0 cm (A) Tj "
+        b"q 3 0 0 3 0 0 cm (B) Tj Q (C) Tj "
+        b"Q (D) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert captured == [
+        ("A", "Helvetica", 12.0),
+        ("B", "Helvetica", 36.0),
+        ("C", "Helvetica", 12.0),
+        ("D", "Helvetica", 6.0),
+    ]
+
+
+def test_runner_restores_font_size_after_graphics_state_restore() -> None:
+    page = _in_memory_page(
+        b"BT /F1 6 Tf q /F1 10 Tf (A) Tj Q (B) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert captured == [
+        ("A", "Helvetica", 10.0),
+        ("B", "Helvetica", 6.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("matrix", "expected_size"),
+    [
+        (b"0 2 -2 0 0 0", 12.0),
+        (b"1 0 1 1 0 0", 6 * 2**0.5),
+        (b"1 0 0 -2 0 0", 12.0),
+    ],
+    ids=["rotation", "shear", "reflection"],
+)
+def test_runner_uses_vertical_basis_for_effective_font_size(
+    matrix: bytes, expected_size: float
+) -> None:
+    page = _in_memory_page(
+        b"BT /F1 6 Tf " + matrix + b" Tm (X) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert len(captured) == 1
+    assert captured[0][:2] == ("X", "Helvetica")
+    assert captured[0][2] == pytest.approx(expected_size)
+
+
 def _run_with_controlled_font_metadata(
     monkeypatch, *, font_name: object, font_size: object
 ) -> list[tuple[str, str | None, float | None]]:

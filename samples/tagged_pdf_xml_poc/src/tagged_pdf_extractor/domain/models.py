@@ -55,6 +55,26 @@ class StructureElement:
 
 
 @dataclass(frozen=True)
+class HeadingPromotion:
+    child_path: tuple[int, ...]
+    level: int
+    label: str
+    title: str
+    series_index: int
+    heading_font_size: float
+    body_font_size: float
+    font_size_ratio: float
+    promotion_reason: str
+
+
+@dataclass(frozen=True)
+class NumberedHeadingSeriesAudit:
+    series_index: int
+    labels: tuple[str, ...]
+    valid_sequence: bool
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -62,6 +82,9 @@ class TaggedDocument:
     role_map: tuple[tuple[str, str], ...]
     children: tuple[StructureElement | ContentFragment, ...]
     diagnostics: tuple[Diagnostic, ...] = ()
+    heading_promotions: tuple[HeadingPromotion, ...] = ()
+    numbered_heading_series: tuple[NumberedHeadingSeriesAudit, ...] = ()
+    numbered_heading_series_consistent: bool | None = None
 
 
 @dataclass(frozen=True)

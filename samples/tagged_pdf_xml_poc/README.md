@@ -59,12 +59,18 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 세 기준 PDF가 반드시 있는 검수 환경에서는 아래처럼 필수 샘플 모드를 사용합니다. 이 모드에서는 ZC, ZA, ZG 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다.
 
 ```powershell
-Set-Location C:\Users\bella\image-extractor\samples\tagged_pdf_xml_poc
+Set-Location .\samples\tagged_pdf_xml_poc
 $env:TAGGED_PDF_REQUIRE_SAMPLES = "1"
-$env:TAGGED_PDF_ZC_SAMPLE = "C:\Users\bella\image-extractor\samples\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf"
-$env:TAGGED_PDF_ZA_SAMPLE = "C:\Users\bella\image-extractor\samples\SUG_RAW\0_TV_ZA\BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf"
-$env:TAGGED_PDF_ZG_SAMPLE = "C:\Users\bella\image-extractor\samples\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
-python -m pytest tests -v
+$env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
+).Path
+$env:TAGGED_PDF_ZA_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\0_TV_ZA\BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf" `
+).Path
+$env:TAGGED_PDF_ZG_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf" `
+).Path
+.\.venv\Scripts\python -m pytest tests -v
 ```
 
 일반 개발 PC에서는 `TAGGED_PDF_REQUIRE_SAMPLES`를 설정하지 않고 같은 명령을 실행하면 됩니다.

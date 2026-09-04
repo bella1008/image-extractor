@@ -14,7 +14,7 @@ from tagged_pdf_extractor.infrastructure.pymupdf_baseline import PyMuPdfBaseline
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
-from acceptance_support import assert_heading_only_failure, require_sample
+from .acceptance_support import assert_heading_only_failure, require_sample
 
 
 _SAMPLE_RELATIVE_PATH = (

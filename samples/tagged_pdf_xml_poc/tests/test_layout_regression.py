@@ -9,7 +9,7 @@ from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
 )
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 
-from acceptance_support import assert_heading_only_failure, require_sample
+from .acceptance_support import assert_heading_only_failure, require_sample
 
 
 _SAMPLES = {
@@ -110,6 +110,18 @@ def test_readme_documents_sample_overrides_and_independent_skips() -> None:
     assert "TAGGED_PDF_ZG_SAMPLE" in readme
     assert "TAGGED_PDF_REQUIRE_SAMPLES" in readme
     assert "그 샘플의 테스트만 독립적으로 건너뛰" in readme
+    assert "Set-Location .\\samples\\tagged_pdf_xml_poc" in readme
+    for variable in (
+        "TAGGED_PDF_ZC_SAMPLE",
+        "TAGGED_PDF_ZA_SAMPLE",
+        "TAGGED_PDF_ZG_SAMPLE",
+    ):
+        assert f'$env:{variable} = (Resolve-Path `' in readme
+    assert '"..\\SUG_RAW\\0_TV_ZC\\BN68-25100B-00_' in readme
+    assert '"..\\SUG_RAW\\0_TV_ZA\\BN68-25099B-00_' in readme
+    assert '"..\\SUG_RAW\\1_TV_ZG\\BN68-25448A-00_' in readme
+    assert ".\\.venv\\Scripts\\python -m pytest tests -v" in readme
+    assert "Set-Location C:\\Users\\bella" not in readme
 
 
 def test_missing_sample_skips_by_default(monkeypatch: pytest.MonkeyPatch) -> None:

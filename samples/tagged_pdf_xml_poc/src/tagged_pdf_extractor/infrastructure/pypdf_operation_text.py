@@ -70,7 +70,11 @@ class PypdfOperationTextRunner:
                 fonts[font_name] = font
 
             source_content = page["/Contents"].get_object()
-            content = ContentStream(source_content, page.pdf, "bytes")
+            content = (
+                source_content
+                if isinstance(source_content, ContentStream)
+                else ContentStream(source_content, page.pdf, "bytes")
+            )
             operations = tuple(content.operations)
 
             extractor = TextExtraction()

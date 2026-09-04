@@ -136,12 +136,14 @@ class _Traversal:
             },
         )
         page["fragment_count"] += 1
-        page["character_count"] += sum(len(part) for part in fragment.text_parts)
-        page["forbidden_xml_control_count"] += sum(
-            not _is_xml_10_character(character)
-            for part in fragment.text_parts
-            for character in part
-        )
+        for part in fragment.text_parts:
+            forbidden_count = sum(
+                not _is_xml_10_character(character) for character in part
+            )
+            page["character_count"] += len(part)
+            page["forbidden_xml_control_count"] += forbidden_count
+            self.forbidden_xml_control_count += forbidden_count
+            self.forbidden_xml_control_field_count += forbidden_count > 0
 
 
 @dataclass(frozen=True)
@@ -280,8 +282,6 @@ class QualityEvaluator:
             if isinstance(child, ContentFragment):
                 traversal.fragment_count += 1
                 traversal.count_fragment(child)
-                for text_part in child.text_parts:
-                    traversal.count_text_field(text_part)
                 text, decisions = join_text_parts(child.text_parts)
                 traversal.tagged_fragments.append(text)
                 has_descendant_text = has_descendant_text or bool(text.strip())

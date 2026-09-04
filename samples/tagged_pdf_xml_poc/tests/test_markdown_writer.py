@@ -64,7 +64,7 @@ def test_actual_heading_directly_under_list_is_a_heading_not_a_list_item(
         """,
     )
 
-    assert "## 03 Troubleshooting" in markdown
+    assert markdown.splitlines().count("## 03 Troubleshooting") == 1
     assert "- 03 Troubleshooting" not in markdown
     assert markdown.count("03 Troubleshooting") == 1
     assert "1. Normal step" in markdown

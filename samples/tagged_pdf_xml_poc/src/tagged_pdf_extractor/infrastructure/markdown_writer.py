@@ -362,6 +362,8 @@ class MarkdownDocumentWriter:
     ) -> list[str]:
         if element.tag == "list":
             return cls._render_list(element, promoted, indent=indent)
+        if element.tag == "heading":
+            indent = ""
         return [
             f"{indent}{line}"
             for block in cls._render_element(element, promoted)

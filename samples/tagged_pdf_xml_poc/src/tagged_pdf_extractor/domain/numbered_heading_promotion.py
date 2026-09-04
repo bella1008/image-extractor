@@ -91,7 +91,8 @@ def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocumen
             if diagnostic is not None:
                 diagnostics.append(diagnostic)
 
-    consistency = _series_consistency(audits)
+    valid_audits = [audit for audit in audits if audit.valid_sequence]
+    consistency = _series_consistency(valid_audits)
     if consistency is False:
         diagnostics.append(
             Diagnostic(
@@ -99,8 +100,12 @@ def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocumen
                 code="numbered_heading_series_count_mismatch",
                 message="Numbered chapter heading series counts do not match.",
                 context={
-                    "series_counts": tuple(len(audit.labels) for audit in audits),
-                    "labels_by_series": tuple(audit.labels for audit in audits),
+                    "series_counts": tuple(
+                        len(audit.labels) for audit in valid_audits
+                    ),
+                    "labels_by_series": tuple(
+                        audit.labels for audit in valid_audits
+                    ),
                 },
             )
         )

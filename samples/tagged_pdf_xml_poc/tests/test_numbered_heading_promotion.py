@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,8 @@ import pytest
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    HeadingPromotion,
+    NumberedHeadingSeriesAudit,
     StructureElement,
     TaggedDocument,
     TextStyle,
@@ -106,6 +109,30 @@ def _series(
 
 def _diagnostics(document: TaggedDocument, code: str) -> list[Diagnostic]:
     return [diagnostic for diagnostic in document.diagnostics if diagnostic.code == code]
+
+
+def test_heading_promotion_is_frozen() -> None:
+    promotion = HeadingPromotion(
+        child_path=(0,),
+        level=2,
+        label="01",
+        title="Title",
+        series_index=0,
+        heading_font_size=12.0,
+        body_font_size=8.0,
+        font_size_ratio=1.5,
+        promotion_reason="numbered_chapter_structure_sequence_typography",
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        promotion.level = 3  # type: ignore[misc]
+
+
+def test_numbered_heading_series_audit_is_frozen() -> None:
+    audit = NumberedHeadingSeriesAudit(0, ("01", "02"), True)
+
+    with pytest.raises(FrozenInstanceError):
+        audit.valid_sequence = False  # type: ignore[misc]
 
 
 def test_promotes_contiguous_series_through_09_and_10() -> None:
@@ -378,7 +405,7 @@ def test_weighted_median_uses_text_character_counts() -> None:
 
 def test_ignores_none_nonfinite_nonpositive_style_samples() -> None:
     invalid_sizes = (None, float("nan"), float("inf"), -1.0, 0.0)
-    invalid_parts = tuple("" for _ in invalid_sizes)
+    invalid_parts = ("none ", "nan ", "infinite ", "negative ", "zero ")
     heading = _element(
         "list_item",
         _element(
@@ -386,7 +413,7 @@ def test_ignores_none_nonfinite_nonpositive_style_samples() -> None:
             ContentFragment(
                 0,
                 None,
-                (*invalid_parts, "01"),
+                (" ", "\t", "\n", "  ", " ", "01"),
                 text_styles=tuple(TextStyle(None, size) for size in invalid_sizes)
                 + (TextStyle(None, 12.0),),
             ),
@@ -402,14 +429,53 @@ def test_ignores_none_nonfinite_nonpositive_style_samples() -> None:
             ),
         ),
     )
+    body = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            None,
+            (*invalid_parts, "ordinary body text"),
+            text_styles=tuple(TextStyle(None, size) for size in invalid_sizes)
+            + (TextStyle(None, 8.0),),
+        ),
+    )
     source = _document(
-        _element("list", heading, _paragraph(), _candidate("02"), _paragraph())
+        _element("list", heading, body, _candidate("02"), body)
     )
 
     result = promote_numbered_chapter_headings(source)
 
     assert len(result.heading_promotions) == 2
     assert result.heading_promotions[0].heading_font_size == 12.0
+    assert result.heading_promotions[0].body_font_size == 8.0
+
+
+def test_all_nonempty_typography_samples_invalid_is_insufficient() -> None:
+    source = _document(
+        _element(
+            "list",
+            _candidate("01", label_size=None, title_size=float("nan")),
+            _paragraph("infinite body", float("inf")),
+            _candidate("02", label_size=0.0, title_size=-1.0),
+            _paragraph("negative body", -2.0),
+        )
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert result.heading_promotions == ()
+    diagnostics = _diagnostics(result, "numbered_heading_typography_insufficient")
+    assert [diagnostic.context["label"] for diagnostic in diagnostics] == ["01", "02"]
+    assert all(
+        diagnostic.context["body_font_size"] is None for diagnostic in diagnostics
+    )
+    assert all(
+        diagnostic.context["label_font_size"] is None for diagnostic in diagnostics
+    )
+    assert all(
+        diagnostic.context["list_body_font_size"] is None
+        for diagnostic in diagnostics
+    )
 
 
 def test_equal_series_counts_are_consistent() -> None:
@@ -441,6 +507,21 @@ def test_unequal_series_counts_retain_local_promotions_and_report_mismatch() -> 
         "series_counts": (2, 3),
         "labels_by_series": (("01", "02"), ("01", "02", "03")),
     }
+
+
+def test_invalid_pre_01_series_is_excluded_from_cross_series_consistency() -> None:
+    source = _document(_series(("02",)), _series(("01", "02")))
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert [audit.valid_sequence for audit in result.numbered_heading_series] == [
+        False,
+        True,
+    ]
+    assert [promotion.label for promotion in result.heading_promotions] == ["01", "02"]
+    assert result.numbered_heading_series_consistent is None
+    assert _diagnostics(result, "numbered_heading_sequence_invalid")
+    assert not _diagnostics(result, "numbered_heading_series_count_mismatch")
 
 
 @pytest.mark.parametrize("series_count", (0, 1))

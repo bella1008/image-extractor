@@ -216,6 +216,10 @@ class QualityEvaluator:
                 for diagnostic in unresolved
             ),
             "no_known_text_loss": not extraction_loss_counts,
+            "no_forbidden_xml_controls": (
+                traversal.forbidden_xml_control_count == 0
+                and traversal.forbidden_xml_control_field_count == 0
+            ),
             "special_character_counts_preserved": all(
                 result["count_preserved"]
                 for result in special_characters.values()

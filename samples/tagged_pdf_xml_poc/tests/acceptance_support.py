@@ -13,6 +13,7 @@ HEADING_ONLY_FAILURE_HARD_GATES = {
     "resolved_references": True,
     "resolved_references_reported": True,
     "no_known_text_loss": True,
+    "no_forbidden_xml_controls": True,
     "special_character_counts_preserved": True,
 }
 

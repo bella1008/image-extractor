@@ -692,6 +692,8 @@ def test_counts_forbidden_xml_controls_by_occurrence_and_source_field() -> None:
 
     assert report.metrics["forbidden_xml_control_count"] == 7
     assert report.metrics["forbidden_xml_control_field_count"] == 5
+    assert report.hard_gates["no_forbidden_xml_controls"] is False
+    assert report.status == "fail"
 
 
 def test_reports_raw_content_fragment_text_quality_by_numeric_page_order() -> None:
@@ -740,6 +742,7 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "resolved_references",
         "resolved_references_reported",
         "no_known_text_loss",
+        "no_forbidden_xml_controls",
         "special_character_counts_preserved",
     )
     assert report.hard_gates == {
@@ -751,6 +754,7 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "resolved_references": True,
         "resolved_references_reported": True,
         "no_known_text_loss": True,
+        "no_forbidden_xml_controls": True,
         "special_character_counts_preserved": True,
     }
     assert report.status == "fail"

@@ -106,6 +106,7 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 - marked PDF이고 구조와 텍스트가 있는 body가 존재해야 합니다.
 - 표준 `H`, `H1`~`H6`, `Title` 또는 검증된 RoleMap 대응 heading이 있어야 합니다. `H0`, `H7`~`H9`는 heading이 아닙니다.
 - XML 직렬화와 왕복 검증이 성공해야 합니다.
+- XML 1.0에서 금지된 제어문자와 해당 문자를 포함한 필드가 모두 0이어야 합니다(`no_forbidden_xml_controls`).
 - `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`, `tagged_xobject_unresolved`가 모두 0이어야 합니다.
 - 알려진 텍스트 손실 진단인 `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`, `tagged_xobject_unresolved`, `unsupported_stream_mcr`, `tagged_form_xobject_unsupported`, `tagged_xobject_unsupported`, `invalid_mcid`, `unsupported_structure_kid`가 모두 0이어야 합니다. 이 목록은 `domain/quality_diagnostics.py`에서 중앙 관리합니다. 단순 marked-content 범위 균형 경고는 그 자체로 텍스트 손실을 뜻하지 않으므로 포함하지 않습니다.
 - 기준 텍스트에 등장한 필수 문자 `>`, `→`, `/`, `&`, `:`, `[`, `]`, `(`, `)`는 태그 텍스트에 기준 개수 이상 있어야 합니다. 기준에 없는 문자는 실패 원인이 아닙니다.

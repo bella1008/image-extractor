@@ -9,6 +9,7 @@ from tagged_pdf_extractor.application.extract_document import ExtractDocument
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    HeadingPromotion,
     QualityReport,
     StructureElement,
     TaggedDocument,
@@ -75,6 +76,56 @@ def test_required_output_names_are_the_four_transaction_artifacts() -> None:
         "extraction_report.json",
         "semantic_document.md",
     )
+
+
+def test_output_bundle_keeps_raw_list_and_renders_one_promoted_heading(
+    tmp_path: Path,
+) -> None:
+    item = StructureElement(
+        "LI",
+        "list_item",
+        children=(
+            StructureElement(
+                "Lbl", "label", children=(ContentFragment(0, 1, ("03",)),)
+            ),
+            StructureElement(
+                "LBody",
+                "list_body",
+                children=(ContentFragment(0, 2, ("Troubleshooting",)),),
+            ),
+        ),
+    )
+    document = TaggedDocument(
+        tmp_path / "manual.pdf",
+        True,
+        "en",
+        (),
+        (StructureElement("L", "list", children=(item,)),),
+        heading_promotions=(
+            HeadingPromotion(
+                (0, 0),
+                2,
+                "03",
+                "Troubleshooting",
+                0,
+                16.0,
+                7.0,
+                16 / 7,
+                "numbered_chapter_structure_sequence_typography",
+            ),
+        ),
+    )
+    output = tmp_path / "bundle"
+
+    artifacts = OutputBundleWriter().write(document, _report(document), output)
+
+    raw_root = ET.parse(artifacts.raw_xml).getroot()
+    semantic_root = ET.parse(artifacts.semantic_xml).getroot()
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert raw_root.find(".//element[@semantic-role='list_item']") is not None
+    assert semantic_root.find(".//heading") is not None
+    assert markdown.count("## 03 Troubleshooting") == 1
+    assert "- 03 Troubleshooting" not in markdown
 
 
 def test_json_report_writer_preserves_dataclass_order_unicode_paths_and_controls(

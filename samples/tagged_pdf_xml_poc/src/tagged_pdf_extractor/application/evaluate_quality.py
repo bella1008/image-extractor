@@ -345,7 +345,10 @@ class QualityEvaluator:
             traversal.body_role_node_count += is_body_role
             traversal.unknown_role_count += child.semantic_role == "unknown"
             self._count_element_text_fields(child, traversal)
-            element_path = f"{parent_path}/{child.semantic_role}[{child_index}]"
+            semantic_path_tag = (
+                "heading" if promotion is not None else child.semantic_role
+            )
+            element_path = f"{parent_path}/{semantic_path_tag}[{child_index}]"
             fragment_start = len(traversal.tagged_fragments)
             heading_entry_index: int | None = None
             if (

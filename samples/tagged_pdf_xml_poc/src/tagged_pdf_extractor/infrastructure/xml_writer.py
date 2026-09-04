@@ -9,6 +9,7 @@ from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    HeadingPromotion,
     StructureElement,
     TaggedDocument,
 )
@@ -181,13 +182,19 @@ class XmlDocumentWriter:
         root = ET.Element("document")
         expected_parts: list[str] = []
         decisions: list[dict[str, object]] = []
+        promotion_by_path = {
+            promotion.child_path: promotion
+            for promotion in document.heading_promotions
+        }
 
         for index, child in enumerate(document.children):
             self._append_semantic_child(
                 root,
                 child,
                 parent_path="",
+                parent_child_path=(),
                 child_index=index,
+                promotion_by_path=promotion_by_path,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -231,7 +238,9 @@ class XmlDocumentWriter:
         child: StructureElement | ContentFragment,
         *,
         parent_path: str,
+        parent_child_path: tuple[int, ...],
         child_index: int,
+        promotion_by_path: dict[tuple[int, ...], HeadingPromotion],
         expected_parts: list[str],
         decisions: list[dict[str, object]],
     ) -> None:
@@ -257,16 +266,27 @@ class XmlDocumentWriter:
                 )
             return
 
+        child_path = (*parent_child_path, child_index)
+        promotion = promotion_by_path.get(child_path)
         tag = (
-            child.semantic_role
-            if child.semantic_role in _SAFE_SEMANTIC_TAGS
-            else "unknown"
+            "heading"
+            if promotion is not None
+            else (
+                child.semantic_role
+                if child.semantic_role in _SAFE_SEMANTIC_TAGS
+                else "unknown"
+            )
         )
         element_path = f"{parent_path}/{tag}[{child_index}]"
+        attributes = self._semantic_element_attributes(child, tag)
+        if promotion is not None:
+            attributes.update(
+                self._promotion_attributes(promotion, source_role=child.source_role)
+            )
         element = ET.SubElement(
             parent,
             tag,
-            _encoded_attributes(self._semantic_element_attributes(child, tag)),
+            _encoded_attributes(attributes),
         )
         self._append_source_attributes(element, child.attributes)
         for index, nested_child in enumerate(child.children):
@@ -274,10 +294,36 @@ class XmlDocumentWriter:
                 element,
                 nested_child,
                 parent_path=element_path,
+                parent_child_path=child_path,
                 child_index=index,
+                promotion_by_path=promotion_by_path,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
+
+    @staticmethod
+    def _promotion_attributes(
+        promotion: HeadingPromotion, *, source_role: str
+    ) -> dict[str, str]:
+        return {
+            "level": str(promotion.level),
+            "source-role": source_role,
+            "promotion-reason": promotion.promotion_reason,
+            "series-index": str(promotion.series_index),
+            "heading-font-size": XmlDocumentWriter._format_number(
+                promotion.heading_font_size
+            ),
+            "body-font-size": XmlDocumentWriter._format_number(
+                promotion.body_font_size
+            ),
+            "font-size-ratio": XmlDocumentWriter._format_number(
+                promotion.font_size_ratio
+            ),
+        }
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return f"{value:.6f}".rstrip("0").rstrip(".")
 
     @staticmethod
     def _fragment_attributes(fragment: ContentFragment) -> dict[str, str]:

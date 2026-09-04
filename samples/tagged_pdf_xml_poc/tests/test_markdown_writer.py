@@ -45,6 +45,31 @@ def _render(
     return output.read_text(encoding="utf-8")
 
 
+def test_actual_heading_directly_under_list_is_a_heading_not_a_list_item(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list>
+          <heading level="2">
+            <label><text>03</text></label>
+            <list_body><text>Troubleshooting</text></list_body>
+          </heading>
+          <list_item>
+            <label><text>1.</text></label>
+            <list_body><text>Normal step</text></list_body>
+          </list_item>
+        </list>
+        """,
+    )
+
+    assert "## 03 Troubleshooting" in markdown
+    assert "- 03 Troubleshooting" not in markdown
+    assert markdown.count("03 Troubleshooting") == 1
+    assert "1. Normal step" in markdown
+
+
 def test_promotes_only_candidates_in_order_using_absolute_child_indexes(
     tmp_path: Path,
 ) -> None:

@@ -173,6 +173,15 @@ class MarkdownDocumentWriter:
             prefix = "#" * min(level + 1, 6)
             return [f"{prefix} {cls._element_text(element)}"]
 
+        if element.tag == "heading" and cls._has_mixed_content_descendant(
+            element, promoted
+        ):
+            return cls._render_mixed_content(element, promoted)
+        if element.tag == "heading":
+            level = max(1, min(int(element.get("level", "1")), 6))
+            text = cls._element_text(element)
+            return [f"{'#' * level} {text}"] if text else []
+
         atomic_tags = {"paragraph", "heading", "caption", "label", "figure"}
         if element.tag in atomic_tags and cls._has_mixed_content_descendant(
             element, promoted
@@ -304,7 +313,7 @@ class MarkdownDocumentWriter:
                 yield "block", child
             elif child.tag == "list_item":
                 yield "list_item", child
-            elif child.tag in {"list", "table", "figure"}:
+            elif child.tag in {"heading", "list", "table", "figure"}:
                 yield "block", child
             elif child.tag == "text":
                 yield "text", child

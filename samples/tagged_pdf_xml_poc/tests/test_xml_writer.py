@@ -6,12 +6,94 @@ import pytest
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    HeadingPromotion,
     StructureElement,
     TaggedDocument,
     TextStyle,
 )
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
+
+
+def test_numbered_heading_promotion_changes_only_semantic_xml(
+    tmp_path: Path,
+) -> None:
+    item = StructureElement(
+        source_role="LI",
+        semantic_role="list_item",
+        children=(
+            StructureElement(
+                "Lbl",
+                "label",
+                children=(ContentFragment(0, 31, ("03",)),),
+            ),
+            StructureElement(
+                "LBody",
+                "list_body",
+                children=(
+                    ContentFragment(0, 32, ("Troubleshooting and Maintenance",)),
+                ),
+            ),
+        ),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (StructureElement("L", "list", children=(item,)),),
+        heading_promotions=(
+            HeadingPromotion(
+                child_path=(0, 0),
+                level=2,
+                label="03",
+                title="Troubleshooting and Maintenance",
+                series_index=0,
+                heading_font_size=16.0,
+                body_font_size=7.0,
+                font_size_ratio=16 / 7,
+                promotion_reason=(
+                    "numbered_chapter_structure_sequence_typography"
+                ),
+            ),
+        ),
+    )
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw_root = ET.parse(raw_path).getroot()
+    semantic_root = ET.parse(semantic_path).getroot()
+    raw_item = raw_root.find(".//element[@semantic-role='list_item']")
+    semantic_heading = semantic_root.find(".//heading")
+
+    assert raw_item is not None
+    assert raw_item.attrib == {
+        "source-role": "LI",
+        "semantic-role": "list_item",
+    }
+    assert "promotion-reason" not in raw_item.attrib
+    assert semantic_heading is not None
+    assert semantic_heading.attrib == {
+        "level": "2",
+        "source-role": "LI",
+        "promotion-reason": "numbered_chapter_structure_sequence_typography",
+        "series-index": "0",
+        "heading-font-size": "16",
+        "body-font-size": "7",
+        "font-size-ratio": "2.285714",
+    }
+    assert [child.tag for child in semantic_heading] == ["label", "list_body"]
+    assert [text.attrib["mcid"] for text in semantic_heading.findall(".//text")] == [
+        "31",
+        "32",
+    ]
+    assert "".join(semantic_heading.itertext()) == (
+        "03Troubleshooting and Maintenance"
+    )
 
 
 def test_xml_round_trip_preserves_hierarchy_and_exact_unicode_osd_path(

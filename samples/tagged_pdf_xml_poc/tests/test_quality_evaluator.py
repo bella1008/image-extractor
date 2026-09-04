@@ -248,7 +248,7 @@ def test_traverses_each_child_sequence_once_and_records_unambiguous_join_paths()
         ("/heading[0]", 0),
         ("/paragraph[1]", 0),
         ("/paragraph[1]", 1),
-        ("/list_item[2]", 0),
+        ("/heading[2]", 0),
     ]
     assert report.metrics["character_match_ratio"] == 1.0
 
@@ -286,7 +286,7 @@ def test_numbered_promotions_are_counted_and_reported_as_heading_evidence() -> N
     assert report.hard_gates["has_heading"] is True
     assert report.heading_hierarchy == (
         {
-            "structure_path": "/list[0]/list_item[0]",
+            "structure_path": "/list[0]/heading[0]",
             "source_role": "LI",
             "semantic_role": "list_item",
             "level": 2,
@@ -301,7 +301,7 @@ def test_numbered_promotions_are_counted_and_reported_as_heading_evidence() -> N
             "promotion_reason": "numbered_chapter_structure_sequence_typography",
         },
         {
-            "structure_path": "/list[0]/list_item[1]",
+            "structure_path": "/list[0]/heading[1]",
             "source_role": "LI",
             "semantic_role": "list_item",
             "level": 2,

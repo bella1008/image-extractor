@@ -21,6 +21,7 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
     StructureElement,
+    TextStyle,
 )
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextResult
 from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
@@ -44,10 +45,12 @@ class RecordingCollector:
         parts_by_page: dict[int, dict[int, tuple[str, ...]]] | None = None,
         diagnostics_by_page: dict[int, tuple[Diagnostic, ...]] | None = None,
         seen_mcids_by_page: dict[int, frozenset[int]] | None = None,
+        styles_by_page: dict[int, dict[int, tuple[TextStyle, ...]]] | None = None,
     ) -> None:
         self.parts_by_page = parts_by_page or {}
         self.diagnostics_by_page = diagnostics_by_page or {}
         self.seen_mcids_by_page = seen_mcids_by_page or {}
+        self.styles_by_page = styles_by_page or {}
         self.calls: list[int] = []
 
     def collect(self, _page: Any, page_index: int) -> McidTextResult:
@@ -55,6 +58,7 @@ class RecordingCollector:
         parts_by_mcid = self.parts_by_page.get(page_index, {})
         return McidTextResult(
             parts_by_mcid=parts_by_mcid,
+            styles_by_mcid=self.styles_by_page.get(page_index, {}),
             seen_mcids=self.seen_mcids_by_page.get(
                 page_index, frozenset(parts_by_mcid)
             ),
@@ -89,6 +93,13 @@ def test_translates_decoder_failure_at_page_boundary(
     )
     assert raised.value.__cause__ is decoder_error
     assert not hasattr(raised.value, "diagnostics")
+
+
+def test_content_fragment_preserves_four_argument_positional_construction() -> None:
+    fragment = ContentFragment(2, 7, ("Title",), "12 0 R")
+
+    assert fragment.object_ref == "12 0 R"
+    assert fragment.text_styles == ()
 
 
 def test_does_not_translate_non_decoder_collector_failure(
@@ -407,6 +418,9 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
             1: {9: ("Second page",)},
         },
         {1: (collector_diagnostic,)},
+        styles_by_page={
+            1: {9: (TextStyle("SamsungOne-600", 16.0),)},
+        },
     )
 
     result = TaggedPdfReader(collector).read(pdf_path)
@@ -460,6 +474,7 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
         ("Second page",),
     )
     assert mcr_fragment.object_ref is not None
+    assert mcr_fragment.text_styles == (TextStyle("SamsungOne-600", 16.0),)
 
     assert result.diagnostics[0] == collector_diagnostic
     assert [item.code for item in result.diagnostics[1:]] == [
@@ -588,15 +603,18 @@ def test_preserves_unresolved_fragments_with_contextual_diagnostics(
     assert isinstance(container, StructureElement)
     missing_text, unresolved_page, missing_mcid = container.children
     assert missing_text == ContentFragment(0, 404, ())
+    assert missing_text.text_styles == ()
     assert isinstance(unresolved_page, ContentFragment)
     assert unresolved_page.page_index == -1
     assert unresolved_page.mcid == 7
     assert unresolved_page.text_parts == ()
+    assert unresolved_page.text_styles == ()
     assert unresolved_page.object_ref is not None
     assert isinstance(missing_mcid, ContentFragment)
     assert missing_mcid.page_index == 0
     assert missing_mcid.mcid is None
     assert missing_mcid.text_parts == ()
+    assert missing_mcid.text_styles == ()
     assert missing_mcid.object_ref is not None
 
     assert [item.code for item in result.diagnostics] == [
@@ -815,6 +833,7 @@ def test_seen_empty_mcid_is_not_unresolved_but_missing_mcid_is(
         ContentFragment(0, 5, ()),
         ContentFragment(0, 99, ()),
     )
+    assert all(fragment.text_styles == () for fragment in container.children)
     assert [diagnostic.code for diagnostic in result.diagnostics] == [
         "unresolved_mcid"
     ]
@@ -854,6 +873,7 @@ def test_stream_owned_mcr_is_preserved_without_page_text_lookup(
     assert fragment.page_index == 0
     assert fragment.mcid == 7
     assert fragment.text_parts == ()
+    assert fragment.text_styles == ()
     assert fragment.object_ref is not None
     assert len(result.diagnostics) == 1
     diagnostic = result.diagnostics[0]

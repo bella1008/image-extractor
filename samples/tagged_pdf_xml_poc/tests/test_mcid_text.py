@@ -10,7 +10,7 @@ from pypdf.generic import (
     NumberObject,
 )
 
-from tagged_pdf_extractor.domain.models import Diagnostic
+from tagged_pdf_extractor.domain.models import Diagnostic, TextStyle
 from tagged_pdf_extractor.infrastructure import mcid_text
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextCollector
 
@@ -25,7 +25,8 @@ class FakeRunner:
                 operator, operands = value
                 on_boundary(operator, operands)
             elif kind == "text":
-                on_text(value, None, None)
+                text, font_name, font_size = value
+                on_text(text, font_name, font_size)
             elif kind == "xobject" and on_xobject is not None:
                 on_xobject(value)
 
@@ -133,9 +134,9 @@ def test_collects_text_under_inherited_mcid() -> None:
     runner = FakeRunner(
         [
             ("boundary", (b"BDC", ["/P", {"/MCID": 7}])),
-            ("text", "Settings >"),
+            ("text", ("Settings >", None, None)),
             ("boundary", (b"BDC", ["/Span", {}])),
-            ("text", " General"),
+            ("text", (" General", None, None)),
             ("boundary", (b"EMC", [])),
             ("boundary", (b"EMC", [])),
         ]
@@ -151,7 +152,7 @@ def test_collects_direct_mcid_from_bmc_properties() -> None:
     runner = FakeRunner(
         [
             ("boundary", (b"BMC", ["/P", {"/MCID": 9}])),
-            ("text", "Tagged"),
+            ("text", ("Tagged", None, None)),
             ("boundary", (b"EMC", [])),
         ]
     )
@@ -205,7 +206,7 @@ def test_resolves_mcid_from_named_page_property_list() -> None:
                 "boundary",
                 (b"BDC", [NameObject("/P"), NameObject("/MC0")]),
             ),
-            ("text", "Resolved"),
+            ("text", ("Resolved", None, None)),
             ("boundary", (b"EMC", [])),
         ]
     )
@@ -380,11 +381,11 @@ def test_restores_parent_mcid_after_nested_direct_mcid() -> None:
     runner = FakeRunner(
         [
             ("boundary", (b"BDC", ["/P", {"/MCID": 7}])),
-            ("text", "Parent before"),
+            ("text", ("Parent before", None, None)),
             ("boundary", (b"BDC", ["/Span", {"/MCID": 8}])),
-            ("text", "Child"),
+            ("text", ("Child", None, None)),
             ("boundary", (b"EMC", [])),
-            ("text", "Parent after"),
+            ("text", ("Parent after", None, None)),
             ("boundary", (b"EMC", [])),
         ]
     )
@@ -417,14 +418,14 @@ def test_invalid_mcid_warns_and_inherits_parent(
     events.extend(
         [
             ("boundary", (b"BDC", ["/Span", {"/MCID": invalid_mcid}])),
-            ("text", "Child"),
+            ("text", ("Child", None, None)),
             ("boundary", (b"EMC", [])),
         ]
     )
     if parent_mcid is not None:
         events.extend(
             [
-                ("text", "Parent"),
+                ("text", ("Parent", None, None)),
                 ("boundary", (b"EMC", [])),
             ]
         )
@@ -469,7 +470,7 @@ def test_reports_unclosed_marked_content_after_extraction() -> None:
     runner = FakeRunner(
         [
             ("boundary", (b"BDC", ["/P", {"/MCID": 3}])),
-            ("text", "Open"),
+            ("text", ("Open", None, None)),
         ]
     )
 
@@ -488,3 +489,25 @@ def test_reports_unclosed_marked_content_after_extraction() -> None:
 
 def test_synthetic_marked_content_flush_helper_is_not_exposed() -> None:
     assert not hasattr(mcid_text, "_page_with_marked_content_flushes")
+
+
+def test_collects_font_styles_aligned_with_each_mcid_text_part() -> None:
+    runner = FakeRunner(
+        [
+            ("text", ("Outside", "IgnoredFont", 10.0)),
+            ("boundary", (b"BDC", ["/P", {"/MCID": 7}])),
+            ("text", ("03", "SamsungOne-600", 16.0)),
+            ("text", ("Title", "SamsungOne-600", 16.0)),
+            ("boundary", (b"EMC", [])),
+        ]
+    )
+
+    result = McidTextCollector(runner=runner).collect(object(), page_index=0)
+
+    assert result.parts_by_mcid == {7: ("03", "Title")}
+    assert result.styles_by_mcid == {
+        7: (
+            TextStyle("SamsungOne-600", 16.0),
+            TextStyle("SamsungOne-600", 16.0),
+        )
+    }

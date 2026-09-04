@@ -14,11 +14,18 @@ class Diagnostic:
 
 
 @dataclass(frozen=True)
+class TextStyle:
+    font_name: str | None
+    font_size: float | None
+
+
+@dataclass(frozen=True)
 class ContentFragment:
     page_index: int
     mcid: int | None
     text_parts: tuple[str, ...]
     object_ref: str | None = None
+    text_styles: tuple[TextStyle, ...] = ()
 
     @property
     def text(self) -> str:

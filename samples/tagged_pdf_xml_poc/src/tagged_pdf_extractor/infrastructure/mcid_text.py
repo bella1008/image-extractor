@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from numbers import Integral
 from typing import Any
 
-from tagged_pdf_extractor.domain.models import Diagnostic
+from tagged_pdf_extractor.domain.models import Diagnostic, TextStyle
 from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
     PypdfOperationTextError,
     PypdfOperationTextRunner,
@@ -85,6 +85,7 @@ def _safe_repr(value: Any) -> str:
 @dataclass(frozen=True)
 class McidTextResult:
     parts_by_mcid: dict[int, tuple[str, ...]]
+    styles_by_mcid: dict[int, tuple[TextStyle, ...]]
     seen_mcids: frozenset[int]
     diagnostics: tuple[Diagnostic, ...]
 
@@ -96,6 +97,7 @@ class McidTextCollector:
     def collect(self, page: Any, page_index: int) -> McidTextResult:
         stack: list[int | None] = []
         parts: dict[int, list[str]] = {}
+        styles: dict[int, list[TextStyle]] = {}
         seen_mcids: set[int] = set()
         diagnostics: list[Diagnostic] = []
 
@@ -139,10 +141,12 @@ class McidTextCollector:
                     )
 
         def on_text(
-            value: str, _font_name: str | None, _font_size: float | None
+            value: str, font_name: str | None, font_size: float | None
         ) -> None:
             if value and stack and stack[-1] is not None:
-                parts.setdefault(stack[-1], []).append(value)
+                mcid = stack[-1]
+                parts.setdefault(mcid, []).append(value)
+                styles.setdefault(mcid, []).append(TextStyle(font_name, font_size))
 
         def on_xobject(operand: Any) -> None:
             if not stack or stack[-1] is None:
@@ -220,8 +224,12 @@ class McidTextCollector:
                     context={"page_index": page_index, "depth": len(stack)},
                 )
             )
+        assert all(
+            len(values) == len(styles[mcid]) for mcid, values in parts.items()
+        )
         return McidTextResult(
             parts_by_mcid={mcid: tuple(values) for mcid, values in parts.items()},
+            styles_by_mcid={mcid: tuple(values) for mcid, values in styles.items()},
             seen_mcids=frozenset(seen_mcids),
             diagnostics=tuple(diagnostics),
         )

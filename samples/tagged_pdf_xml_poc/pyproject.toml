@@ -7,7 +7,7 @@ name = "tagged-pdf-xml-poc"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "pypdf>=6.16.2,<7",
+    "pypdf==6.16.2",
     "PyMuPDF>=1.26,<2",
 ]
 

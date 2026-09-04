@@ -1,7 +1,7 @@
 # ZC MCID 텍스트 디코딩 개선 설계
 
-작성일: 2026-09-04  
-대상 프로젝트: `samples/tagged_pdf_xml_poc`  
+작성일: 2026-09-04
+대상 프로젝트: `samples/tagged_pdf_xml_poc`
 기준 PDF: `BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf`
 
 ## 1. 목표

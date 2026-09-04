@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 import tagged_pdf_extractor
@@ -14,3 +15,11 @@ def test_project_isolation_contract() -> None:
         source = source_file.read_text(encoding="utf-8")
         assert "from src" not in source
         assert "import src" not in source
+
+
+def test_pypdf_dependency_is_pinned_to_validated_private_api_version() -> None:
+    project = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert "pypdf==6.16.2" in project["project"]["dependencies"]

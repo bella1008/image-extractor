@@ -55,7 +55,7 @@ _ZC_NONORDERED_LABEL_GLYPHS = frozenset({"\u2022", "\u2013"})
 _HEADING_PREFIX = re.compile(r"^#{2,6}\s+")
 _TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
 _FALLBACK_TABLE_ROW = re.compile(r"^-\s+행\s+\d+:\s*")
-_ESCAPED_DECIMAL_PREFIX = re.compile(r"^(\d{1,9})\\([.)])(?=\s)")
+_ESCAPED_DECIMAL_PREFIX = re.compile(r"^([0-9]{1,9})\\([.)])(?=\s)")
 _BLOCK_PREFIX = re.compile(r"^(?:#{1,6}\s|>|[-+*]\s)")
 _FENCE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
 _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
@@ -453,7 +453,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert semantic_label_counts["\u2022"] == 184
     assert semantic_label_counts["\u2013"] == 38
     assert not re.search(
-        r"(?m)^\s*(?:-|\d{1,9}[.)])\s+[\u2022\u2013](?:\s|$)",
+        r"(?m)^\s*(?:-|[0-9]{1,9}[.)])\s+[\u2022\u2013](?:\s|$)",
         markdown,
     )
 

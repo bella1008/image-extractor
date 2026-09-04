@@ -482,6 +482,24 @@ def test_malformed_or_out_of_range_list_label_is_not_preserved(
     assert markdown.split("\n\n", 2)[2] == "- Body\n"
 
 
+@pytest.mark.parametrize("label", ["\u0661.", "\uff11."])
+def test_unicode_decimal_source_label_is_preserved_behind_bullet_marker(
+    tmp_path: Path,
+    label: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        f"<label><text>{label}</text></label>"
+        "<list_body><text>Body</text></list_body>"
+        "</list_item></list>",
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == f"- {label} Body\n"
+    assert body.count(label) == 1
+
+
 @pytest.mark.parametrize("label", ["Step", "*", "\u0141", "\u0152"])
 def test_arbitrary_list_labels_use_structural_bullet(
     tmp_path: Path,
@@ -1100,6 +1118,16 @@ def test_escapes_decimal_marker_punctuation_inside_list_item_body(
 
     assert markdown.split("\n\n", 2)[2] == f"- {escaped}\n"
     assert f"- \\{source}" not in markdown
+
+
+@pytest.mark.parametrize("source", ["\u0661. text", "\uff11. text"])
+def test_does_not_escape_unicode_decimal_prefix_as_markdown_marker(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    markdown = _render(tmp_path, f"<paragraph><text>{source}</text></paragraph>")
+
+    assert markdown.split("\n\n", 2)[2] == f"{source}\n"
 
 
 def test_escapes_link_reference_definition_without_changing_following_reference(

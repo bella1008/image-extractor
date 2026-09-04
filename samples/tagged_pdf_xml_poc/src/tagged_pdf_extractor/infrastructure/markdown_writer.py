@@ -14,7 +14,8 @@ from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
 _WHITESPACE = re.compile(r"\s+")
-_NATIVE_DECIMAL_MARKER = re.compile(r"^\d{1,9}[.)]$")
+_NATIVE_DECIMAL_MARKER = re.compile(r"^[0-9]{1,9}[.)]$")
+_DECIMAL_SOURCE_LABEL = re.compile(r"^\d{1,9}[.)]$")
 _PARENTHESIZED_NUMERIC_LABEL = re.compile(r"^\(\d{1,9}\)$")
 _BARE_NUMERIC_LABEL = re.compile(r"^\d{1,9}$")
 _ALPHABETIC_LABEL = re.compile(r"^[A-Za-z][.)]$")
@@ -25,7 +26,7 @@ _ROMAN_LABEL = re.compile(
     re.IGNORECASE,
 )
 _MARKDOWN_LINE_PREFIX = re.compile(r"^(#{1,6}\s|>|[-+*]\s)")
-_DECIMAL_LINE_PREFIX = re.compile(r"^(\d{1,9})([.)])(?=\s)")
+_DECIMAL_LINE_PREFIX = re.compile(r"^([0-9]{1,9})([.)])(?=\s)")
 _FENCED_CODE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
 _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _RAW_HTML_BLOCK_PREFIX = re.compile(
@@ -317,6 +318,7 @@ class MarkdownDocumentWriter:
             pattern.fullmatch(normalized)
             for pattern in (
                 _NATIVE_DECIMAL_MARKER,
+                _DECIMAL_SOURCE_LABEL,
                 _PARENTHESIZED_NUMERIC_LABEL,
                 _BARE_NUMERIC_LABEL,
                 _ALPHABETIC_LABEL,

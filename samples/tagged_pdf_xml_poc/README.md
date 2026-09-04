@@ -14,9 +14,13 @@ OCR, UI, 체크리스트 평가, 번역 및 buyer/language별 보정 규칙은 �
 
 ## 비개발자 검토와 감사 근거
 
-비개발자는 `semantic_document.md`를 먼저 열어 문서 순서, 제목 후보, 목록, 표, OSD 경로를 검토합니다. Markdown의 제목은 PDF source role 이름에서 찾은 source-role heading 후보이며, 검증된 표준 PDF heading이 아닙니다. `[CONTROL U+0003]` 같은 표시는 문자를 버린 결과가 아니라 XML 1.0에서 금지된 제어문자를 원래 위치에 드러낸 눈에 보이는 원본 추출 결함입니다.
+비개발자는 `semantic_document.md`를 먼저 열어 문서 순서, 제목 후보, 목록, 표, OSD 경로를 검토합니다. Markdown의 제목은 PDF source role 이름에서 찾은 source-role heading 후보이며, 검증된 표준 PDF heading이 아닙니다. `[CONTROL U+0003]` 같은 표시는 문자를 버린 결과가 아니라 XML 1.0에서 금지된 제어문자를 원래 위치에 드러낸 눈에 보이는 원본 추출 결함입니다. 이 진단 표시는 계속 유지하지만, 현재 승인 기준의 ZC 결과에는 한 건도 없어야 합니다.
 
-XML과 JSON은 감사 근거로 유지합니다. `semantic_document.xml`은 정규화된 구조와 원문 데이터를, `raw_structure.xml`은 PDF 태그 구조를, `extraction_report.json`은 품질 게이트와 수치 및 heading 후보 근거를 제공합니다. 한 번의 실행은 내부 작성자 잠금과 rollback 보호를 사용하는 하나의 트랜잭션에서 다음 네 파일을 게시합니다. 이 잠금은 동시 작성자를 조정하기 위한 것이며 독자에게 일관된 스냅샷을 제공하지 않습니다.
+PDF 내부의 MCID는 사람이 읽는 번호가 아니라 구조 노드와 페이지의 실제 글자를 연결하는 식별자입니다. 추출기는 이 값을 내부에 그대로 유지해 제목 아래에 어떤 본문이 속하는지 추적합니다. 텍스트는 원본 PDF 콘텐츠를 변경하지 않고 읽으며, pypdf의 강제 byte 모드에서 복합 글꼴을 먼저 해독한 뒤 일반 문자열로 만듭니다. 예전 실험처럼 가짜 `cm` 연산을 콘텐츠에 삽입하지 않습니다.
+
+XML과 JSON은 감사 근거로 유지합니다. `raw_structure.xml`은 출처에서 관찰한 구조와 원본 증거를 보존하고, `semantic_document.xml`은 정규화된 구조와 함께 글머리표 `•`나 대시 `–` 같은 source label 텍스트도 보존합니다. `semantic_document.md`는 사람이 검토하기 쉬운 보기이며, 목록 기호를 Markdown 형식으로 정리하되 `1.`, `A.`, `(1)`처럼 의미 있는 순서 표시는 잃지 않습니다. `extraction_report.json`은 품질 게이트와 수치 및 heading 후보 근거를 제공합니다.
+
+검토 우선순위는 다음 순서입니다. 한 번의 실행은 내부 작성자 잠금과 rollback 보호를 사용하는 하나의 트랜잭션에서 네 파일을 게시합니다. 이 잠금은 동시 작성자를 조정하기 위한 것이며 독자에게 일관된 스냅샷을 제공하지 않습니다.
 
 - `semantic_document.md`
 - `semantic_document.xml`
@@ -42,6 +46,8 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
   --overwrite
 ```
 
+입력은 PDF 원본 그대로 사용합니다. Acrobat에서 XML로 먼저 변환할 필요가 없으므로, 작업자가 파일을 한 번 더 가공하는 단계도 없습니다.
+
 통합 테스트는 `TAGGED_PDF_ZC_SAMPLE`, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 샘플을 찾습니다. 모두 없을 때만 샘플 통합 테스트를 명시적으로 건너뜁니다.
 
 종료 코드는 다음과 같습니다.
@@ -49,6 +55,8 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 - `0`: 추출 완료, 모든 하드 게이트 통과
 - `1`: 추출과 저장은 완료했지만 하나 이상의 하드 게이트 실패
 - `2`: 입력, 분석, 검증 또는 출력 트랜잭션 오류
+
+종료 코드 `1`이어도 네 산출물이 모두 만들어질 수 있습니다. 예를 들어 글자는 정상 추출됐지만 PDF가 제목 역할을 표준 heading으로 선언하지 않았거나, Form XObject 안의 태그 텍스트를 아직 지원하지 않는 경우입니다. 따라서 비개발자는 “파일이 생성되지 않았다”는 뜻으로 이해하지 말고 `extraction_report.json`의 실패 게이트를 함께 확인해야 합니다.
 
 ## XML 보존 방식
 
@@ -79,38 +87,34 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 `special_character_counts_preserved`와 각 문자의 `count_preserved`는 문서 전체 문자 개수만 비교하는 보수적인 집계 proxy입니다. 특정 OSD 경로의 순서·문맥·문장 연결이 보존됐다는 뜻은 아닙니다. 지정 ZC OSD 경로의 문맥 보존은 아래 표본을 통합 테스트에서 직접 찾아 별도로 검증합니다.
 
-## 지정 ZC PDF 결과
+## 현재 샘플 검증 결과
 
-2026-09-03 재실행 결과는 `status=fail`, CLI 종료 코드 `1`입니다. XML 두 개와 JSON 생성·재파싱은 성공했으며 실패 이유는 두 가지입니다.
+2026-09-04에 ZC, ZA, ZG 원본 PDF를 직접 읽어 확인했습니다. 세 샘플 모두 marked PDF이며 구조와 body가 있고, unresolved MCID와 XML 금지 제어문자는 0개입니다. 다만 아래 남은 하드 게이트 때문에 어느 샘플도 전체 `pass`로 기록하지 않습니다.
 
-- `has_heading=false`: PDF의 사용자 heading 태그가 RoleMap에서 모두 `P`로 선언됨
-- `special_character_counts_preserved=false`: 기준 대비 `/`, `:`, `(`, `)` 개수가 부족함
+### ZC
 
-주요 수치는 다음과 같습니다.
+ZC 결과는 `status=fail`이며 CLI 종료 코드는 `1`입니다. 남은 실패는 `has_heading=false` 하나입니다. PDF의 사용자 heading 태그가 RoleMap에서 모두 `P`로 선언되어 있기 때문이며, 실제 source-role heading 후보 38개는 별도로 보존됩니다.
 
-- 구조 요소 1,842개, 텍스트 조각 1,938개
-- 텍스트가 있는 body 요소 1,410개
-- heading 0개, source-role heading 후보 38개
-- 장식된 source role에서 `Troubleshooting`, `Specifications`, `Dépannage`, `Spécifications` 후보 추가 확인
-- unknown 역할 0개
-- unresolved MCID 0개, unresolved page reference 0개, unsupported OBJR 0개
-- 알려진 텍스트 손실 진단 0개 (`no_known_text_loss=true`)
-- 문자 일치율 `0.9798180073`
-- 태그 텍스트 48,494자, 기준 텍스트 47,914자
-- XML 금지 제어문자 608개, 영향 필드 44개
-- 공백 연결 판단 1,060개
+- 구조 요소 1,842개, 텍스트 조각 1,938개, body 1,410개
+- unresolved MCID 0개, 알려진 텍스트 손실 진단 0개
+- XML 금지 제어문자 0개, 영향 필드 0개
+- 페이지 0: 텍스트 조각 947개, 21,978자, 제어문자 0개
+- 페이지 1: 텍스트 조각 991개, 26,976자, 제어문자 0개
+- 특수문자 `>`, `/`, `&`, `:`, `[`, `]`, `(`, `)` 개수가 PyMuPDF 기준과 모두 일치
+- semantic XML source label: `•` 184개, `–` 38개
+- Markdown에는 오래된 손상 표시 `Ł`, `Œ`, `[CONTROL U+...]`가 없음
 
 | 문자 | 태그 텍스트 | PyMuPDF 기준 | 보존 게이트 |
 | --- | ---: | ---: | --- |
 | `>` | 54 | 54 | 통과 |
 | `→` | 0 | 0 | 통과(기준에 없음) |
-| `/` | 69 | 72 | 실패 |
+| `/` | 72 | 72 | 통과 |
 | `&` | 1 | 1 | 통과 |
-| `:` | 56 | 60 | 실패 |
+| `:` | 60 | 60 | 통과 |
 | `[` | 2 | 2 | 통과 |
-| `]` | 22 | 2 | 통과 |
-| `(` | 80 | 83 | 실패 |
-| `)` | 79 | 83 | 실패 |
+| `]` | 2 | 2 | 통과 |
+| `(` | 83 | 83 | 통과 |
+| `)` | 83 | 83 | 통과 |
 
 영문 OSD 경로 자체는 다음과 같이 끊김 없이 복원되었습니다.
 
@@ -124,7 +128,17 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 This symbol indicates that high voltage is present inside. It is dangerous to make any kind of contact with any internal part of this product.
 ```
 
-다만 일부 프랑스어 구간에는 PDF 디코딩 단계에서 생긴 제어문자와 손상 문자가 남아 있습니다. 현재 결과만으로 새 시스템의 기반을 확정하기보다는 source-role heading override의 PDF 근거와 특수문자 부족 구간의 콘텐츠 스트림·폰트 매핑을 다음 단계에서 조사해야 합니다.
+프랑스어 복합 글꼴도 `Produit de catégorie II`, `Communiquez avec un centre de service homologué`, `Pour les modèles de 82 po, vous devrez être quatre`, `Le fait de tirer, de pousser ou de monter sur le téléviseur`, `Ne jamais placer un téléviseur dans une position instable`, `Wireless One Connect uniquement`으로 제어문자 없이 복원됩니다.
+
+### ZA
+
+ZA 결과는 `status=fail`입니다. 구조 요소 810개, 텍스트 조각 891개, body 608개이며, 2개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다. 남은 실패는 ZC와 같은 `has_heading=false` 하나입니다. ZA 전용 보정 규칙은 추가하지 않았습니다.
+
+### ZG
+
+ZG 결과는 `status=fail`입니다. 구조 요소 6,148개, 텍스트 조각 6,696개, body 4,673개이며, 52개 페이지 모두 제어문자 0개입니다. unresolved MCID는 0개이고 특수문자 보존 게이트도 통과합니다.
+
+남은 실패는 `has_heading=false`와 `no_known_text_loss=false`입니다. 후자는 아직 지원하지 않는 tagged Form XObject 진단 10건 때문입니다. 진단은 `/Im0`에 대해 페이지 인덱스 8, 9, 18, 19, 28, 29, 38, 39, 48, 49에서 발생하며 숨기거나 통과 처리하지 않습니다.
 
 ## 검증
 

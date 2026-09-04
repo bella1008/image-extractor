@@ -14,7 +14,7 @@ OCR, UI, 체크리스트 평가, 번역 및 buyer/language별 보정 규칙은 �
 
 ## 비개발자 검토와 감사 근거
 
-비개발자는 `semantic_document.md`를 먼저 열어 문서 순서, 제목 후보, 목록, 표, OSD 경로를 검토합니다. Markdown의 제목은 PDF source role 이름에서 찾은 source-role heading 후보이며, 검증된 표준 PDF heading이 아닙니다. `[CONTROL U+0003]` 같은 표시는 문자를 버린 결과가 아니라 XML 1.0에서 금지된 제어문자를 원래 위치에 드러낸 눈에 보이는 원본 추출 결함입니다. 이 진단 표시는 계속 유지하지만, 현재 승인 기준의 ZC 결과에는 한 건도 없어야 합니다.
+비개발자는 `semantic_document.md`를 먼저 열어 문서 순서, 제목, 제목 후보, 목록, 표, OSD 경로를 검토합니다. `## 01 ...`부터 `## NN ...` 형식의 제목은 아래 구조·순서·글자 크기 조건을 모두 통과한 번호형 장 제목입니다. 번역하거나 언어별 제목을 추측해서 만든 문장이 아니라 PDF에서 실제 추출한 Label과 List Body를 그대로 연결한 결과입니다. PDF source role 이름만 heading처럼 보이고 검증 조건을 통과하지 않은 항목은 별도의 `source_role_candidate`로 남으며, 검증된 표준 PDF heading이 아닙니다. `[CONTROL U+0003]` 같은 표시는 문자를 버린 결과가 아니라 XML 1.0에서 금지된 제어문자를 원래 위치에 드러낸 눈에 보이는 원본 추출 결함입니다. 이 진단 표시는 계속 유지하지만, 현재 승인 기준의 ZC 결과에는 한 건도 없어야 합니다.
 
 PDF 내부의 MCID는 사람이 읽는 번호가 아니라 구조 노드와 페이지의 실제 글자를 연결하는 식별자입니다. 추출기는 이 값을 내부에 그대로 유지해 제목 아래에 어떤 본문이 속하는지 추적합니다. 텍스트는 원본 PDF 콘텐츠를 변경하지 않고 읽으며, pypdf의 강제 byte 모드에서 복합 글꼴을 먼저 해독한 뒤 일반 문자열로 만듭니다. 예전 실험처럼 가짜 `cm` 연산을 콘텐츠에 삽입하지 않습니다.
 
@@ -26,6 +26,21 @@ XML과 JSON은 감사 근거로 유지합니다. `raw_structure.xml`은 출처�
 - `semantic_document.xml`
 - `raw_structure.xml`
 - `extraction_report.json`
+
+### 번호형 장 제목 승격 규칙
+
+다음 조건을 모두 만족한 항목만 level 2 heading으로 승격합니다.
+
+- 원본 구조에서 하나의 List Item 바로 아래에 Label과 List Body가 각각 하나씩 직접 있어야 합니다.
+- Label은 ASCII 두 자리 숫자 `01`, `02`, ... 형식이어야 합니다. 각 `01`이 새 series의 시작이며, 프로필·언어·실제 제목을 하드코딩하지 않고 연속 번호를 판정합니다.
+- 한 series에는 `01`부터 시작해 번호가 끊기지 않는 후보가 최소 2개 있어야 합니다.
+- Label과 List Body의 대표 글자 크기 차이는 10% 이하여야 합니다.
+- 제목의 대표 글자 크기는 주변 본문 대표 크기의 1.5배 이상이어야 합니다.
+- 한 문서에 유효한 series가 여러 개 있으면 각 series의 장 개수가 같아야 합니다.
+
+글꼴 이름은 사람이 근거를 확인하기 위한 감사 정보일 뿐이며, 특정 글꼴 이름을 승격 조건으로 하드코딩하지 않습니다. series별 장 개수가 다르거나 글자 크기 근거가 없거나 기준을 통과하지 못하면 무인 품질 통과를 차단하고, 해당 항목을 임의 heading으로 만들지 않습니다.
+
+`raw_structure.xml`은 PDF에서 관찰한 원래 `List Item > Label + List Body` 구조를 그대로 보존합니다. `semantic_document.xml`은 승격된 heading과 `promotion-reason`, series 번호, 제목·본문 글자 크기 및 비율 같은 검증 근거를 기록합니다. `semantic_document.md`는 사람이 읽기 쉽게 `## 03 Troubleshooting and Maintenance`처럼 보여 주는 검토용 화면입니다.
 
 ## 설치와 실행
 
@@ -104,7 +119,8 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 모든 하드 게이트가 참이어야 `status=pass`입니다.
 
 - marked PDF이고 구조와 텍스트가 있는 body가 존재해야 합니다.
-- 표준 `H`, `H1`~`H6`, `Title` 또는 검증된 RoleMap 대응 heading이 있어야 합니다. `H0`, `H7`~`H9`는 heading이 아닙니다.
+- 표준 `H`, `H1`~`H6`, `Title`, 검증된 RoleMap 대응 heading 또는 위 조건을 통과한 번호형 장 제목이 있어야 합니다. `H0`, `H7`~`H9`는 heading이 아닙니다.
+- 번호형 장 후보가 있으면 번호 순서, 여러 series의 장 개수 일치, 글자 크기 근거가 각각 통과해야 합니다. 후보가 없을 때는 이 세 검사가 문서를 임의로 실패시키지 않습니다.
 - XML 직렬화와 왕복 검증이 성공해야 합니다.
 - XML 1.0에서 금지된 제어문자와 해당 문자를 포함한 필드가 모두 0이어야 합니다(`no_forbidden_xml_controls`).
 - `unresolved_mcid`, `unresolved_page_reference`, `unsupported_objr`, `tagged_xobject_unresolved`가 모두 0이어야 합니다.
@@ -117,11 +133,17 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 ## 현재 샘플 검증 결과
 
-2026-09-04에 ZC, ZA, ZG 원본 PDF를 직접 읽어 확인했습니다. 세 샘플 모두 marked PDF이며 구조와 body가 있고, unresolved MCID와 XML 금지 제어문자는 0개입니다. 다만 아래 남은 하드 게이트 때문에 어느 샘플도 전체 `pass`로 기록하지 않습니다.
+2026-09-04에 ZC, ZA, ZG 원본 PDF를 직접 읽어 확인했습니다. 세 샘플 모두 marked PDF이며 구조와 body가 있고, unresolved MCID와 XML 금지 제어문자는 0개입니다. 번호형 장 제목의 구조·순서·글자 크기 검증을 포함한 모든 하드 게이트가 통과해 세 샘플 모두 `status=pass`입니다.
+
+비개발자는 아래 폴더의 `semantic_document.md`를 먼저 열어 제목과 본문 흐름을 확인하면 됩니다. 더 자세한 승격 근거는 같은 폴더의 `semantic_document.xml`과 `extraction_report.json`에서 확인하고, 원본 태그 구조와 대조할 때만 `raw_structure.xml`을 봅니다.
+
+- `outputs/heading_review_zc_260904`
+- `outputs/heading_review_za_260904`
+- `outputs/heading_review_zg_260904`
 
 ### ZC
 
-ZC 결과는 `status=fail`이며 CLI 종료 코드는 `1`입니다. 남은 실패는 `has_heading=false` 하나입니다. PDF의 사용자 heading 태그가 RoleMap에서 모두 `P`로 선언되어 있기 때문이며, 실제 source-role heading 후보 38개는 별도로 보존됩니다.
+ZC 결과는 `status=pass`이며 번호형 장 제목은 8개입니다. `01`부터 `04`까지의 유효한 series가 영문과 프랑스어 구간에서 각각 한 번씩 확인됩니다. 기존 source-role heading 후보 38개도 별도 감사 근거로 계속 보존됩니다.
 
 - 구조 요소 1,842개, 텍스트 조각 1,938개, body 1,410개
 - unresolved MCID 0개, 알려진 텍스트 손실 진단 0개
@@ -160,11 +182,11 @@ This symbol indicates that high voltage is present inside. It is dangerous to ma
 
 ### ZA
 
-ZA 결과는 `status=fail`입니다. 구조 요소 810개, 텍스트 조각 891개, body 608개이며, 2개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다. 남은 실패는 ZC와 같은 `has_heading=false` 하나입니다. ZA 전용 보정 규칙은 추가하지 않았습니다.
+ZA 결과는 `status=pass`이며 번호형 장 제목은 3개입니다. `01`부터 `03`까지의 유효한 series가 한 번 확인됩니다. 구조 요소 810개, 텍스트 조각 891개, body 608개이며, 2개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다. ZA 전용 제목이나 장 개수 보정 규칙은 추가하지 않았습니다.
 
 ### ZG
 
-ZG 결과는 `status=fail`입니다. 구조 요소 6,148개, 텍스트 조각 6,696개, body 4,673개이며, 52개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다. 남은 실패는 `has_heading=false` 하나입니다.
+ZG 결과는 `status=pass`이며 번호형 장 제목은 25개입니다. `01`부터 `05`까지의 유효한 series가 다섯 언어 구간에서 각각 한 번씩 확인됩니다. 구조 요소 6,148개, 텍스트 조각 6,696개, body 4,673개이며, 52개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다.
 
 최종 검토에서 페이지 인덱스 8, 9, 18, 19, 28, 29, 38, 39, 48, 49의 `/Im0`는 모두 `/Subtype /Image`로 확인했습니다. Image XObject는 중첩 PDF 텍스트 연산 스트림이 없으므로 텍스트 손실 진단 대상이 아닙니다. 실제 `/Subtype /Form`은 재귀 추출을 지원하지 않는 동안 `tagged_form_xobject_unsupported`로 계속 보고하며, 참조를 해석하지 못하거나 subtype을 지원하지 못한 경우도 각각 별도 손실 진단으로 보고합니다.
 

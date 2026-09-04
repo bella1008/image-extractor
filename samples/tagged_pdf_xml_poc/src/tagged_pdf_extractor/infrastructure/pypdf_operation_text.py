@@ -56,6 +56,13 @@ class PypdfOperationTextRunner:
             Font, TextExtraction, ContentStream, NullObject = (
                 _load_pypdf_text_helpers()
             )
+            source_content = page.get("/Contents")
+            if source_content is None:
+                return
+            source_content = source_content.get_object()
+            if isinstance(source_content, NullObject):
+                return
+
             resources = page.get_inherited(key="/Resources", default=None)
             if resources is None:
                 raise KeyError("page has no inherited /Resources")
@@ -77,20 +84,12 @@ class PypdfOperationTextRunner:
                     font.space_width = 200.0
                 fonts[font_name] = font
 
-            source_content = page.get("/Contents")
-            if source_content is None or isinstance(source_content, NullObject):
-                operations = ()
-            else:
-                source_content = source_content.get_object()
-                if isinstance(source_content, NullObject):
-                    operations = ()
-                else:
-                    content = (
-                        source_content
-                        if isinstance(source_content, ContentStream)
-                        else ContentStream(source_content, page.pdf, "bytes")
-                    )
-                    operations = tuple(content.operations)
+            content = (
+                source_content
+                if isinstance(source_content, ContentStream)
+                else ContentStream(source_content, page.pdf, "bytes")
+            )
+            operations = tuple(content.operations)
 
             extractor = TextExtraction()
 

@@ -218,6 +218,54 @@ def test_runner_treats_an_empty_content_stream_as_no_text() -> None:
     assert text == []
 
 
+def test_runner_treats_page_without_contents_or_resources_as_no_text() -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    del page[NameObject("/Resources")]
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    page = PdfReader(output).pages[0]
+    boundaries: list[tuple[bytes, list[object]]] = []
+    text: list[str] = []
+
+    assert "/Contents" not in page
+    assert "/Resources" not in page
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda operator, operands: boundaries.append(
+            (operator, operands)
+        ),
+        on_text=text.append,
+    )
+
+    assert boundaries == []
+    assert text == []
+
+
+def test_runner_rejects_non_empty_page_without_resources() -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    del page[NameObject("/Resources")]
+    content = DecodedStreamObject()
+    content.set_data(b"BT (Text) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(content)
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    page = PdfReader(output).pages[0]
+
+    with pytest.raises(PypdfOperationTextError) as raised:
+        PypdfOperationTextRunner().run(
+            page,
+            on_boundary=lambda _operator, _operands: None,
+            on_text=lambda _value: None,
+        )
+
+    assert isinstance(raised.value.__cause__, KeyError)
+
+
 @pytest.mark.parametrize("null_contents", [False, True])
 def test_runner_treats_absent_or_null_content_as_no_text(
     null_contents: bool,

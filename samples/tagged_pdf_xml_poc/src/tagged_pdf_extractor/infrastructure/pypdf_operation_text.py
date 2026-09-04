@@ -7,7 +7,7 @@ class PypdfOperationTextError(RuntimeError):
     pass
 
 
-def _load_pypdf_text_helpers() -> tuple[Any, Any, Any]:
+def _load_pypdf_text_helpers() -> tuple[Any, Any, Any, Any]:
     try:
         font_module = import_module("pypdf._font")
         text_module = import_module("pypdf._text_extraction._text_extractor")
@@ -16,6 +16,7 @@ def _load_pypdf_text_helpers() -> tuple[Any, Any, Any]:
             getattr(font_module, "Font"),
             getattr(text_module, "TextExtraction"),
             getattr(generic_module, "ContentStream"),
+            getattr(generic_module, "NullObject"),
         )
     except (ImportError, AttributeError) as exc:
         raise PypdfOperationTextError(
@@ -52,7 +53,9 @@ class PypdfOperationTextRunner:
     ) -> None:
         callback_failure: _CallbackRaised | None = None
         try:
-            Font, TextExtraction, ContentStream = _load_pypdf_text_helpers()
+            Font, TextExtraction, ContentStream, NullObject = (
+                _load_pypdf_text_helpers()
+            )
             resources = page.get_inherited(key="/Resources", default=None)
             if resources is None:
                 raise KeyError("page has no inherited /Resources")
@@ -74,13 +77,17 @@ class PypdfOperationTextRunner:
                     font.space_width = 200.0
                 fonts[font_name] = font
 
-            source_content = page["/Contents"].get_object()
-            content = (
-                source_content
-                if isinstance(source_content, ContentStream)
-                else ContentStream(source_content, page.pdf, "bytes")
-            )
-            operations = tuple(content.operations)
+            source_content = page.get("/Contents")
+            if source_content is None or isinstance(source_content, NullObject):
+                operations = ()
+            else:
+                source_content = source_content.get_object()
+                content = (
+                    source_content
+                    if isinstance(source_content, ContentStream)
+                    else ContentStream(source_content, page.pdf, "bytes")
+                )
+                operations = tuple(content.operations)
 
             extractor = TextExtraction()
 

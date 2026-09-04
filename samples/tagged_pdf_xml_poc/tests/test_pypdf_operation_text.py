@@ -64,6 +64,18 @@ def _in_memory_page(content_data: bytes, form_data: bytes | None = None):
     return PdfReader(output).pages[0]
 
 
+def _blank_in_memory_page(*, null_contents: bool = False):
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    page[NameObject("/Resources")] = _font_resources()
+    if null_contents:
+        page[NameObject("/Contents")] = NullObject()
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return PdfReader(output).pages[0]
+
+
 def test_runner_constructs_forced_bytes_content_stream_from_direct_raw_stream(
     monkeypatch,
 ) -> None:
@@ -84,7 +96,10 @@ def test_runner_constructs_forced_bytes_content_stream_from_direct_raw_stream(
 
     def import_with_recording(module_name: str):
         if module_name == "pypdf.generic":
-            return SimpleNamespace(ContentStream=RecordingContentStream)
+            return SimpleNamespace(
+                ContentStream=RecordingContentStream,
+                NullObject=generic_module.NullObject,
+            )
         return real_import_module(module_name)
 
     monkeypatch.setattr(operation_module, "import_module", import_with_recording)
@@ -132,7 +147,10 @@ def test_runner_constructs_forced_bytes_content_stream_from_stream_array(
 
     def import_with_recording(module_name: str):
         if module_name == "pypdf.generic":
-            return SimpleNamespace(ContentStream=RecordingContentStream)
+            return SimpleNamespace(
+                ContentStream=RecordingContentStream,
+                NullObject=generic_module.NullObject,
+            )
         return real_import_module(module_name)
 
     monkeypatch.setattr(operation_module, "import_module", import_with_recording)
@@ -199,32 +217,24 @@ def test_runner_treats_an_empty_content_stream_as_no_text() -> None:
     assert text == []
 
 
-def test_runner_wraps_absent_content_with_the_original_cause() -> None:
-    page = _in_memory_page(b"")
-    del page[NameObject("/Contents")]
+@pytest.mark.parametrize("null_contents", [False, True])
+def test_runner_treats_absent_or_null_content_as_no_text(
+    null_contents: bool,
+) -> None:
+    page = _blank_in_memory_page(null_contents=null_contents)
+    boundaries: list[tuple[bytes, list[object]]] = []
+    text: list[str] = []
 
-    with pytest.raises(PypdfOperationTextError) as raised:
-        PypdfOperationTextRunner().run(
-            page,
-            on_boundary=lambda _operator, _operands: None,
-            on_text=lambda _value: None,
-        )
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda operator, operands: boundaries.append(
+            (operator, operands)
+        ),
+        on_text=text.append,
+    )
 
-    assert isinstance(raised.value.__cause__, KeyError)
-
-
-def test_runner_wraps_null_content_with_the_original_cause() -> None:
-    page = _in_memory_page(b"")
-    page[NameObject("/Contents")] = NullObject()
-
-    with pytest.raises(PypdfOperationTextError) as raised:
-        PypdfOperationTextRunner().run(
-            page,
-            on_boundary=lambda _operator, _operands: None,
-            on_text=lambda _value: None,
-        )
-
-    assert raised.value.__cause__ is not None
+    assert boundaries == []
+    assert text == []
 
 
 def test_runner_wraps_malformed_content_with_the_original_cause() -> None:

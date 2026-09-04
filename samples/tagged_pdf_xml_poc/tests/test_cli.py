@@ -40,6 +40,49 @@ def test_cli_requires_pdf_and_output_paths() -> None:
     assert args.overwrite is False
 
 
+def test_cli_help_describes_four_overwritten_artifacts() -> None:
+    from tagged_pdf_extractor.cli import build_parser
+
+    help_text = build_parser().format_help()
+
+    assert "replace only the four required artifacts if they exist" in help_text
+    assert "three required artifacts" not in help_text
+
+
+def test_cli_returns_two_for_reader_translated_decoder_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from tagged_pdf_extractor import cli
+    from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
+        PypdfOperationTextError,
+    )
+    from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfError
+
+    decoder_error = PypdfOperationTextError("decoder state failed")
+    translated = TaggedPdfError(
+        "Failed to decode tagged text on page 0: decoder state failed"
+    )
+    translated.__cause__ = decoder_error
+
+    class FailingUseCase:
+        def run(self, pdf: Path, output: Path, overwrite: bool = False):
+            raise translated
+
+    output = tmp_path / "out"
+    monkeypatch.setattr(cli, "_build_use_case", lambda: FailingUseCase())
+
+    assert cli.main(["manual.pdf", "--output", str(output)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "error: Failed to decode tagged text on page 0: decoder state failed\n"
+    )
+    assert "Traceback" not in captured.err
+    assert not output.exists()
+
+
 def test_cli_forwards_overwrite_and_returns_zero_for_pass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

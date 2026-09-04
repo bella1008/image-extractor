@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="replace only the three required artifacts if they exist",
+        help="replace only the four required artifacts if they exist",
     )
     return parser
 

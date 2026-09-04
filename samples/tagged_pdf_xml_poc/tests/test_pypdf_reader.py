@@ -23,6 +23,9 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
 )
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextResult
+from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
+    PypdfOperationTextError,
+)
 from tagged_pdf_extractor.infrastructure.pypdf_reader import (
     TaggedPdfError,
     TaggedPdfReader,
@@ -57,6 +60,59 @@ class RecordingCollector:
             ),
             diagnostics=self.diagnostics_by_page.get(page_index, ()),
         )
+
+
+def test_translates_decoder_failure_at_page_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decoder_error = PypdfOperationTextError("decoder state failed")
+
+    class FailingCollector:
+        def collect(self, _page: Any, page_index: int) -> McidTextResult:
+            assert page_index == 0
+            raise decoder_error
+
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": {"/K": []}}}
+        pages = [object()]
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    with pytest.raises(TaggedPdfError) as raised:
+        TaggedPdfReader(FailingCollector()).read(tmp_path / "decoder-failure.pdf")
+
+    assert str(raised.value) == (
+        "Failed to decode tagged text on page 0: decoder state failed"
+    )
+    assert raised.value.__cause__ is decoder_error
+    assert not hasattr(raised.value, "diagnostics")
+
+
+def test_does_not_translate_non_decoder_collector_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    programmer_error = AssertionError("collector invariant failed")
+
+    class FailingCollector:
+        def collect(self, _page: Any, _page_index: int) -> McidTextResult:
+            raise programmer_error
+
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": {"/K": []}}}
+        pages = [object()]
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    with pytest.raises(AssertionError) as raised:
+        TaggedPdfReader(FailingCollector()).read(tmp_path / "programmer-error.pdf")
+
+    assert raised.value is programmer_error
 
 
 def _write_tagged_pdf(

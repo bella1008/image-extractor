@@ -16,6 +16,9 @@ from tagged_pdf_extractor.domain.models import (
 )
 from tagged_pdf_extractor.domain.role_mapping import map_role
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextCollector
+from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
+    PypdfOperationTextError,
+)
 
 
 class TaggedPdfError(RuntimeError):
@@ -94,7 +97,12 @@ class TaggedPdfReader:
         seen_mcids: dict[int, frozenset[int]] = {}
         diagnostics: list[Diagnostic] = []
         for index, page in enumerate(pages):
-            result = self.collector.collect(page, index)
+            try:
+                result = self.collector.collect(page, index)
+            except PypdfOperationTextError as exc:
+                raise TaggedPdfError(
+                    f"Failed to decode tagged text on page {index}: {exc}"
+                ) from exc
             mcid_text[index] = result.parts_by_mcid
             seen_mcids[index] = result.seen_mcids
             diagnostics.extend(result.diagnostics)

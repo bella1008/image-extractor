@@ -46,6 +46,7 @@ class PypdfOperationTextRunner:
         on_text: Callable[[str], None],
         on_xobject: Callable[[Any], None] | None = None,
     ) -> None:
+        callback_error: BaseException | None = None
         try:
             Font, TextExtraction, ContentStream = _load_pypdf_text_helpers()
             resources = page.get_inherited(key="/Resources", default=None)
@@ -130,10 +131,14 @@ class PypdfOperationTextRunner:
 
             extractor._flush_text()
         except _CallbackRaised as exc:
-            raise exc.error
+            callback_error = exc.error
         except PypdfOperationTextError:
             raise
         except Exception as exc:
             raise PypdfOperationTextError(
                 "Unable to run pypdf text extraction operations"
             ) from exc
+
+        if callback_error is not None:
+            callback_error.__context__ = None
+            raise callback_error from None

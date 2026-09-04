@@ -1,4 +1,5 @@
 from io import BytesIO
+import traceback
 from types import SimpleNamespace
 
 import pytest
@@ -458,52 +459,55 @@ def test_runner_shorthand_expansion_matches_pypdf(content_data: bytes) -> None:
     assert "".join(captured) == expected
 
 
-def test_runner_propagates_on_text_exception_unchanged() -> None:
-    page = _in_memory_page(b"BT /F1 12 Tf (Text) Tj ET")
-    expected = CallbackError("on_text failed")
+@pytest.mark.parametrize("callback_name", ["on_text", "on_boundary", "on_xobject"])
+def test_runner_propagates_callback_exception_without_internal_context(
+    callback_name: str,
+) -> None:
+    content = {
+        "on_text": b"BT /F1 12 Tf (Text) Tj ET",
+        "on_boundary": b"/P << /MCID 2 >> BDC EMC",
+        "on_xobject": b"/Fm0 Do",
+    }[callback_name]
+    page = _in_memory_page(
+        content, form_data=b"" if callback_name == "on_xobject" else None
+    )
+    expected = CallbackError(f"{callback_name} failed")
 
-    def on_text(_value: str) -> None:
+    def fail(*_args: object) -> None:
         raise expected
 
+    callbacks = {
+        "on_boundary": fail if callback_name == "on_boundary" else lambda *_: None,
+        "on_text": fail if callback_name == "on_text" else lambda *_: None,
+        "on_xobject": fail if callback_name == "on_xobject" else None,
+    }
+
     with pytest.raises(CallbackError) as raised:
-        PypdfOperationTextRunner().run(
-            page, on_boundary=lambda _operator, _operands: None, on_text=on_text
-        )
+        PypdfOperationTextRunner().run(page, **callbacks)
 
     assert raised.value is expected
+    assert raised.value.__context__ is None
+    assert "_CallbackRaised" not in "".join(
+        traceback.format_exception(raised.value)
+    )
 
 
-def test_runner_propagates_on_boundary_exception_unchanged() -> None:
+@pytest.mark.parametrize("expected", [KeyboardInterrupt(), SystemExit(7)])
+def test_runner_propagates_callback_base_exception_unchanged(
+    expected: BaseException,
+) -> None:
     page = _in_memory_page(b"/P << /MCID 2 >> BDC EMC")
-    expected = CallbackError("on_boundary failed")
 
-    def on_boundary(_operator: bytes, _operands: list[object]) -> None:
+    def interrupt(_operator: bytes, _operands: list[object]) -> None:
         raise expected
 
-    with pytest.raises(CallbackError) as raised:
+    with pytest.raises(type(expected)) as raised:
         PypdfOperationTextRunner().run(
-            page, on_boundary=on_boundary, on_text=lambda _value: None
+            page, on_boundary=interrupt, on_text=lambda _value: None
         )
 
     assert raised.value is expected
-
-
-def test_runner_propagates_on_xobject_exception_unchanged() -> None:
-    page = _in_memory_page(b"/Fm0 Do", form_data=b"")
-    expected = CallbackError("on_xobject failed")
-
-    def on_xobject(_operand: object) -> None:
-        raise expected
-
-    with pytest.raises(CallbackError) as raised:
-        PypdfOperationTextRunner().run(
-            page,
-            on_boundary=lambda _operator, _operands: None,
-            on_text=lambda _value: None,
-            on_xobject=on_xobject,
-        )
-
-    assert raised.value is expected
+    assert raised.value.__context__ is None
 
 
 def test_runner_wraps_missing_private_pypdf_helper_at_run_time(monkeypatch) -> None:

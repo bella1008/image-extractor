@@ -56,7 +56,7 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 
 각 테스트는 해당 환경변수, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 자기 샘플을 찾습니다. 기본 휴대용 테스트 모드에서는 샘플이 없으면 그 샘플의 테스트만 독립적으로 건너뛰며, 다른 단위 테스트와 사용 가능한 샘플 테스트는 계속 실행합니다.
 
-세 기준 PDF가 반드시 있는 검수 환경에서는 아래처럼 필수 샘플 모드를 사용합니다. 이 모드에서는 ZC, ZA, ZG 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다.
+세 기준 PDF가 반드시 있는 검수 환경에서는 아래처럼 필수 샘플 모드를 사용합니다. 이 명령은 `samples\SUG_RAW` 원본이 있는 기본 저장소 루트에서 시작해야 합니다(원본 PDF를 복제하지 않은 Git worktree에서는 샘플 경로를 별도로 지정하세요). 이 모드에서는 ZC, ZA, ZG 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다.
 
 ```powershell
 Set-Location .\samples\tagged_pdf_xml_poc

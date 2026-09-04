@@ -77,7 +77,7 @@ def _semantic_review_tokens(root: ET.Element) -> list[str]:
     suppressed_label_texts: set[ET.Element] = set()
     for item in root.iter("list_item"):
         direct_labels = [child for child in item if child.tag == "label"]
-        for index, label in enumerate(direct_labels):
+        for label in direct_labels:
             label_text = re.sub(
                 r"\s+",
                 " ",
@@ -86,7 +86,7 @@ def _semantic_review_tokens(root: ET.Element) -> list[str]:
                     for text in label.iter("text")
                 ),
             ).strip()
-            if index > 0 or not _ORDERED_LIST_LABEL.fullmatch(label_text):
+            if not _ORDERED_LIST_LABEL.fullmatch(label_text):
                 suppressed_label_texts.update(label.iter("text"))
 
     return [

@@ -403,6 +403,28 @@ def test_unordered_label_glyphs_remain_visible_in_list_body_text(
     assert "- Literal \u0141 and \u0152 content" in markdown
 
 
+def test_multiple_direct_labels_preserve_every_ordered_token_in_source_order(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>\u0141</text></label>"
+        "<label><text>2.</text></label>"
+        "<label><text>\u0152</text></label>"
+        "<label><text>A.</text></label>"
+        "<list_body><text>Attach the bracket</text></list_body>"
+        "</list_item></list>",
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "2. A. Attach the bracket\n"
+    assert body.count("2.") == 1
+    assert body.count("A.") == 1
+    assert "\u0141" not in markdown
+    assert "\u0152" not in markdown
+
+
 def test_list_preserves_unexpected_direct_text(tmp_path: Path) -> None:
     markdown = _render(
         tmp_path,

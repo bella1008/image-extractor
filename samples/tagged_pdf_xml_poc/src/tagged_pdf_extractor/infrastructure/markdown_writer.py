@@ -231,11 +231,7 @@ class MarkdownDocumentWriter:
             for child in cls._structural_children(item)
             if child.tag == "label"
         )
-        marker = (
-            cls._list_marker(cls._element_text(direct_labels[0]))
-            if direct_labels
-            else "-"
-        )
+        marker = cls._list_item_marker(direct_labels)
 
         def flush_text() -> None:
             nonlocal has_content, marker_emitted
@@ -298,6 +294,15 @@ class MarkdownDocumentWriter:
     def _list_marker(cls, label_text: str) -> str:
         normalized = cls._normalize_whitespace(label_text)
         return normalized if _ORDERED_LABEL.fullmatch(normalized) else "-"
+
+    @classmethod
+    def _list_item_marker(cls, labels: Iterable[ET.Element]) -> str:
+        ordered_labels = [
+            marker
+            for label in labels
+            if (marker := cls._list_marker(cls._element_text(label))) != "-"
+        ]
+        return " ".join(ordered_labels) if ordered_labels else "-"
 
     @classmethod
     def _render_list_block(
@@ -552,11 +557,7 @@ class MarkdownDocumentWriter:
             else ()
         )
         if direct_labels:
-            marker = cls._list_marker(
-                cls._join_text_parts(
-                    cls._visible_text(text) for text in direct_labels[0].iter("text")
-                )
-            )
+            marker = cls._list_item_marker(direct_labels)
             if marker != "-":
                 yield f"{marker} "
 

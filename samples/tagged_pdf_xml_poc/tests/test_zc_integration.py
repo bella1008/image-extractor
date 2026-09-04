@@ -8,13 +8,14 @@ from xml.etree import ElementTree as ET
 import pytest
 
 from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
+from tagged_pdf_extractor.application.extract_document import ExtractDocument
 from tagged_pdf_extractor.domain.models import ContentFragment, StructureElement
 from tagged_pdf_extractor.infrastructure.output_bundle import OutputBundleWriter
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import PyMuPdfBaselineReader
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
-from .acceptance_support import assert_heading_only_failure, require_sample
+from .acceptance_support import require_sample
 
 
 _SAMPLE_RELATIVE_PATH = (
@@ -51,6 +52,17 @@ def _resolve_zc_pdf(
 
 PDF = _resolve_zc_pdf()
 README = Path(__file__).parents[1] / "README.md"
+
+_ZC_NUMBERED_HEADINGS = (
+    ("01", "Package Content"),
+    ("02", "Initial Setup"),
+    ("03", "Troubleshooting and Maintenance"),
+    ("04", "Specifications and Other Information"),
+    ("01", "Contenu de la boîte"),
+    ("02", "Configuration initiale"),
+    ("03", "Dépannage et entretien"),
+    ("04", "Spécifications et autres renseignements"),
+)
 
 _TEXT_TOKEN = re.compile(r"\[CONTROL U\+[0-9A-F]{4,6}\]|\w+|[^\w\s]")
 _ZC_NONORDERED_LABEL_GLYPHS = frozenset({"\u2022", "\u2013"})
@@ -285,12 +297,41 @@ def _walk(children, source_roles: Counter[str]) -> int:
     return fragment_count
 
 
+def _decoded_text(element: ET.Element, tag: str) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        "".join(decode_data_element(item) for item in element.iter(tag)),
+    ).strip()
+
+
+def _assert_raw_numbered_heading_sources(
+    raw_root: ET.Element, expected: tuple[tuple[str, str], ...]
+) -> None:
+    observed: Counter[tuple[str, str]] = Counter()
+    for item in raw_root.iter("element"):
+        if item.get("source-role") != "LI":
+            continue
+        direct = [child for child in item if child.tag == "element"]
+        labels = [child for child in direct if child.get("source-role") == "Lbl"]
+        bodies = [child for child in direct if child.get("source-role") == "LBody"]
+        if len(labels) == len(bodies) == 1:
+            observed[(_decoded_text(labels[0], "part"), _decoded_text(bodies[0], "part"))] += 1
+
+    assert all(observed[item] == 1 for item in expected)
+
+
 def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     tmp_path: Path,
 ) -> None:
     pdf = require_sample(PDF, "ZC")
-    reader = TaggedPdfReader()
-    document = reader.read(pdf)
+    output = tmp_path / "result"
+    document, report, artifacts = ExtractDocument(
+        TaggedPdfReader(),
+        PyMuPdfBaselineReader(),
+        QualityEvaluator(),
+        OutputBundleWriter(),
+    ).run(pdf, output)
     source_roles: Counter[str] = Counter()
     fragment_count = _walk(document.children, source_roles)
 
@@ -311,15 +352,19 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert expected_custom_headings <= source_roles.keys()
     assert {role_map[name] for name in expected_custom_headings} == {"P"}
 
-    baseline = PyMuPdfBaselineReader().read_text(pdf)
     validation = OutputBundleWriter().validate(document)
-    report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
-    assert report.metrics["heading_count"] == 0
-    assert_heading_only_failure(report)
+    assert report.metrics["numbered_heading_promotion_count"] == 8
+    assert [item["labels"] for item in report.metrics["numbered_heading_series"]] == [
+        ["01", "02", "03", "04"],
+        ["01", "02", "03", "04"],
+    ]
+    assert report.hard_gates["has_heading"] is True
+    assert report.hard_gates["numbered_heading_series_valid"] is True
+    assert report.hard_gates["numbered_heading_series_counts_consistent"] is True
+    assert report.hard_gates["numbered_heading_typography_valid"] is True
+    assert report.status == "pass"
     assert validation.semantic_join_decisions == report.join_decisions
 
-    output = tmp_path / "result"
-    artifacts = OutputBundleWriter().write(document, report, output)
     raw_root = ET.parse(artifacts.raw_xml).getroot()
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
     report_data = json.loads(artifacts.report_json.read_text(encoding="utf-8"))
@@ -347,7 +392,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         "character_count": 26_976,
         "forbidden_xml_control_count": 0,
     }
-    assert report_data["metrics"]["heading_count"] == 0
+    assert report_data["metrics"]["heading_count"] == 8
     assert report_data["metrics"]["body_count"] == 1_410
     assert report_data["metrics"]["unknown_role_count"] == 0
     assert report_data["metrics"]["unresolved_mcid_count"] == 0
@@ -372,7 +417,25 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         for entry in candidate_entries
     }
     assert expected_custom_headings <= heading_candidates
-    assert len(report_data["heading_hierarchy"]) == 38
+    promotion_entries = [
+        entry
+        for entry in report_data["heading_hierarchy"]
+        if entry["classification"] == "numbered_chapter_promotion"
+    ]
+    assert len(promotion_entries) == 8
+    assert [(entry["label"], entry["title"]) for entry in promotion_entries] == list(
+        _ZC_NUMBERED_HEADINGS
+    )
+    for entry in promotion_entries:
+        assert entry["level"] == 2
+        assert entry["heading_font_size"] == 16.0
+        assert entry["body_font_size"] == 7.0
+        assert entry["font_size_ratio"] == pytest.approx(16 / 7)
+        assert entry["series_index"] in {0, 1}
+        assert entry["promotion_reason"] == (
+            "numbered_chapter_structure_sequence_typography"
+        )
+    assert len(report_data["heading_hierarchy"]) == 46
     candidate_texts = {
         entry["joined_text"].strip()
         for entry in report_data["heading_hierarchy"]
@@ -385,7 +448,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     } <= candidate_texts
     assert all(
         entry["semantic_role"] == "paragraph"
-        for entry in report_data["heading_hierarchy"]
+        for entry in candidate_entries
     )
     expected_headings = Counter(
         (
@@ -394,8 +457,26 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         )
         for entry in candidate_entries
     )
+    expected_headings.update(
+        ("##", f"{label} {title}") for label, title in _ZC_NUMBERED_HEADINGS
+    )
     rendered_headings = _assert_candidate_headings(markdown, expected_headings)
-    assert sum(rendered_headings.values()) == 38
+    assert sum(rendered_headings.values()) == 46
+    for label, title in _ZC_NUMBERED_HEADINGS:
+        assert rendered_headings[("##", f"{label} {title}")] == 1
+
+    semantic_headings = [
+        heading
+        for heading in semantic_root.iter("heading")
+        if heading.get("promotion-reason")
+        == "numbered_chapter_structure_sequence_typography"
+    ]
+    assert [
+        (_decoded_text(heading.find("label"), "text"), _decoded_text(heading.find("list_body"), "text"))
+        for heading in semantic_headings
+    ] == list(_ZC_NUMBERED_HEADINGS)
+    assert all(heading.get("level") == "2" for heading in semantic_headings)
+    _assert_raw_numbered_heading_sources(raw_root, _ZC_NUMBERED_HEADINGS)
     rendered_heading_texts = {text for _, text in rendered_headings}
     assert {
         "Before Reading This Simple User Guide",

@@ -1,15 +1,20 @@
 import os
+import re
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 
 from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
+from tagged_pdf_extractor.application.extract_document import ExtractDocument
+from tagged_pdf_extractor.infrastructure.output_bundle import OutputBundleWriter
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
     PyMuPdfBaselineReader,
 )
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
+from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
-from .acceptance_support import assert_heading_only_failure, require_sample
+from .acceptance_support import require_sample
 
 
 _SAMPLES = {
@@ -29,6 +34,38 @@ _SAMPLES = {
     ),
 }
 _README = Path(__file__).parents[1] / "README.md"
+_ZA_NUMBERED_HEADINGS = (
+    ("01", "Initial Setup"),
+    ("02", "Troubleshooting and Maintenance"),
+    ("03", "Specifications and Other Information"),
+)
+_ZG_NUMBERED_HEADINGS = (
+    ("01", "What's in the Box?"),
+    ("02", "Connecting the TV to the One Connect Box"),
+    ("03", "Initial Setup"),
+    ("04", "Troubleshooting and Maintenance"),
+    ("05", "Specifications and Other Information"),
+    ("01", "Lieferumfang"),
+    ("02", "Herstellen einer Verbindung zwischen Fernsehgerät und One Connect-Box"),
+    ("03", "Anfangseinstellung"),
+    ("04", "Fehlerbehebung und Wartung"),
+    ("05", "Technische Daten und weitere Informationen"),
+    ("01", "Contenu de la boîte"),
+    ("02", "Connexion du téléviseur à la console One Connect"),
+    ("03", "Configuration initiale"),
+    ("04", "Résolution des problèmes et entretien"),
+    ("05", "Spécifications et informations supplémentaires"),
+    ("01", "Contenuto della confezione"),
+    ("02", "Connessione del televisore a One Connect Box"),
+    ("03", "Impostazione iniziale"),
+    ("04", "Risoluzione dei problemi e manutenzione"),
+    ("05", "Specifiche e altre informazioni"),
+    ("01", "Inhoud van de verpakking"),
+    ("02", "De tv aansluiten op de One Connect Box"),
+    ("03", "Eerste instelling"),
+    ("04", "Problemen oplossen en onderhoud"),
+    ("05", "Technische gegevens en overige informatie"),
+)
 
 
 def _resolve_sample(
@@ -60,13 +97,84 @@ def _resolve_sample(
     return None
 
 
-def _extract_report(path: Path):
-    document = TaggedPdfReader().read(path)
-    baseline = PyMuPdfBaselineReader().read_text(path)
-    report = QualityEvaluator().evaluate(
-        document, baseline, xml_round_trip_ok=True
-    )
-    return document, report
+def _extract_report(path: Path, output: Path):
+    return ExtractDocument(
+        TaggedPdfReader(),
+        PyMuPdfBaselineReader(),
+        QualityEvaluator(),
+        OutputBundleWriter(),
+    ).run(path, output)
+
+
+def _series_labels(report) -> list[tuple[str, ...]]:
+    return [tuple(item["labels"]) for item in report.metrics["numbered_heading_series"]]
+
+
+def _element_text(element: ET.Element) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        "".join(decode_data_element(text) for text in element.iter("text")),
+    ).strip()
+
+
+def _assert_numbered_headings(
+    report,
+    semantic_xml: Path,
+    semantic_markdown: Path,
+    expected: tuple[tuple[str, str], ...],
+    expected_series: list[tuple[str, ...]],
+    *,
+    heading_size: float,
+    body_size: float,
+) -> None:
+    assert report.metrics["numbered_heading_promotion_count"] == len(expected)
+    assert _series_labels(report) == expected_series
+    assert report.hard_gates["has_heading"] is True
+    assert report.hard_gates["numbered_heading_series_valid"] is True
+    assert report.hard_gates["numbered_heading_series_counts_consistent"] is True
+    assert report.hard_gates["numbered_heading_typography_valid"] is True
+    assert report.status == "pass"
+
+    evidence = [
+        entry
+        for entry in report.heading_hierarchy
+        if entry["classification"] == "numbered_chapter_promotion"
+    ]
+    assert [(entry["label"], entry["title"]) for entry in evidence] == list(expected)
+    for entry in evidence:
+        assert entry["heading_font_size"] == heading_size
+        assert entry["body_font_size"] == body_size
+        assert entry["font_size_ratio"] == pytest.approx(heading_size / body_size)
+        assert entry["series_index"] >= 0
+        assert entry["promotion_reason"] == (
+            "numbered_chapter_structure_sequence_typography"
+        )
+
+    root = ET.parse(semantic_xml).getroot()
+    headings = [
+        heading
+        for heading in root.iter("heading")
+        if heading.get("promotion-reason")
+        == "numbered_chapter_structure_sequence_typography"
+    ]
+    assert [
+        (_element_text(heading.find("label")), _element_text(heading.find("list_body")))
+        for heading in headings
+    ] == list(expected)
+
+    markdown = semantic_markdown.read_text(encoding="utf-8")
+    for label, title in expected:
+        assert markdown.splitlines().count(f"## {label} {title}") == 1
+
+    ordinary_labels = {
+        _element_text(label)
+        for item in root.iter("list_item")
+        for label in item
+        if label.tag == "label"
+    }
+    assert {"1.", "2."} <= ordinary_labels
+    assert not re.search(r"(?m)^## [12]\.\s", markdown)
 
 
 def _assert_complete_page_quality(page_quality, expected_pages: set[str]) -> None:
@@ -147,19 +255,35 @@ def test_available_sample_is_returned_in_required_sample_mode(tmp_path: Path) ->
     assert require_sample(sample, "ZC", required=True) == sample
 
 
-def test_za_retains_complete_structure_and_clean_page_text() -> None:
+def test_za_retains_complete_structure_and_clean_page_text(tmp_path: Path) -> None:
     path = require_sample(_resolve_sample("ZA"), "ZA")
 
-    document, report = _extract_report(path)
+    document, report, artifacts = _extract_report(path, tmp_path / "za")
     _assert_common_layout_quality(document, report, {"0", "1"})
-    assert_heading_only_failure(report)
+    _assert_numbered_headings(
+        report,
+        artifacts.semantic_xml,
+        artifacts.semantic_markdown,
+        _ZA_NUMBERED_HEADINGS,
+        [("01", "02", "03")],
+        heading_size=16.0,
+        body_size=7.0,
+    )
 
 
-def test_zg_retains_all_pages_without_false_image_xobject_loss() -> None:
+def test_zg_retains_all_pages_without_false_image_xobject_loss(tmp_path: Path) -> None:
     path = require_sample(_resolve_sample("ZG"), "ZG")
 
-    document, report = _extract_report(path)
+    document, report, artifacts = _extract_report(path, tmp_path / "zg")
     _assert_common_layout_quality(
         document, report, {str(page_index) for page_index in range(52)}
     )
-    assert_heading_only_failure(report)
+    _assert_numbered_headings(
+        report,
+        artifacts.semantic_xml,
+        artifacts.semantic_markdown,
+        _ZG_NUMBERED_HEADINGS,
+        [("01", "02", "03", "04", "05")] * 5,
+        heading_size=12.0,
+        body_size=6.5,
+    )

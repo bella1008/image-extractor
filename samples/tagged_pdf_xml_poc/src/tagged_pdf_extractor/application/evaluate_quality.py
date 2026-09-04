@@ -407,6 +407,8 @@ class QualityEvaluator:
                             "heading_font_size": promotion.heading_font_size,
                             "body_font_size": promotion.body_font_size,
                             "font_size_ratio": promotion.font_size_ratio,
+                            "heading_font_names": promotion.heading_font_names,
+                            "body_font_names": promotion.body_font_names,
                             "promotion_reason": promotion.promotion_reason,
                         }
                     )

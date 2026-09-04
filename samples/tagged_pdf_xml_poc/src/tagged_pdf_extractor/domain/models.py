@@ -65,6 +65,8 @@ class HeadingPromotion:
     body_font_size: float
     font_size_ratio: float
     promotion_reason: str
+    heading_font_names: tuple[str, ...] = ()
+    body_font_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

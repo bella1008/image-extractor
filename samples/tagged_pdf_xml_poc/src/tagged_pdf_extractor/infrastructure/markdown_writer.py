@@ -581,6 +581,12 @@ class MarkdownDocumentWriter:
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> list[str]:
+        title_containers = cls._numbered_heading_title_containers(element)
+        if title_containers is not None:
+            return cls._render_numbered_mixed_heading(
+                element, promoted, title_containers
+            )
+
         blocks: list[str] = []
         text_parts: list[str] = []
         heading_emitted = False
@@ -598,6 +604,75 @@ class MarkdownDocumentWriter:
             text_parts.clear()
 
         for kind, value in cls._mixed_content_events(element, promoted):
+            if kind == "text":
+                text_parts.append(cls._visible_text(value))
+                continue
+            flush_text()
+            blocks.extend(cls._render_element(value, promoted))
+        flush_text()
+        return blocks
+
+    @classmethod
+    def _numbered_heading_title_containers(
+        cls, element: ET.Element
+    ) -> frozenset[ET.Element] | None:
+        children = cls._structural_children(element)
+        labels = [child for child in children if child.tag == "label"]
+        bodies = [child for child in children if child.tag == "list_body"]
+        if len(labels) != 1 or len(bodies) != 1:
+            return None
+        return frozenset((*labels, *bodies))
+
+    @classmethod
+    def _numbered_heading_events(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+        title_containers: frozenset[ET.Element],
+        *,
+        title_text: bool = False,
+    ) -> Iterable[tuple[str, ET.Element]]:
+        for child in cls._structural_children(element):
+            if child in promoted or child.tag in {"list", "table", "figure"}:
+                yield "block", child
+            elif child.tag == "text":
+                yield "title_text" if title_text else "text", child
+            else:
+                yield from cls._numbered_heading_events(
+                    child,
+                    promoted,
+                    title_containers,
+                    title_text=title_text or child in title_containers,
+                )
+
+    @classmethod
+    def _render_numbered_mixed_heading(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+        title_containers: frozenset[ET.Element],
+    ) -> list[str]:
+        events = tuple(
+            cls._numbered_heading_events(element, promoted, title_containers)
+        )
+        title = cls._join_text_parts(
+            cls._visible_text(value)
+            for kind, value in events
+            if kind == "title_text"
+        )
+        level = max(1, min(int(element.get("level", "1")), 6))
+        blocks = [f"{'#' * level} {title}"] if title else []
+        text_parts: list[str] = []
+
+        def flush_text() -> None:
+            text = cls._join_text_parts(text_parts)
+            if text:
+                blocks.append(cls._escape_line_prefix(text))
+            text_parts.clear()
+
+        for kind, value in events:
+            if kind == "title_text":
+                continue
             if kind == "text":
                 text_parts.append(cls._visible_text(value))
                 continue

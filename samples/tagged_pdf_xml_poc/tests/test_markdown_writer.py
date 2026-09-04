@@ -118,6 +118,69 @@ def test_mixed_heading_preserves_block_before_first_inline_title(
     assert markdown.index("## 03 Troubleshooting") < markdown.index("- Nested step")
 
 
+@pytest.mark.parametrize(
+    ("intervening_block", "rendered_block"),
+    (
+        ("<figure><text /></figure>", "[그림: 텍스트 없음]"),
+        ("<figure><text>Chapter icon</text></figure>", "Chapter icon"),
+        (
+            "<table><table_row><table_header><text>Key</text></table_header></table_row>"
+            "<table_row><table_cell><text>Value</text></table_cell></table_row></table>",
+            "| Key |",
+        ),
+    ),
+)
+def test_numbered_mixed_heading_collects_label_and_body_before_rendering_blocks(
+    tmp_path: Path,
+    intervening_block: str,
+    rendered_block: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        f"""
+        <heading level="2">
+          <label><text>03</text></label>
+          {intervening_block}
+          <list_body><text>Troubleshooting</text></list_body>
+        </heading>
+        """,
+    )
+
+    assert markdown.splitlines().count("## 03 Troubleshooting") == 1
+    assert markdown.count("03 Troubleshooting") == 1
+    assert markdown.index("## 03 Troubleshooting") < markdown.index(rendered_block)
+
+
+def test_numbered_mixed_heading_keeps_nested_blocks_in_source_order_without_title_duplication(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <heading level="2">
+          <label><text>03</text></label>
+          <figure><text /></figure>
+          <list_body>
+            <text>Troubleshooting</text>
+            <table>
+              <table_row><table_header><text>Key</text></table_header></table_row>
+              <table_row><table_cell><text>Value</text></table_cell></table_row>
+            </table>
+            <figure><text>Diagram</text></figure>
+          </list_body>
+        </heading>
+        """,
+    )
+
+    assert markdown.splitlines().count("## 03 Troubleshooting") == 1
+    assert markdown.count("Troubleshooting") == 1
+    assert markdown.index("## 03 Troubleshooting") < markdown.index(
+        "[그림: 텍스트 없음]"
+    )
+    assert markdown.index("[그림: 텍스트 없음]") < markdown.index("| Key |")
+    assert markdown.index("| Key |") < markdown.index("Diagram")
+
+
 def test_promotes_only_candidates_in_order_using_absolute_child_indexes(
     tmp_path: Path,
 ) -> None:

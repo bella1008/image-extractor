@@ -52,6 +52,7 @@ class _Candidate:
     body_element: StructureElement
     label: str
     title: str
+    language: str | None
 
 
 def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocument:
@@ -86,13 +87,11 @@ def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocumen
                     message="Numbered chapter heading sequence is invalid.",
                     context={
                         "series_index": series_index,
+                        "document_language": document.language,
                         "actual_labels": labels,
                         "expected_labels": expected_labels,
                         "candidate_evidence": tuple(
-                            {
-                                "page_index": _candidate_page(candidate),
-                                "child_path": candidate.child_path,
-                            }
+                            _candidate_evidence(candidate)
                             for candidate in series
                         ),
                     },
@@ -107,9 +106,19 @@ def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocumen
             next_series_start,
             candidates,
         )
+        body_font_names = _series_body_font_names(
+            visits,
+            series[0].visit_index,
+            next_series_start,
+            candidates,
+        )
         for candidate in series:
             promotion, diagnostic = _evaluate_typography(
-                candidate, series_index, body_font_size
+                candidate,
+                series_index,
+                body_font_size,
+                body_font_names,
+                document.language,
             )
             if promotion is not None:
                 promotions.append(promotion)
@@ -125,11 +134,28 @@ def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocumen
                 code="numbered_heading_series_count_mismatch",
                 message="Numbered chapter heading series counts do not match.",
                 context={
+                    "document_language": document.language,
                     "series_counts": tuple(
                         len(audit.labels) for audit in valid_audits
                     ),
                     "labels_by_series": tuple(
                         audit.labels for audit in valid_audits
+                    ),
+                    "series_evidence": tuple(
+                        {
+                            "series_index": index,
+                            "count": len(candidate_series[index]),
+                            "labels": tuple(
+                                candidate.label
+                                for candidate in candidate_series[index]
+                            ),
+                            "candidates": tuple(
+                                _candidate_evidence(candidate)
+                                for candidate in candidate_series[index]
+                            ),
+                        }
+                        for index, audit in enumerate(audits)
+                        if audit.valid_sequence
                     ),
                 },
             )
@@ -153,19 +179,23 @@ def _scan_document(
     def visit_children(
         children: tuple[StructureElement | ContentFragment, ...],
         parent_path: tuple[int, ...],
+        inherited_language: str | None,
     ) -> None:
         for child_index, child in enumerate(children):
             child_path = (*parent_path, child_index)
             if not isinstance(child, StructureElement):
                 continue
+            language = child.language or inherited_language
             visit_index = len(visits)
             visits.append(_ElementVisit(child, child_path))
-            candidate = _as_candidate(child, child_path, visit_index)
+            candidate = _as_candidate(
+                child, child_path, visit_index, language=language
+            )
             if candidate is not None:
                 candidates.append(candidate)
-            visit_children(child.children, child_path)
+            visit_children(child.children, child_path, language)
 
-    visit_children(document.children, ())
+    visit_children(document.children, (), document.language)
     return visits, candidates
 
 
@@ -173,6 +203,8 @@ def _as_candidate(
     element: StructureElement,
     child_path: tuple[int, ...],
     visit_index: int,
+    *,
+    language: str | None,
 ) -> _Candidate | None:
     if element.semantic_role != "list_item":
         return None
@@ -200,6 +232,7 @@ def _as_candidate(
         body_element=body_children[0],
         label=label,
         title=title,
+        language=language,
     )
 
 
@@ -273,6 +306,33 @@ def _series_body_font_size(
     return _weighted_median(samples)
 
 
+def _series_body_font_names(
+    visits: list[_ElementVisit],
+    start: int,
+    end: int,
+    candidates: list[_Candidate],
+) -> tuple[str, ...]:
+    excluded_paths = tuple(
+        candidate.child_path
+        for candidate in candidates
+        if start <= candidate.visit_index < end
+    )
+    names: list[str] = []
+    for visit in visits[start:end]:
+        if visit.element.semantic_role != "paragraph":
+            continue
+        if any(_is_at_or_below(visit.child_path, path) for path in excluded_paths):
+            continue
+        names.extend(
+            _font_names_excluding(
+                visit.element,
+                visit.child_path,
+                excluded_paths,
+            )
+        )
+    return _unique_names(names)
+
+
 def _is_at_or_below(path: tuple[int, ...], ancestor: tuple[int, ...]) -> bool:
     return path[: len(ancestor)] == ancestor
 
@@ -331,6 +391,56 @@ def _style_samples_excluding(
     return samples
 
 
+def _font_names(element: StructureElement) -> list[str]:
+    names: list[str] = []
+
+    def collect(children: tuple[StructureElement | ContentFragment, ...]) -> None:
+        for child in children:
+            if isinstance(child, StructureElement):
+                collect(child.children)
+                continue
+            for text, style in zip(child.text_parts, child.text_styles):
+                if text and _valid_style_size(style.font_size) and style.font_name:
+                    names.append(style.font_name)
+
+    collect(element.children)
+    return names
+
+
+def _font_names_excluding(
+    element: StructureElement,
+    element_path: tuple[int, ...],
+    excluded_paths: tuple[tuple[int, ...], ...],
+) -> list[str]:
+    names: list[str] = []
+
+    def collect(
+        children: tuple[StructureElement | ContentFragment, ...],
+        parent_path: tuple[int, ...],
+    ) -> None:
+        for child_index, child in enumerate(children):
+            child_path = (*parent_path, child_index)
+            if any(_is_at_or_below(child_path, path) for path in excluded_paths):
+                continue
+            if isinstance(child, StructureElement):
+                collect(child.children, child_path)
+                continue
+            for text, style in zip(child.text_parts, child.text_styles):
+                if text and _valid_style_size(style.font_size) and style.font_name:
+                    names.append(style.font_name)
+
+    collect(element.children, element_path)
+    return names
+
+
+def _valid_style_size(size: float | None) -> bool:
+    return size is not None and math.isfinite(size) and size > 0
+
+
+def _unique_names(names: Iterator[str] | list[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(names))
+
+
 def _weighted_median(samples: list[tuple[float, int]]) -> float | None:
     if not samples:
         return None
@@ -345,15 +455,18 @@ def _weighted_median(samples: list[tuple[float, int]]) -> float | None:
 
 
 def _evaluate_typography(
-    candidate: _Candidate, series_index: int, body_font_size: float | None
+    candidate: _Candidate,
+    series_index: int,
+    body_font_size: float | None,
+    body_font_names: tuple[str, ...],
+    document_language: str | None,
 ) -> tuple[HeadingPromotion | None, Diagnostic | None]:
     label_font_size = _weighted_median(_style_samples(candidate.label_element))
     list_body_font_size = _weighted_median(_style_samples(candidate.body_element))
     context = {
         "series_index": series_index,
-        "label": candidate.label,
-        "child_path": candidate.child_path,
-        "page_index": _candidate_page(candidate),
+        "document_language": document_language,
+        **_candidate_evidence(candidate),
         "label_font_size": label_font_size,
         "list_body_font_size": list_body_font_size,
         "body_font_size": body_font_size,
@@ -411,6 +524,13 @@ def _evaluate_typography(
             body_font_size=body_font_size,
             font_size_ratio=ratio,
             promotion_reason=_PROMOTION_REASON,
+            heading_font_names=_unique_names(
+                [
+                    *_font_names(candidate.label_element),
+                    *_font_names(candidate.body_element),
+                ]
+            ),
+            body_font_names=body_font_names,
         ),
         None,
     )
@@ -422,12 +542,44 @@ def _candidate_page(candidate: _Candidate) -> int | None:
     return next(_descendant_fragment_pages(candidate.element), None)
 
 
+def _candidate_evidence(candidate: _Candidate) -> dict[str, object]:
+    page_indices = _unique_in_order(
+        (
+            *((candidate.element.page_index,) if candidate.element.page_index is not None else ()),
+            *_descendant_fragment_pages(candidate.element),
+        )
+    )
+    mcids = _unique_in_order(_descendant_fragment_mcids(candidate.element))
+    return {
+        "language": candidate.language,
+        "page_index": _candidate_page(candidate),
+        "page_indices": page_indices,
+        "mcid": mcids[0] if mcids else None,
+        "mcids": mcids,
+        "label": candidate.label,
+        "child_path": candidate.child_path,
+    }
+
+
 def _descendant_fragment_pages(element: StructureElement) -> Iterator[int]:
     for child in element.children:
         if isinstance(child, ContentFragment):
             yield child.page_index
         else:
             yield from _descendant_fragment_pages(child)
+
+
+def _descendant_fragment_mcids(element: StructureElement) -> Iterator[int]:
+    for child in element.children:
+        if isinstance(child, ContentFragment):
+            if child.mcid is not None:
+                yield child.mcid
+        else:
+            yield from _descendant_fragment_mcids(child)
+
+
+def _unique_in_order(values: Iterator[int] | tuple[int, ...]) -> tuple[int, ...]:
+    return tuple(dict.fromkeys(values))
 
 
 def _strictly_above_policy_boundary(value: float, boundary: float) -> bool:

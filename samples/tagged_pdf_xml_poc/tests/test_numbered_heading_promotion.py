@@ -24,11 +24,12 @@ def _fragment(
     size: float | None,
     *,
     page_index: int = 0,
+    mcid: int | None = None,
     font_name: str | None = "SamsungOne",
 ) -> ContentFragment:
     return ContentFragment(
         page_index,
-        None,
+        mcid,
         (text,),
         text_styles=(TextStyle(font_name, size),),
     )
@@ -38,11 +39,13 @@ def _element(
     role: str,
     *children: StructureElement | ContentFragment,
     page_index: int | None = None,
+    language: str | None = None,
 ) -> StructureElement:
     return StructureElement(
         source_role=role,
         semantic_role=role,
         page_index=page_index,
+        language=language,
         children=children,
     )
 
@@ -54,12 +57,24 @@ def _candidate(
     label_size: float | None = 12.0,
     title_size: float | None = 12.0,
     page_index: int = 0,
+    label_mcid: int | None = None,
+    title_mcid: int | None = None,
     extra_children: tuple[StructureElement | ContentFragment, ...] = (),
 ) -> StructureElement:
     return _element(
         "list_item",
-        _element("label", _fragment(label, label_size, page_index=page_index)),
-        _element("list_body", _fragment(title, title_size, page_index=page_index)),
+        _element(
+            "label",
+            _fragment(
+                label, label_size, page_index=page_index, mcid=label_mcid
+            ),
+        ),
+        _element(
+            "list_body",
+            _fragment(
+                title, title_size, page_index=page_index, mcid=title_mcid
+            ),
+        ),
         *extra_children,
         page_index=page_index,
     )
@@ -74,11 +89,14 @@ def _paragraph(
     return _element("paragraph", _fragment(text, size, page_index=page_index))
 
 
-def _document(*children: StructureElement | ContentFragment) -> TaggedDocument:
+def _document(
+    *children: StructureElement | ContentFragment,
+    language: str | None = "en",
+) -> TaggedDocument:
     return TaggedDocument(
         source_path=Path("manual.pdf"),
         marked=True,
-        language="en",
+        language=language,
         role_map=(),
         children=children,
     )
@@ -115,6 +133,22 @@ def _with_diagnostics(
     document: TaggedDocument, *diagnostics: Diagnostic
 ) -> TaggedDocument:
     return replace(document, diagnostics=diagnostics)
+
+
+def _assert_candidate_source_evidence(
+    diagnostic: Diagnostic,
+    *,
+    label: str = "01",
+    mcids: tuple[int, ...] = (),
+) -> None:
+    assert diagnostic.context["document_language"] == "en"
+    assert diagnostic.context["language"] == "en"
+    assert diagnostic.context["page_index"] == 0
+    assert diagnostic.context["page_indices"] == (0,)
+    assert diagnostic.context["mcid"] == (mcids[0] if mcids else None)
+    assert diagnostic.context["mcids"] == mcids
+    assert diagnostic.context["label"] == label
+    assert diagnostic.context["child_path"] == (0, 0)
 
 
 def test_heading_promotion_is_frozen() -> None:
@@ -271,9 +305,49 @@ def test_invalid_sequences_are_audited_without_promotions(
     assert diagnostic.context["series_index"] == 0
     assert diagnostic.context["actual_labels"] == labels
     assert diagnostic.context["expected_labels"] == expected_labels
+    assert diagnostic.context["document_language"] == "en"
     assert diagnostic.context["candidate_evidence"] == tuple(
-        {"page_index": index, "child_path": (0, index * 2)}
-        for index in range(len(labels))
+        {
+            "language": "en",
+            "page_index": index,
+            "page_indices": (index,),
+            "mcid": None,
+            "mcids": (),
+            "label": label,
+            "child_path": (0, index * 2),
+        }
+        for index, label in enumerate(labels)
+    )
+
+
+def test_sequence_diagnostic_uses_nearest_structure_language_and_all_mcids() -> None:
+    candidate = _element(
+        "list_item",
+        _element("label", _fragment("02", 12.0, page_index=4, mcid=41)),
+        _element(
+            "list_body",
+            _fragment("Trouble", 12.0, page_index=4, mcid=42),
+            _fragment("shooting", 12.0, page_index=5, mcid=43),
+        ),
+    )
+    source = _document(
+        _element("section", candidate, language="fr-CA"), language=None
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    diagnostic = _diagnostics(result, "numbered_heading_sequence_invalid")[0]
+    assert diagnostic.context["document_language"] is None
+    assert diagnostic.context["candidate_evidence"] == (
+        {
+            "language": "fr-CA",
+            "page_index": 4,
+            "page_indices": (4, 5),
+            "mcid": 41,
+            "mcids": (41, 42, 43),
+            "label": "02",
+            "child_path": (0, 0),
+        },
     )
 
 
@@ -376,11 +450,17 @@ def test_ratio_below_threshold_rejects_candidate_but_keeps_valid_sibling() -> No
     diagnostic = _diagnostics(
         result, "numbered_heading_font_ratio_below_threshold"
     )[0]
+    _assert_candidate_source_evidence(diagnostic)
     assert diagnostic.context == {
         "series_index": 0,
+        "document_language": "en",
+        "language": "en",
         "label": "01",
         "child_path": (0, 0),
         "page_index": 0,
+        "page_indices": (0,),
+        "mcid": None,
+        "mcids": (),
         "label_font_size": 11.9,
         "list_body_font_size": 11.9,
         "heading_font_size": 11.9,
@@ -406,6 +486,7 @@ def test_label_body_size_mismatch_rejects_candidate() -> None:
     diagnostic = _diagnostics(
         result, "numbered_heading_label_body_size_mismatch"
     )[0]
+    _assert_candidate_source_evidence(diagnostic)
     assert diagnostic.context["label_font_size"] == 16.0
     assert diagnostic.context["list_body_font_size"] == 7.0
     assert diagnostic.context["relative_difference"] == pytest.approx(9.0 / 16.0)
@@ -417,6 +498,8 @@ def test_missing_required_typography_rejects_candidate(missing: str) -> None:
         "01",
         label_size=None if missing == "label" else 12.0,
         title_size=None if missing == "body" else 12.0,
+        label_mcid=101,
+        title_mcid=102,
     )
     source = _document(
         _element(
@@ -434,10 +517,16 @@ def test_missing_required_typography_rejects_candidate(missing: str) -> None:
     diagnostic = _diagnostics(
         result, "numbered_heading_typography_insufficient"
     )[0]
+    _assert_candidate_source_evidence(diagnostic, mcids=(101, 102))
     assert diagnostic.context["series_index"] == 0
     assert diagnostic.context["label"] == "01"
     assert diagnostic.context["child_path"] == (0, 0)
     assert diagnostic.context["page_index"] == 0
+    assert diagnostic.context["document_language"] == "en"
+    assert diagnostic.context["language"] == "en"
+    assert diagnostic.context["page_indices"] == (0,)
+    assert diagnostic.context["mcid"] == 101
+    assert diagnostic.context["mcids"] == (101, 102)
 
 
 def test_weighted_median_uses_text_character_counts() -> None:
@@ -561,8 +650,70 @@ def test_unequal_series_counts_retain_local_promotions_and_report_mismatch() -> 
     )[0]
     assert diagnostic.severity == "error"
     assert diagnostic.context == {
+        "document_language": "en",
         "series_counts": (2, 3),
         "labels_by_series": (("01", "02"), ("01", "02", "03")),
+        "series_evidence": (
+            {
+                "series_index": 0,
+                "count": 2,
+                "labels": ("01", "02"),
+                "candidates": (
+                    {
+                        "language": "en",
+                        "page_index": 0,
+                        "page_indices": (0,),
+                        "mcid": None,
+                        "mcids": (),
+                        "label": "01",
+                        "child_path": (0, 0),
+                    },
+                    {
+                        "language": "en",
+                        "page_index": 1,
+                        "page_indices": (1,),
+                        "mcid": None,
+                        "mcids": (),
+                        "label": "02",
+                        "child_path": (0, 2),
+                    },
+                ),
+            },
+            {
+                "series_index": 1,
+                "count": 3,
+                "labels": ("01", "02", "03"),
+                "candidates": (
+                    {
+                        "language": "en",
+                        "page_index": 0,
+                        "page_indices": (0,),
+                        "mcid": None,
+                        "mcids": (),
+                        "label": "01",
+                        "child_path": (1, 0),
+                    },
+                    {
+                        "language": "en",
+                        "page_index": 1,
+                        "page_indices": (1,),
+                        "mcid": None,
+                        "mcids": (),
+                        "label": "02",
+                        "child_path": (1, 2),
+                    },
+                    {
+                        "language": "en",
+                        "page_index": 2,
+                        "page_indices": (2,),
+                        "mcid": None,
+                        "mcids": (),
+                        "label": "03",
+                        "child_path": (1, 4),
+                    },
+                ),
+            },
+        ),
     }
 
 
@@ -579,6 +730,57 @@ def test_invalid_pre_01_series_is_excluded_from_cross_series_consistency() -> No
     assert result.numbered_heading_series_consistent is None
     assert _diagnostics(result, "numbered_heading_sequence_invalid")
     assert not _diagnostics(result, "numbered_heading_series_count_mismatch")
+
+
+def test_promotions_retain_unique_source_font_names_as_audit_evidence() -> None:
+    label = _element(
+        "label",
+        ContentFragment(
+            0,
+            11,
+            ("01",),
+            text_styles=(TextStyle("LabelFont", 12.0),),
+        ),
+    )
+    title = _element(
+        "list_body",
+        ContentFragment(
+            0,
+            12,
+            ("Chapter ", "title"),
+            text_styles=(
+                TextStyle("SharedFont", 12.0),
+                TextStyle("TitleFont", 12.0),
+            ),
+        ),
+    )
+    first = _element("list_item", label, title, page_index=0)
+    baseline = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            13,
+            ("ordinary ", "body", " text"),
+            text_styles=(
+                TextStyle("BodyFont", 8.0),
+                TextStyle(None, 8.0),
+                TextStyle("SharedFont", 8.0),
+            ),
+        ),
+    )
+    source = _document(
+        _element("list", first, baseline, _candidate("02"), baseline)
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    first_promotion = result.heading_promotions[0]
+    assert first_promotion.heading_font_names == (
+        "LabelFont",
+        "SharedFont",
+        "TitleFont",
+    )
+    assert first_promotion.body_font_names == ("BodyFont", "SharedFont")
 
 
 @pytest.mark.parametrize("series_count", (0, 1))
@@ -671,7 +873,15 @@ def test_candidate_page_falls_back_to_first_descendant_fragment() -> None:
 
     diagnostic = _diagnostics(result, "numbered_heading_sequence_invalid")[0]
     assert diagnostic.context["candidate_evidence"] == (
-        {"page_index": 7, "child_path": (0,)},
+        {
+            "language": "en",
+            "page_index": 7,
+            "page_indices": (7, 8),
+            "mcid": None,
+            "mcids": (),
+            "label": "02",
+            "child_path": (0,),
+        },
     )
 
 
@@ -687,7 +897,15 @@ def test_candidate_element_page_wins_over_descendant_fragment_page() -> None:
 
     diagnostic = _diagnostics(result, "numbered_heading_sequence_invalid")[0]
     assert diagnostic.context["candidate_evidence"] == (
-        {"page_index": 3, "child_path": (0,)},
+        {
+            "language": "en",
+            "page_index": 3,
+            "page_indices": (3, 7, 8),
+            "mcid": None,
+            "mcids": (),
+            "label": "02",
+            "child_path": (0,),
+        },
     )
 
 

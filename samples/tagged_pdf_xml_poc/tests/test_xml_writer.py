@@ -28,6 +28,8 @@ def _promotion(
         body_font_size=7.0,
         font_size_ratio=16 / 7,
         promotion_reason="numbered_chapter_structure_sequence_typography",
+        heading_font_names=("SamsungOne-600", "SamsungOne-Bold"),
+        body_font_names=("SamsungOne-400",),
     )
 
 
@@ -150,6 +152,8 @@ def test_numbered_heading_promotion_changes_only_semantic_xml(
         "heading-font-size": "16",
         "body-font-size": "7",
         "font-size-ratio": "2.285714",
+        "heading-font-names": '["SamsungOne-600","SamsungOne-Bold"]',
+        "body-font-names": '["SamsungOne-400"]',
     }
     assert [child.tag for child in semantic_heading] == ["label", "list_body"]
     assert [text.attrib["mcid"] for text in semantic_heading.findall(".//text")] == [
@@ -159,6 +163,37 @@ def test_numbered_heading_promotion_changes_only_semantic_xml(
     assert "".join(semantic_heading.itertext()) == (
         "03Troubleshooting and Maintenance"
     )
+
+
+def test_semantic_heading_emits_empty_font_name_evidence(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (_list_item(),),
+        heading_promotions=(
+            HeadingPromotion(
+                child_path=(0,),
+                level=2,
+                label="03",
+                title="Troubleshooting",
+                series_index=0,
+                heading_font_size=16.0,
+                body_font_size=7.0,
+                font_size_ratio=16 / 7,
+                promotion_reason="numbered_chapter_structure_sequence_typography",
+            ),
+        ),
+    )
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    heading = ET.parse(semantic_path).getroot().find(".//heading")
+    assert heading is not None
+    assert heading.attrib["heading-font-names"] == "[]"
+    assert heading.attrib["body-font-names"] == "[]"
 
 
 def test_xml_round_trip_preserves_hierarchy_and_exact_unicode_osd_path(

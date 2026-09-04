@@ -38,9 +38,9 @@ XML과 JSON은 감사 근거로 유지합니다. `raw_structure.xml`은 출처�
 - 제목의 대표 글자 크기는 주변 본문 대표 크기의 1.5배 이상이어야 합니다.
 - 한 문서에 유효한 series가 여러 개 있으면 각 series의 장 개수가 같아야 합니다.
 
-글꼴 이름은 사람이 근거를 확인하기 위한 감사 정보일 뿐이며, 특정 글꼴 이름을 승격 조건으로 하드코딩하지 않습니다. series별 장 개수가 다르거나 글자 크기 근거가 없거나 기준을 통과하지 못하면 무인 품질 통과를 차단하고, 해당 항목을 임의 heading으로 만들지 않습니다.
+PDF 리소스에서 얻은 글꼴 이름은 사람이 근거를 확인하기 위한 감사 정보일 뿐이며, 특정 글꼴 이름을 승격 조건으로 하드코딩하지 않습니다. 리소스 이름 자체에 스타일 이름이 포함될 수 있지만 정규화한 글꼴 굵기는 별도로 추론하거나 기록하지 않으며, 글꼴 이름과 굵기 모두 승격 판정에 영향을 주지 않습니다. series별 장 개수가 다르거나 글자 크기 근거가 없거나 기준을 통과하지 못하면 무인 품질 통과를 차단하고, 해당 항목을 임의 heading으로 만들지 않습니다.
 
-`raw_structure.xml`은 PDF에서 관찰한 원래 `List Item > Label + List Body` 구조를 그대로 보존합니다. `semantic_document.xml`은 승격된 heading과 `promotion-reason`, series 번호, 제목·본문 글자 크기 및 비율 같은 검증 근거를 기록합니다. `semantic_document.md`는 사람이 읽기 쉽게 `## 03 Troubleshooting and Maintenance`처럼 보여 주는 검토용 화면입니다.
+`raw_structure.xml`은 PDF에서 관찰한 원래 `List Item > Label + List Body` 구조를 그대로 보존합니다. `semantic_document.xml`은 승격된 heading과 `promotion-reason`, series 번호, 제목·본문 글자 크기·비율·PDF 리소스 글꼴 이름을 기록합니다. `extraction_report.json`의 `heading_hierarchy`에도 같은 글꼴 이름 배열이 남습니다. `semantic_document.md`는 사람이 읽기 쉽게 `## 03 Troubleshooting and Maintenance`처럼 보여 주는 검토용 화면입니다.
 
 ## 설치와 실행
 

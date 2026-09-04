@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import binascii
 import os
 import tempfile
@@ -319,6 +320,16 @@ class XmlDocumentWriter:
             ),
             "font-size-ratio": XmlDocumentWriter._format_number(
                 promotion.font_size_ratio
+            ),
+            "heading-font-names": json.dumps(
+                promotion.heading_font_names,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            "body-font-names": json.dumps(
+                promotion.body_font_names,
+                ensure_ascii=False,
+                separators=(",", ":"),
             ),
         }
 

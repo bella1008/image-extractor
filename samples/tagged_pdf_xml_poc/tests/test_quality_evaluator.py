@@ -94,6 +94,8 @@ def _promotion(
         body_font_size=8.0,
         font_size_ratio=1.5,
         promotion_reason="numbered_chapter_structure_sequence_typography",
+        heading_font_names=("HeadingFont",),
+        body_font_names=("BodyFont",),
     )
 
 
@@ -305,6 +307,8 @@ def test_numbered_promotions_are_counted_and_reported_as_heading_evidence() -> N
             "heading_font_size": 12.0,
             "body_font_size": 8.0,
             "font_size_ratio": 1.5,
+            "heading_font_names": ("HeadingFont",),
+            "body_font_names": ("BodyFont",),
             "promotion_reason": "numbered_chapter_structure_sequence_typography",
         },
         {
@@ -320,6 +324,8 @@ def test_numbered_promotions_are_counted_and_reported_as_heading_evidence() -> N
             "heading_font_size": 12.0,
             "body_font_size": 8.0,
             "font_size_ratio": 1.5,
+            "heading_font_names": ("HeadingFont",),
+            "body_font_names": ("BodyFont",),
             "promotion_reason": "numbered_chapter_structure_sequence_typography",
         },
     )

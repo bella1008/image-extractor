@@ -582,6 +582,44 @@ def test_title_preserves_non_english_source_and_punctuation_after_whitespace_nor
     assert result.heading_promotions[0].series_index == 0
 
 
+def test_title_joins_adjacent_nested_lexical_fragments() -> None:
+    first = _element(
+        "list_item",
+        _element("label", _fragment("01", 12.0)),
+        _element(
+            "list_body",
+            _fragment("Setup", 12.0),
+            _element("span", _fragment("Guide", 12.0)),
+        ),
+    )
+    source = _document(
+        _element("list", first, _paragraph(), _candidate("02"), _paragraph())
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert result.heading_promotions[0].title == "Setup Guide"
+
+
+def test_title_preserves_joining_policy_for_adjacent_punctuation() -> None:
+    first = _element(
+        "list_item",
+        _element("label", _fragment("01", 12.0)),
+        _element(
+            "list_body",
+            _fragment("Settings", 12.0),
+            _element("span", _fragment(">", 12.0)),
+        ),
+    )
+    source = _document(
+        _element("list", first, _paragraph(), _candidate("02"), _paragraph())
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert result.heading_promotions[0].title == "Settings>"
+
+
 def test_body_baseline_excludes_all_candidate_subtrees() -> None:
     source = _document(
         _element(

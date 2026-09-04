@@ -12,6 +12,7 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
 _NUMBERED_LABEL = re.compile(r"^(?:0[1-9]|[1-9][0-9])$")
@@ -189,7 +190,8 @@ def _normalized_text(element: StructureElement) -> str:
                 collect(child.children)
 
     collect(element.children)
-    return " ".join("".join(parts).split())
+    joined, _ = join_text_parts(tuple(parts))
+    return " ".join(joined.split())
 
 
 def _group_series(candidates: list[_Candidate]) -> list[list[_Candidate]]:

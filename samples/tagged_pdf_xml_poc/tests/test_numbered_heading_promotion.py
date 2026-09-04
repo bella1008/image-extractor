@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
@@ -109,6 +109,12 @@ def _series(
 
 def _diagnostics(document: TaggedDocument, code: str) -> list[Diagnostic]:
     return [diagnostic for diagnostic in document.diagnostics if diagnostic.code == code]
+
+
+def _with_diagnostics(
+    document: TaggedDocument, *diagnostics: Diagnostic
+) -> TaggedDocument:
+    return replace(document, diagnostics=diagnostics)
 
 
 def test_heading_promotion_is_frozen() -> None:
@@ -300,6 +306,57 @@ def test_typography_at_or_above_ratio_threshold_promotes(
 
     assert len(result.heading_promotions) == 2
     assert result.heading_promotions[0].font_size_ratio == pytest.approx(expected_ratio)
+
+
+def test_exact_decimal_label_body_size_boundary_promotes() -> None:
+    source = _document(
+        _element(
+            "list",
+            _candidate("01", label_size=11.7, title_size=13.0),
+            _paragraph(size=7.0),
+            _candidate("02", label_size=11.7, title_size=13.0),
+            _paragraph(size=7.0),
+        )
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert [promotion.label for promotion in result.heading_promotions] == ["01", "02"]
+
+
+def test_just_outside_label_body_size_boundary_fails() -> None:
+    source = _document(
+        _element(
+            "list",
+            _candidate("01", label_size=11.699, title_size=13.0),
+            _paragraph(size=7.0),
+            _candidate("02", label_size=11.699, title_size=13.0),
+            _paragraph(size=7.0),
+        )
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert result.heading_promotions == ()
+    assert len(_diagnostics(result, "numbered_heading_label_body_size_mismatch")) == 2
+
+
+def test_exact_decimal_font_ratio_boundary_promotes_and_stores_actual_ratio() -> None:
+    result = promote_numbered_chapter_headings(
+        _document(_series(("01", "02"), heading_size=0.3, body_size=0.2))
+    )
+
+    assert len(result.heading_promotions) == 2
+    assert result.heading_promotions[0].font_size_ratio == 0.3 / 0.2
+
+
+def test_just_below_decimal_font_ratio_boundary_fails() -> None:
+    result = promote_numbered_chapter_headings(
+        _document(_series(("01", "02"), heading_size=0.299, body_size=0.2))
+    )
+
+    assert result.heading_promotions == ()
+    assert len(_diagnostics(result, "numbered_heading_font_ratio_below_threshold")) == 2
 
 
 def test_ratio_below_threshold_rejects_candidate_but_keeps_valid_sibling() -> None:
@@ -557,6 +614,105 @@ def test_preserves_source_document_tree_and_existing_diagnostics() -> None:
     assert source.numbered_heading_series == ()
     assert source.numbered_heading_series_consistent is None
     assert result.diagnostics[0] is existing
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        _document(_series(("01", "02"))),
+        _document(_series(("01", "03"))),
+        _document(_series(("01", "02"), heading_size=11.9, body_size=8.0)),
+        _document(_series(("01", "02")), _series(("01", "02", "03"))),
+    ),
+    ids=("valid", "invalid-sequence", "typography-failure", "count-mismatch"),
+)
+def test_promotion_pass_is_idempotent(source: TaggedDocument) -> None:
+    promoted = promote_numbered_chapter_headings(source)
+
+    assert promote_numbered_chapter_headings(promoted) == promoted
+
+
+@pytest.mark.parametrize(
+    "owned_code",
+    (
+        "numbered_heading_sequence_invalid",
+        "numbered_heading_typography_insufficient",
+        "numbered_heading_label_body_size_mismatch",
+        "numbered_heading_font_ratio_below_threshold",
+        "numbered_heading_series_count_mismatch",
+    ),
+)
+def test_recompute_removes_only_owned_diagnostics_and_preserves_unrelated_order(
+    owned_code: str,
+) -> None:
+    first = Diagnostic("warning", "unrelated_first", "First", {"order": 1})
+    stale_owned = Diagnostic("error", owned_code, "Stale", {"old": True})
+    second = Diagnostic("warning", "unrelated_second", "Second", {"order": 2})
+    source = _with_diagnostics(
+        _document(_series(("01", "02"))), first, stale_owned, second
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert result.diagnostics == (first, second)
+    assert result.diagnostics[0] is first
+    assert result.diagnostics[1] is second
+
+
+def test_candidate_page_falls_back_to_first_descendant_fragment() -> None:
+    candidate = _element(
+        "list_item",
+        _element("label", _fragment("02", 12.0, page_index=7)),
+        _element("list_body", _fragment("Title", 12.0, page_index=8)),
+        page_index=None,
+    )
+
+    result = promote_numbered_chapter_headings(_document(candidate))
+
+    diagnostic = _diagnostics(result, "numbered_heading_sequence_invalid")[0]
+    assert diagnostic.context["candidate_evidence"] == (
+        {"page_index": 7, "child_path": (0,)},
+    )
+
+
+def test_candidate_element_page_wins_over_descendant_fragment_page() -> None:
+    candidate = _element(
+        "list_item",
+        _element("label", _fragment("02", 12.0, page_index=7)),
+        _element("list_body", _fragment("Title", 12.0, page_index=8)),
+        page_index=3,
+    )
+
+    result = promote_numbered_chapter_headings(_document(candidate))
+
+    diagnostic = _diagnostics(result, "numbered_heading_sequence_invalid")[0]
+    assert diagnostic.context["candidate_evidence"] == (
+        {"page_index": 3, "child_path": (0,)},
+    )
+
+
+def test_deep_child_path_counts_preceding_content_fragment_siblings() -> None:
+    source = _document(
+        ContentFragment(0, None, ("before root",)),
+        _element(
+            "section",
+            ContentFragment(0, None, ("before container",)),
+            _element(
+                "container",
+                ContentFragment(0, None, ("before candidate",)),
+                _candidate("01"),
+                _candidate("02"),
+                _paragraph(),
+            ),
+        ),
+    )
+
+    result = promote_numbered_chapter_headings(source)
+
+    assert [promotion.child_path for promotion in result.heading_promotions] == [
+        (1, 1, 1),
+        (1, 1, 2),
+    ]
 
 
 def test_title_preserves_non_english_source_and_punctuation_after_whitespace_normalization() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 import math
 import re
@@ -17,6 +18,19 @@ from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 _NUMBERED_LABEL = re.compile(r"^(?:0[1-9]|[1-9][0-9])$")
 _PROMOTION_REASON = "numbered_chapter_structure_sequence_typography"
+_MIN_SERIES_CANDIDATES = 2
+_MAX_LABEL_BODY_RELATIVE_DIFFERENCE = 0.10
+_MIN_HEADING_BODY_RATIO = 1.5
+_POLICY_BOUNDARY_REL_TOLERANCE = 1e-12
+_OWNED_DIAGNOSTIC_CODES = frozenset(
+    {
+        "numbered_heading_sequence_invalid",
+        "numbered_heading_typography_insufficient",
+        "numbered_heading_label_body_size_mismatch",
+        "numbered_heading_font_ratio_below_threshold",
+        "numbered_heading_series_count_mismatch",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -41,12 +55,18 @@ def promote_numbered_chapter_headings(document: TaggedDocument) -> TaggedDocumen
     candidate_series = _group_series(candidates)
     audits: list[NumberedHeadingSeriesAudit] = []
     promotions: list[HeadingPromotion] = []
-    diagnostics = list(document.diagnostics)
+    diagnostics = [
+        diagnostic
+        for diagnostic in document.diagnostics
+        if diagnostic.code not in _OWNED_DIAGNOSTIC_CODES
+    ]
 
     for series_index, series in enumerate(candidate_series):
         labels = tuple(candidate.label for candidate in series)
         expected_labels = _expected_labels(labels)
-        valid_sequence = len(series) >= 2 and labels == expected_labels
+        valid_sequence = (
+            len(series) >= _MIN_SERIES_CANDIDATES and labels == expected_labels
+        )
         audits.append(
             NumberedHeadingSeriesAudit(
                 series_index=series_index,
@@ -210,7 +230,7 @@ def _group_series(candidates: list[_Candidate]) -> list[list[_Candidate]]:
 
 
 def _expected_labels(labels: tuple[str, ...]) -> tuple[str, ...]:
-    count = max(2, len(labels))
+    count = max(_MIN_SERIES_CANDIDATES, len(labels))
     return tuple(f"{number:02d}" for number in range(1, count + 1))
 
 
@@ -351,7 +371,9 @@ def _evaluate_typography(
     )
     heading_font_size = min(label_font_size, list_body_font_size)
     ratio = heading_font_size / body_font_size
-    if relative_difference > 0.10:
+    if _strictly_above_policy_boundary(
+        relative_difference, _MAX_LABEL_BODY_RELATIVE_DIFFERENCE
+    ):
         return None, Diagnostic(
             "error",
             "numbered_heading_label_body_size_mismatch",
@@ -363,7 +385,7 @@ def _evaluate_typography(
                 "font_size_ratio": ratio,
             },
         )
-    if ratio < 1.5:
+    if _strictly_below_policy_boundary(ratio, _MIN_HEADING_BODY_RATIO):
         return None, Diagnostic(
             "error",
             "numbered_heading_font_ratio_below_threshold",
@@ -393,21 +415,33 @@ def _evaluate_typography(
 def _candidate_page(candidate: _Candidate) -> int | None:
     if candidate.element.page_index is not None:
         return candidate.element.page_index
-    for fragment in _descendant_fragments(candidate.element):
-        return fragment.page_index
-    return None
+    return next(_descendant_fragment_pages(candidate.element), None)
 
 
-def _descendant_fragments(
-    element: StructureElement,
-) -> tuple[ContentFragment, ...]:
-    fragments: list[ContentFragment] = []
+def _descendant_fragment_pages(element: StructureElement) -> Iterator[int]:
     for child in element.children:
         if isinstance(child, ContentFragment):
-            fragments.append(child)
+            yield child.page_index
         else:
-            fragments.extend(_descendant_fragments(child))
-    return tuple(fragments)
+            yield from _descendant_fragment_pages(child)
+
+
+def _strictly_above_policy_boundary(value: float, boundary: float) -> bool:
+    return value > boundary and not math.isclose(
+        value,
+        boundary,
+        rel_tol=_POLICY_BOUNDARY_REL_TOLERANCE,
+        abs_tol=0.0,
+    )
+
+
+def _strictly_below_policy_boundary(value: float, boundary: float) -> bool:
+    return value < boundary and not math.isclose(
+        value,
+        boundary,
+        rel_tol=_POLICY_BOUNDARY_REL_TOLERANCE,
+        abs_tol=0.0,
+    )
 
 
 def _series_consistency(

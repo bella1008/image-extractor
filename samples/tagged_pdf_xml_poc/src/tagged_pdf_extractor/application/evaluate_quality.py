@@ -117,6 +117,7 @@ class _Traversal:
     forbidden_xml_control_field_count: int = 0
     source_role_counts: Counter[str] = field(default_factory=Counter)
     heading_hierarchy: list[dict[str, Any]] = field(default_factory=list)
+    text_quality_by_page: dict[int, dict[str, int]] = field(default_factory=dict)
 
     def count_text_field(self, value: str | None) -> None:
         if value is None:
@@ -124,6 +125,23 @@ class _Traversal:
         count = sum(not _is_xml_10_character(character) for character in value)
         self.forbidden_xml_control_count += count
         self.forbidden_xml_control_field_count += count > 0
+
+    def count_fragment(self, fragment: ContentFragment) -> None:
+        page = self.text_quality_by_page.setdefault(
+            fragment.page_index,
+            {
+                "fragment_count": 0,
+                "character_count": 0,
+                "forbidden_xml_control_count": 0,
+            },
+        )
+        page["fragment_count"] += 1
+        page["character_count"] += sum(len(part) for part in fragment.text_parts)
+        page["forbidden_xml_control_count"] += sum(
+            not _is_xml_10_character(character)
+            for part in fragment.text_parts
+            for character in part
+        )
 
 
 @dataclass(frozen=True)
@@ -232,6 +250,10 @@ class QualityEvaluator:
             "forbidden_xml_control_field_count": (
                 traversal.forbidden_xml_control_field_count
             ),
+            "text_quality_by_page": {
+                str(page_index): traversal.text_quality_by_page[page_index]
+                for page_index in sorted(traversal.text_quality_by_page)
+            },
         }
         return QualityReport(
             status="pass" if all(hard_gates.values()) else "fail",
@@ -257,6 +279,7 @@ class QualityEvaluator:
         for child_index, child in enumerate(children):
             if isinstance(child, ContentFragment):
                 traversal.fragment_count += 1
+                traversal.count_fragment(child)
                 for text_part in child.text_parts:
                     traversal.count_text_field(text_part)
                 text, decisions = join_text_parts(child.text_parts)

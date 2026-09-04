@@ -694,6 +694,38 @@ def test_counts_forbidden_xml_controls_by_occurrence_and_source_field() -> None:
     assert report.metrics["forbidden_xml_control_field_count"] == 5
 
 
+def test_reports_raw_content_fragment_text_quality_by_numeric_page_order() -> None:
+    document = _document(
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(
+                ContentFragment(1, 3, ("é", "\x03x")),
+                ContentFragment(0, 1, ("ab", " c")),
+                ContentFragment(0, 2, ("d",)),
+            ),
+        )
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "ab c d é x", xml_round_trip_ok=True
+    )
+
+    assert list(report.metrics["text_quality_by_page"]) == ["0", "1"]
+    assert report.metrics["text_quality_by_page"] == {
+        "0": {
+            "fragment_count": 2,
+            "character_count": 5,
+            "forbidden_xml_control_count": 0,
+        },
+        "1": {
+            "fragment_count": 1,
+            "character_count": 3,
+            "forbidden_xml_control_count": 1,
+        },
+    }
+
+
 def test_hard_gates_are_fixed_and_all_must_pass() -> None:
     report = QualityEvaluator().evaluate(
         _document(marked=False), "body", xml_round_trip_ok=False

@@ -1,4 +1,5 @@
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from pypdf import PdfReader, PdfWriter
@@ -31,6 +32,13 @@ class SameContentPage:
 
     def get_contents(self):
         return self.content
+
+    def __getitem__(self, key):
+        return self.page[key]
+
+    @property
+    def pdf(self):
+        return self.page.pdf
 
 
 def _font_resources() -> DictionaryObject:
@@ -70,6 +78,87 @@ def _in_memory_page(content_data: bytes, form_data: bytes | None = None):
     writer.write(output)
     output.seek(0)
     return PdfReader(output).pages[0]
+
+
+def test_runner_constructs_forced_bytes_content_stream_without_mutating_source(
+    monkeypatch,
+) -> None:
+    page = _in_memory_page(b"BT /F1 12 Tf [(Premiere) -120 (phrase)] TJ ET")
+    source = page["/Contents"].get_object()
+    source_bytes = source.get_data()
+    source_items = dict(source.items())
+    constructions: list[tuple[object, object, object]] = []
+
+    real_import_module = operation_module.import_module
+    generic_module = real_import_module("pypdf.generic")
+    real_content_stream = generic_module.ContentStream
+
+    class RecordingContentStream(real_content_stream):
+        def __init__(self, stream, pdf, forced_encoding=None):
+            constructions.append((stream, pdf, forced_encoding))
+            super().__init__(stream, pdf, forced_encoding)
+
+    def import_with_recording(module_name: str):
+        if module_name == "pypdf.generic":
+            return SimpleNamespace(ContentStream=RecordingContentStream)
+        return real_import_module(module_name)
+
+    monkeypatch.setattr(operation_module, "import_module", import_with_recording)
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda _value: None,
+    )
+
+    assert constructions == [(source, page.pdf, "bytes")]
+    assert source.get_data() == source_bytes
+    assert dict(source.items()) == source_items
+
+
+def test_runner_treats_an_empty_content_stream_as_no_text() -> None:
+    page = _in_memory_page(b"")
+    boundaries: list[tuple[bytes, list[object]]] = []
+    text: list[str] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda operator, operands: boundaries.append(
+            (operator, operands)
+        ),
+        on_text=text.append,
+    )
+
+    assert boundaries == []
+    assert text == []
+
+
+def test_runner_wraps_absent_content_with_the_original_cause() -> None:
+    page = _in_memory_page(b"")
+    del page[NameObject("/Contents")]
+
+    with pytest.raises(PypdfOperationTextError) as raised:
+        PypdfOperationTextRunner().run(
+            page,
+            on_boundary=lambda _operator, _operands: None,
+            on_text=lambda _value: None,
+        )
+
+    assert isinstance(raised.value.__cause__, KeyError)
+
+
+def test_runner_wraps_malformed_content_with_the_original_cause() -> None:
+    page = _in_memory_page(b"")
+    page[NameObject("/Contents")] = NumberObject(7)
+
+    with pytest.raises(PypdfOperationTextError) as raised:
+        PypdfOperationTextRunner().run(
+            page,
+            on_boundary=lambda _operator, _operands: None,
+            on_text=lambda _value: None,
+        )
+
+    assert raised.value.__cause__ is not None
 
 
 def test_runner_flushes_before_mcid_boundaries_without_synthetic_cm(

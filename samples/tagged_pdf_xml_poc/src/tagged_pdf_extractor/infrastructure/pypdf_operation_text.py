@@ -7,11 +7,16 @@ class PypdfOperationTextError(RuntimeError):
     pass
 
 
-def _load_pypdf_text_helpers() -> tuple[Any, Any]:
+def _load_pypdf_text_helpers() -> tuple[Any, Any, Any]:
     try:
         font_module = import_module("pypdf._font")
         text_module = import_module("pypdf._text_extraction._text_extractor")
-        return getattr(font_module, "Font"), getattr(text_module, "TextExtraction")
+        generic_module = import_module("pypdf.generic")
+        return (
+            getattr(font_module, "Font"),
+            getattr(text_module, "TextExtraction"),
+            getattr(generic_module, "ContentStream"),
+        )
     except (ImportError, AttributeError) as exc:
         raise PypdfOperationTextError(
             "Required private pypdf text helpers are unavailable"
@@ -42,7 +47,7 @@ class PypdfOperationTextRunner:
         on_xobject: Callable[[Any], None] | None = None,
     ) -> None:
         try:
-            Font, TextExtraction = _load_pypdf_text_helpers()
+            Font, TextExtraction, ContentStream = _load_pypdf_text_helpers()
             resources = page.get_inherited(key="/Resources", default=None)
             if resources is None:
                 raise KeyError("page has no inherited /Resources")
@@ -64,9 +69,8 @@ class PypdfOperationTextRunner:
                     font.space_width = 200.0
                 fonts[font_name] = font
 
-            content = page.get_contents()
-            if content is None:
-                raise ValueError("page has no content stream")
+            source_content = page["/Contents"].get_object()
+            content = ContentStream(source_content, page.pdf, "bytes")
             operations = tuple(content.operations)
 
             extractor = TextExtraction()

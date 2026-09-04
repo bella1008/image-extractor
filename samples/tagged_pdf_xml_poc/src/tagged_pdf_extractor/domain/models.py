@@ -27,6 +27,13 @@ class ContentFragment:
     object_ref: str | None = None
     text_styles: tuple[TextStyle, ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.text_styles and len(self.text_parts) != len(self.text_styles):
+            raise ValueError(
+                f"ContentFragment has {len(self.text_parts)} text parts but "
+                f"{len(self.text_styles)} text styles"
+            )
+
     @property
     def text(self) -> str:
         return "".join(self.text_parts)

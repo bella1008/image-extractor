@@ -8,6 +8,7 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     StructureElement,
     TaggedDocument,
+    TextStyle,
 )
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
@@ -62,6 +63,50 @@ def test_xml_round_trip_preserves_hierarchy_and_exact_unicode_osd_path(
             "action": "trim_left",
         },
     )
+
+
+def test_populated_text_styles_are_not_serialized_to_xml_yet(tmp_path: Path) -> None:
+    fragment = ContentFragment(
+        page_index=3,
+        mcid=7,
+        text_parts=("03", "Title"),
+        object_ref="12 0 R",
+        text_styles=(
+            TextStyle("SamsungOne-600", 16.0),
+            TextStyle("SamsungOne-600", 16.0),
+        ),
+    )
+    document = TaggedDocument(Path("styled.pdf"), True, "en", (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw = ET.parse(raw_path).getroot()
+    raw_fragment = raw.find("fragment")
+    assert raw.attrib == {"source": "styled.pdf", "marked": "true", "language": "en"}
+    assert raw_fragment is not None
+    assert raw_fragment.attrib == {
+        "page-index": "3",
+        "mcid": "7",
+        "object-ref": "12 0 R",
+    }
+    assert [child.tag for child in raw_fragment] == ["part", "part"]
+    assert [child.text for child in raw_fragment] == ["03", "Title"]
+
+    semantic = ET.parse(semantic_path).getroot()
+    semantic_text = semantic.find("text")
+    assert semantic.attrib == {}
+    assert semantic_text is not None
+    assert semantic_text.attrib == {
+        "page-index": "3",
+        "mcid": "7",
+        "object-ref": "12 0 R",
+    }
+    assert list(semantic_text) == []
+    assert semantic_text.text == "03 Title"
 
 
 def test_preserves_mixed_interleaved_order_and_unknown_source_role(

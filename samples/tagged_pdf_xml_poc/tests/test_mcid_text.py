@@ -12,7 +12,10 @@ from pypdf.generic import (
 
 from tagged_pdf_extractor.domain.models import Diagnostic, TextStyle
 from tagged_pdf_extractor.infrastructure import mcid_text
-from tagged_pdf_extractor.infrastructure.mcid_text import McidTextCollector
+from tagged_pdf_extractor.infrastructure.mcid_text import (
+    McidTextCollector,
+    McidTextResult,
+)
 
 
 class FakeRunner:
@@ -511,3 +514,36 @@ def test_collects_font_styles_aligned_with_each_mcid_text_part() -> None:
             TextStyle("SamsungOne-600", 16.0),
         )
     }
+
+
+def test_mcid_text_result_rejects_missing_style_mcid_key() -> None:
+    with pytest.raises(ValueError, match=r"missing style MCIDs: \[7\]"):
+        McidTextResult(
+            parts_by_mcid={7: ("Title",)},
+            styles_by_mcid={},
+            seen_mcids=frozenset({7}),
+            diagnostics=(),
+        )
+
+
+def test_mcid_text_result_rejects_extra_style_mcid_key() -> None:
+    with pytest.raises(ValueError, match=r"extra style MCIDs: \[8\]"):
+        McidTextResult(
+            parts_by_mcid={},
+            styles_by_mcid={8: (TextStyle("SamsungOne-600", 16.0),)},
+            seen_mcids=frozenset({8}),
+            diagnostics=(),
+        )
+
+
+def test_mcid_text_result_rejects_unequal_part_and_style_lengths() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"MCID 7 has 2 text parts but 1 text styles",
+    ):
+        McidTextResult(
+            parts_by_mcid={7: ("03", "Title")},
+            styles_by_mcid={7: (TextStyle("SamsungOne-600", 16.0),)},
+            seen_mcids=frozenset({7}),
+            diagnostics=(),
+        )

@@ -381,7 +381,7 @@ class TaggedPdfReader:
         page_parts = mcid_text.get(page_index, {}) if page_index is not None else {}
         if mcid is not None and mcid in page_parts:
             text_parts = page_parts[mcid]
-            text_styles = mcid_styles.get(page_index, {}).get(mcid, ())
+            text_styles = mcid_styles[page_index][mcid]
         elif (
             page_index is not None
             and mcid is not None

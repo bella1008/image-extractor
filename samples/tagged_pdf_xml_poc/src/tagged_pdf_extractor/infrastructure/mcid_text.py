@@ -89,6 +89,26 @@ class McidTextResult:
     seen_mcids: frozenset[int]
     diagnostics: tuple[Diagnostic, ...]
 
+    def __post_init__(self) -> None:
+        part_mcids = set(self.parts_by_mcid)
+        style_mcids = set(self.styles_by_mcid)
+        if part_mcids != style_mcids:
+            missing_style_mcids = sorted(part_mcids - style_mcids)
+            extra_style_mcids = sorted(style_mcids - part_mcids)
+            raise ValueError(
+                "MCID text/style keys differ; "
+                f"missing style MCIDs: {missing_style_mcids}; "
+                f"extra style MCIDs: {extra_style_mcids}"
+            )
+        for mcid in sorted(part_mcids):
+            part_count = len(self.parts_by_mcid[mcid])
+            style_count = len(self.styles_by_mcid[mcid])
+            if part_count != style_count:
+                raise ValueError(
+                    f"MCID {mcid} has {part_count} text parts but "
+                    f"{style_count} text styles"
+                )
+
 
 class McidTextCollector:
     def __init__(self, runner: PypdfOperationTextRunner | None = None) -> None:
@@ -224,9 +244,6 @@ class McidTextCollector:
                     context={"page_index": page_index, "depth": len(stack)},
                 )
             )
-        assert all(
-            len(values) == len(styles[mcid]) for mcid, values in parts.items()
-        )
         return McidTextResult(
             parts_by_mcid={mcid: tuple(values) for mcid, values in parts.items()},
             styles_by_mcid={mcid: tuple(values) for mcid, values in styles.items()},

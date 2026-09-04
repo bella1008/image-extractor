@@ -56,9 +56,15 @@ class RecordingCollector:
     def collect(self, _page: Any, page_index: int) -> McidTextResult:
         self.calls.append(page_index)
         parts_by_mcid = self.parts_by_page.get(page_index, {})
+        styles_by_mcid = self.styles_by_page.get(page_index)
+        if styles_by_mcid is None:
+            styles_by_mcid = {
+                mcid: tuple(TextStyle(None, None) for _part in parts)
+                for mcid, parts in parts_by_mcid.items()
+            }
         return McidTextResult(
             parts_by_mcid=parts_by_mcid,
-            styles_by_mcid=self.styles_by_page.get(page_index, {}),
+            styles_by_mcid=styles_by_mcid,
             seen_mcids=self.seen_mcids_by_page.get(
                 page_index, frozenset(parts_by_mcid)
             ),
@@ -100,6 +106,19 @@ def test_content_fragment_preserves_four_argument_positional_construction() -> N
 
     assert fragment.object_ref == "12 0 R"
     assert fragment.text_styles == ()
+
+
+def test_content_fragment_rejects_non_empty_mismatched_text_styles() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"ContentFragment has 2 text parts but 1 text styles",
+    ):
+        ContentFragment(
+            page_index=2,
+            mcid=7,
+            text_parts=("03", "Title"),
+            text_styles=(TextStyle("SamsungOne-600", 16.0),),
+        )
 
 
 def test_does_not_translate_non_decoder_collector_failure(
@@ -459,14 +478,31 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
     assert heading.object_ref is not None
 
     inherited_fragment, unknown = heading.children
-    assert inherited_fragment == ContentFragment(0, 3, ("Heading",))
+    assert inherited_fragment == ContentFragment(
+        0,
+        3,
+        ("Heading",),
+        text_styles=(TextStyle(None, None),),
+    )
     assert isinstance(unknown, StructureElement)
     assert unknown.source_role == "Mystery"
     assert unknown.semantic_role == "unknown"
     assert unknown.page_index == 0
-    assert unknown.children == (ContentFragment(0, 6, ("Unknown child",)),)
+    assert unknown.children == (
+        ContentFragment(
+            0,
+            6,
+            ("Unknown child",),
+            text_styles=(TextStyle(None, None),),
+        ),
+    )
 
-    assert direct_fragment == ContentFragment(0, 4, ("After heading",))
+    assert direct_fragment == ContentFragment(
+        0,
+        4,
+        ("After heading",),
+        text_styles=(TextStyle(None, None),),
+    )
     assert isinstance(mcr_fragment, ContentFragment)
     assert (mcr_fragment.page_index, mcr_fragment.mcid, mcr_fragment.text_parts) == (
         1,
@@ -777,7 +813,15 @@ def test_direct_null_page_value_inherits_parent_page(tmp_path: Path) -> None:
 
     structure = result.children[0]
     assert isinstance(structure, StructureElement)
-    assert structure.children == (ContentFragment(0, 7, ("Inherited",), None),)
+    assert structure.children == (
+        ContentFragment(
+            0,
+            7,
+            ("Inherited",),
+            None,
+            (TextStyle(None, None),),
+        ),
+    )
     assert result.diagnostics == ()
 
 

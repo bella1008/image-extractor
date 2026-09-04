@@ -82,12 +82,15 @@ class PypdfOperationTextRunner:
                 operations = ()
             else:
                 source_content = source_content.get_object()
-                content = (
-                    source_content
-                    if isinstance(source_content, ContentStream)
-                    else ContentStream(source_content, page.pdf, "bytes")
-                )
-                operations = tuple(content.operations)
+                if isinstance(source_content, NullObject):
+                    operations = ()
+                else:
+                    content = (
+                        source_content
+                        if isinstance(source_content, ContentStream)
+                        else ContentStream(source_content, page.pdf, "bytes")
+                    )
+                    operations = tuple(content.operations)
 
             extractor = TextExtraction()
 

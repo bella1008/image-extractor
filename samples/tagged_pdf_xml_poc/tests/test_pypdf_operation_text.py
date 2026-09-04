@@ -9,6 +9,7 @@ from pypdf.generic import (
     ContentStream,
     DecodedStreamObject,
     DictionaryObject,
+    IndirectObject,
     NameObject,
     NullObject,
     NumberObject,
@@ -224,6 +225,32 @@ def test_runner_treats_absent_or_null_content_as_no_text(
     page = _blank_in_memory_page(null_contents=null_contents)
     boundaries: list[tuple[bytes, list[object]]] = []
     text: list[str] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda operator, operands: boundaries.append(
+            (operator, operands)
+        ),
+        on_text=text.append,
+    )
+
+    assert boundaries == []
+    assert text == []
+
+
+def test_runner_treats_indirect_null_content_as_no_text() -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    page[NameObject("/Resources")] = _font_resources()
+    page[NameObject("/Contents")] = writer._add_object(NullObject())
+    output = BytesIO()
+    writer.write(output)
+    output.seek(0)
+    page = PdfReader(output).pages[0]
+    boundaries: list[tuple[bytes, list[object]]] = []
+    text: list[str] = []
+
+    assert isinstance(page.raw_get("/Contents"), IndirectObject)
 
     PypdfOperationTextRunner().run(
         page,

@@ -54,7 +54,20 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 - `TAGGED_PDF_ZA_SAMPLE`: ZA 레이아웃 회귀 PDF
 - `TAGGED_PDF_ZG_SAMPLE`: ZG BOOK 레이아웃 회귀 PDF
 
-각 테스트는 해당 환경변수, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 자기 샘플을 찾습니다. ZA 또는 ZG 같은 선택적 회귀 샘플이 없으면 그 샘플의 테스트만 독립적으로 건너뛰며, 다른 샘플 테스트는 계속 실행합니다.
+각 테스트는 해당 환경변수, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 자기 샘플을 찾습니다. 기본 휴대용 테스트 모드에서는 샘플이 없으면 그 샘플의 테스트만 독립적으로 건너뛰며, 다른 단위 테스트와 사용 가능한 샘플 테스트는 계속 실행합니다.
+
+세 기준 PDF가 반드시 있는 검수 환경에서는 아래처럼 필수 샘플 모드를 사용합니다. 이 모드에서는 ZC, ZA, ZG 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다.
+
+```powershell
+Set-Location C:\Users\bella\image-extractor\samples\tagged_pdf_xml_poc
+$env:TAGGED_PDF_REQUIRE_SAMPLES = "1"
+$env:TAGGED_PDF_ZC_SAMPLE = "C:\Users\bella\image-extractor\samples\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf"
+$env:TAGGED_PDF_ZA_SAMPLE = "C:\Users\bella\image-extractor\samples\SUG_RAW\0_TV_ZA\BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf"
+$env:TAGGED_PDF_ZG_SAMPLE = "C:\Users\bella\image-extractor\samples\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
+python -m pytest tests -v
+```
+
+일반 개발 PC에서는 `TAGGED_PDF_REQUIRE_SAMPLES`를 설정하지 않고 같은 명령을 실행하면 됩니다.
 
 종료 코드는 다음과 같습니다.
 
@@ -77,6 +90,8 @@ XML 1.0에서 금지된 제어문자는 버리지 않고 정확한 위치에 `<c
 ## 품질 보고서와 하드 게이트
 
 보고서 최상위에는 `source_path`, PDF가 선언한 `language`, `marked`, 원본 `role_map`, source role별 개수, heading 계층/후보 목록이 들어갑니다. 언어는 파일명이나 본문에서 추론하지 않습니다.
+
+페이지를 확인할 수 없는 합성 또는 미해결 텍스트 조각의 `page_index=-1`은 보고서의 `text_quality_by_page["-1"]`에 그대로 남깁니다. 실제 페이지처럼 오해해서는 안 되지만, 원인을 추적할 감사 증거이므로 조용히 버리지 않습니다.
 
 heading 목록은 구조 경로, source role, semantic role, level, 연결된 텍스트와 `/T` title을 기록합니다. `Heading2`, `NoTOC-Heading1`, `Cover_Title`, `Heading2_0_2`처럼 이름이 heading처럼 보이더라도 RoleMap 결과가 `P`이면 `source_role_candidate`로만 기록하며 `heading_count`에는 포함하지 않습니다. `Heading2_0_2`처럼 `Heading1`~`Heading6` 뒤에 숫자가 아닌 장식 suffix가 붙은 이름은 후보지만 `Heading20`, `H0`, `H7`은 후보가 아닙니다.
 

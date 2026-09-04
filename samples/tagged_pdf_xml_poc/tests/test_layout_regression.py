@@ -9,6 +9,8 @@ from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
 )
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 
+from acceptance_support import assert_heading_only_failure, require_sample
+
 
 _SAMPLES = {
     "ZA": (
@@ -106,38 +108,46 @@ def test_readme_documents_sample_overrides_and_independent_skips() -> None:
     assert "TAGGED_PDF_ZC_SAMPLE" in readme
     assert "TAGGED_PDF_ZA_SAMPLE" in readme
     assert "TAGGED_PDF_ZG_SAMPLE" in readme
+    assert "TAGGED_PDF_REQUIRE_SAMPLES" in readme
     assert "그 샘플의 테스트만 독립적으로 건너뛰" in readme
 
 
+def test_missing_sample_skips_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAGGED_PDF_REQUIRE_SAMPLES", raising=False)
+
+    with pytest.raises(pytest.skip.Exception, match="ZA tagged PDF"):
+        require_sample(None, "ZA")
+
+
+def test_missing_sample_fails_in_required_sample_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAGGED_PDF_REQUIRE_SAMPLES", "1")
+
+    with pytest.raises(pytest.fail.Exception, match="ZG tagged PDF"):
+        require_sample(None, "ZG")
+
+
+def test_available_sample_is_returned_in_required_sample_mode(tmp_path: Path) -> None:
+    sample = tmp_path / "sample.pdf"
+    sample.touch()
+
+    assert require_sample(sample, "ZC", required=True) == sample
+
+
 def test_za_retains_complete_structure_and_clean_page_text() -> None:
-    path = _resolve_sample("ZA")
-    if path is None:
-        pytest.skip("ZA tagged PDF sample is not available")
+    path = require_sample(_resolve_sample("ZA"), "ZA")
 
     document, report = _extract_report(path)
     _assert_common_layout_quality(document, report, {"0", "1"})
+    assert_heading_only_failure(report)
 
 
 def test_zg_retains_all_pages_without_false_image_xobject_loss() -> None:
-    path = _resolve_sample("ZG")
-    if path is None:
-        pytest.skip("ZG tagged PDF sample is not available")
+    path = require_sample(_resolve_sample("ZG"), "ZG")
 
     document, report = _extract_report(path)
     _assert_common_layout_quality(
         document, report, {str(page_index) for page_index in range(52)}
     )
-    assert report.diagnostics == ()
-    assert report.metrics["extraction_loss_diagnostic_total"] == 0
-    assert report.hard_gates == {
-        "is_marked": True,
-        "has_structure": True,
-        "has_body": True,
-        "has_heading": False,
-        "resolved_references": True,
-        "resolved_references_reported": True,
-        "xml_round_trip": True,
-        "special_character_counts_preserved": True,
-        "no_known_text_loss": True,
-    }
-    assert report.status == "fail"
+    assert_heading_only_failure(report)

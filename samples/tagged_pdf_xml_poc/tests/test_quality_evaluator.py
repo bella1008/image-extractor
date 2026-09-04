@@ -897,6 +897,26 @@ def test_each_unresolved_reference_code_fails_resolved_references_gate(
     assert report.status == "fail"
 
 
+def test_negative_page_index_is_retained_as_auditable_page_bucket() -> None:
+    document = _document(
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(ContentFragment(-1, 7, ("unresolved text",)),),
+        )
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "unresolved text", xml_round_trip_ok=True
+    )
+
+    assert report.metrics["text_quality_by_page"]["-1"] == {
+        "fragment_count": 1,
+        "character_count": 15,
+        "forbidden_xml_control_count": 0,
+    }
+
+
 def test_unresolved_tagged_xobject_fails_reference_and_text_loss_gates() -> None:
     diagnostic = Diagnostic(
         "warning",

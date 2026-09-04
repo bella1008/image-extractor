@@ -14,6 +14,8 @@ from tagged_pdf_extractor.infrastructure.pymupdf_baseline import PyMuPdfBaseline
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
+from acceptance_support import assert_heading_only_failure, require_sample
+
 
 _SAMPLE_RELATIVE_PATH = (
     Path("samples")
@@ -283,13 +285,12 @@ def _walk(children, source_roles: Counter[str]) -> int:
     return fragment_count
 
 
-@pytest.mark.skipif(PDF is None, reason="ZC tagged PDF sample is not available")
 def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     tmp_path: Path,
 ) -> None:
-    assert PDF is not None
+    pdf = require_sample(PDF, "ZC")
     reader = TaggedPdfReader()
-    document = reader.read(PDF)
+    document = reader.read(pdf)
     source_roles: Counter[str] = Counter()
     fragment_count = _walk(document.children, source_roles)
 
@@ -310,15 +311,11 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert expected_custom_headings <= source_roles.keys()
     assert {role_map[name] for name in expected_custom_headings} == {"P"}
 
-    baseline = PyMuPdfBaselineReader().read_text(PDF)
+    baseline = PyMuPdfBaselineReader().read_text(pdf)
     validation = OutputBundleWriter().validate(document)
     report = QualityEvaluator().evaluate(document, baseline, xml_round_trip_ok=True)
     assert report.metrics["heading_count"] == 0
-    assert report.hard_gates["has_heading"] is False
-    assert report.hard_gates["resolved_references"] is True
-    assert report.hard_gates["no_known_text_loss"] is True
-    assert report.hard_gates["special_character_counts_preserved"] is True
-    assert report.status == "fail"
+    assert_heading_only_failure(report)
     assert validation.semantic_join_decisions == report.join_decisions
 
     output = tmp_path / "result"
@@ -345,9 +342,11 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         "forbidden_xml_control_count": 0,
     }
     # The known ZC source places C-FRA fragments on PDF page index 1.
-    assert page_quality["1"]["fragment_count"] == 991
-    assert page_quality["1"]["character_count"] > 0
-    assert page_quality["1"]["forbidden_xml_control_count"] == 0
+    assert page_quality["1"] == {
+        "fragment_count": 991,
+        "character_count": 26_976,
+        "forbidden_xml_control_count": 0,
+    }
     assert report_data["metrics"]["heading_count"] == 0
     assert report_data["metrics"]["body_count"] == 1_410
     assert report_data["metrics"]["unknown_role_count"] == 0
@@ -357,7 +356,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["metrics"]["unresolved_reference_count"] == 0
     assert report_data["metrics"]["extraction_loss_diagnostic_total"] == 0
     assert report_data["join_decisions"] == list(report.join_decisions)
-    assert report_data["source_path"] == str(PDF)
+    assert report_data["source_path"] == str(pdf)
     assert report_data["language"] == document.language == "ko"
     assert report_data["marked"] is True
     assert report_data["role_map"] == [list(item) for item in document.role_map]
@@ -435,6 +434,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["metrics"]["forbidden_xml_control_count"] == 0
     assert report_data["metrics"]["forbidden_xml_control_field_count"] == 0
     assert "[CONTROL U+" not in markdown
+    assert "\u0141" not in markdown
+    assert "\u0152" not in markdown
 
     semantic_label_counts = Counter(
         re.sub(

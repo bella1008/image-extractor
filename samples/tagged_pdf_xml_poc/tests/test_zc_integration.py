@@ -341,9 +341,27 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         "( > left directional button > Settings > Support > Tips and User "
         "Guides > Open User Guide)"
     ) in markdown
-    assert markdown.count("[CONTROL U+") == report_data["metrics"][
-        "forbidden_xml_control_count"
-    ] == 608
+    assert report_data["metrics"]["forbidden_xml_control_count"] == 0
+    assert report_data["metrics"]["forbidden_xml_control_field_count"] == 0
+    assert "[CONTROL U+" not in markdown
+
+    normalized_markdown = re.sub(r"\s+", " ", markdown)
+    assert "Produit de catégorie II" in normalized_markdown
+    assert (
+        "Communiquez avec un centre de service homologué" in normalized_markdown
+    )
+    assert (
+        "Pour les modèles de 82 po, vous devrez être quatre" in normalized_markdown
+    )
+    assert (
+        "Le fait de tirer, de pousser ou de monter sur le téléviseur"
+        in normalized_markdown
+    )
+    assert (
+        "Ne jamais placer un téléviseur dans une position instable"
+        in normalized_markdown
+    )
+    assert "Wireless One Connect uniquement" in normalized_markdown
     assert _markdown_text_tokens(markdown) == _semantic_text_tokens(semantic_root)
     assert markdown.index("Before Reading This Simple User Guide") < markdown.index(
         "Dépannage"

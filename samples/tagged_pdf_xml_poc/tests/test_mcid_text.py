@@ -25,7 +25,7 @@ class FakeRunner:
                 operator, operands = value
                 on_boundary(operator, operands)
             elif kind == "text":
-                on_text(value)
+                on_text(value, None, None)
             elif kind == "xobject" and on_xobject is not None:
                 on_xobject(value)
 

@@ -138,7 +138,9 @@ class McidTextCollector:
                         )
                     )
 
-        def on_text(value: str) -> None:
+        def on_text(
+            value: str, _font_name: str | None, _font_size: float | None
+        ) -> None:
             if value and stack and stack[-1] is not None:
                 parts.setdefault(stack[-1], []).append(value)
 

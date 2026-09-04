@@ -90,6 +90,68 @@ def test_runner_reports_font_name_and_size_with_text() -> None:
     assert captured == [("Heading", "Helvetica", 12.0)]
 
 
+def _run_with_controlled_font_metadata(
+    monkeypatch, *, font_name: object, font_size: object
+) -> list[tuple[str, str | None, float | None]]:
+    page = _in_memory_page(b"BT /F1 12 Tf (Heading) Tj ET")
+    Font, _, ContentStream, NullObject = operation_module._load_pypdf_text_helpers()
+
+    class ControlledTextExtraction:
+        def initialize_extraction(
+            self, _orientations, visitor, _font_resources, _fonts
+        ) -> None:
+            self.visitor = visitor
+            self.font = SimpleNamespace(name=font_name)
+            self.text = ""
+
+        def process_operation(self, operator, _operands) -> None:
+            if operator == b"Tj":
+                self.text = "Heading"
+
+        def _flush_text(self) -> None:
+            if self.text:
+                self.visitor(self.text, None, None, None, font_size)
+                self.text = ""
+
+    monkeypatch.setattr(
+        operation_module,
+        "_load_pypdf_text_helpers",
+        lambda: (Font, ControlledTextExtraction, ContentStream, NullObject),
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, normalized_name, normalized_size: captured.append(
+            (value, normalized_name, normalized_size)
+        ),
+    )
+    return captured
+
+
+@pytest.mark.parametrize(
+    "font_size",
+    [object(), float("nan"), float("inf"), 0, -1],
+    ids=["conversion_failure", "nan", "infinity", "zero", "negative"],
+)
+def test_runner_normalizes_invalid_font_size_to_none(
+    monkeypatch, font_size: object
+) -> None:
+    captured = _run_with_controlled_font_metadata(
+        monkeypatch, font_name="Helvetica", font_size=font_size
+    )
+
+    assert captured == [("Heading", "Helvetica", None)]
+
+
+def test_runner_removes_leading_slash_from_font_name(monkeypatch) -> None:
+    captured = _run_with_controlled_font_metadata(
+        monkeypatch, font_name="/Helvetica", font_size=12
+    )
+
+    assert captured == [("Heading", "Helvetica", 12.0)]
+
+
 def test_runner_constructs_forced_bytes_content_stream_from_direct_raw_stream(
     monkeypatch,
 ) -> None:

@@ -90,6 +90,40 @@ def test_runner_reports_font_name_and_size_with_text() -> None:
     assert captured == [("Heading", "Helvetica", 12.0)]
 
 
+def test_runner_reports_effective_font_size_from_text_matrix() -> None:
+    page = _in_memory_page(
+        b"BT /F1 1 Tf 16 0 0 16 10 20 Tm (Scaled heading) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert captured == [("Scaled heading", "Helvetica", 16.0)]
+
+
+def test_runner_reports_effective_font_size_from_current_transform() -> None:
+    page = _in_memory_page(
+        b"2 0 0 2 0 0 cm BT /F1 6 Tf (Scaled body) Tj ET"
+    )
+    captured: list[tuple[str, str | None, float | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, font_name, font_size: captured.append(
+            (value, font_name, font_size)
+        ),
+    )
+
+    assert captured == [("Scaled body", "Helvetica", 12.0)]
+
+
 def _run_with_controlled_font_metadata(
     monkeypatch, *, font_name: object, font_size: object
 ) -> list[tuple[str, str | None, float | None]]:

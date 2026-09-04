@@ -41,6 +41,33 @@ def _invoke_callback(callback: Callable[..., None], *args: Any) -> None:
         raise _CallbackRaised(exc) from None
 
 
+def _effective_font_size(
+    font_size: Any, text_matrix: Any, current_matrix: Any
+) -> float | None:
+    try:
+        normalized_size = float(font_size)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(normalized_size) or normalized_size <= 0:
+        return None
+
+    try:
+        tm = [float(value) for value in text_matrix[:6]]
+        cm = [float(value) for value in current_matrix[:6]]
+        if len(tm) != 6 or len(cm) != 6:
+            raise ValueError
+        combined_c = tm[2] * cm[0] + tm[3] * cm[2]
+        combined_d = tm[2] * cm[1] + tm[3] * cm[3]
+        scale_y = math.hypot(combined_c, combined_d)
+    except (TypeError, ValueError, OverflowError, IndexError):
+        return normalized_size
+
+    effective_size = normalized_size * scale_y
+    if not math.isfinite(effective_size) or effective_size <= 0:
+        return None
+    return effective_size
+
+
 class PypdfOperationTextRunner:
     """Run pypdf text state over original page operations."""
 
@@ -96,8 +123,8 @@ class PypdfOperationTextRunner:
 
             def visitor(
                 value: str,
-                _cm: Any,
-                _tm: Any,
+                current_matrix: Any,
+                text_matrix: Any,
                 _font_resource: Any,
                 font_size: Any,
             ) -> None:
@@ -106,15 +133,9 @@ class PypdfOperationTextRunner:
                     font_name = getattr(font, "name", None)
                     if font_name is not None:
                         font_name = str(font_name).removeprefix("/")
-                    try:
-                        normalized_font_size = float(font_size)
-                    except (TypeError, ValueError, OverflowError):
-                        normalized_font_size = None
-                    if normalized_font_size is not None and (
-                        not math.isfinite(normalized_font_size)
-                        or normalized_font_size <= 0
-                    ):
-                        normalized_font_size = None
+                    normalized_font_size = _effective_font_size(
+                        font_size, text_matrix, current_matrix
+                    )
                     _invoke_callback(
                         on_text, value, font_name, normalized_font_size
                     )

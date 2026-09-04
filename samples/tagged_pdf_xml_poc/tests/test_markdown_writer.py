@@ -351,13 +351,104 @@ def test_nested_unordered_label_uses_indented_structural_bullet(
     assert "\u0152" not in markdown
 
 
+def test_decimal_marker_indents_nested_list_from_content_column(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>2.</text></label>"
+        "<list_body><text>Parent</text>"
+        "<list><list_item><text>Nested</text></list_item></list>"
+        "</list_body></list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == "2. Parent\n   - Nested\n"
+
+
+def test_long_decimal_marker_indents_nested_list_and_continuation(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>123456789.</text></label>"
+        "<list_body><text>Parent</text>"
+        "<list><list_item><text>Nested</text></list_item></list>"
+        "<text>Continuation</text></list_body>"
+        "</list_item></list>",
+    )
+
+    indentation = " " * 11
+    assert markdown.split("\n\n", 2)[2] == (
+        "123456789. Parent\n"
+        f"{indentation}- Nested\n"
+        f"{indentation}Continuation\n"
+    )
+
+
+def test_decimal_marker_keeps_promoted_heading_table_and_figure_attached(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/list[0]/list_item[0]/paragraph[1]",
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "Attached heading",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>12.</text></label>"
+        "<paragraph><text>Attached heading</text></paragraph>"
+        "<table>"
+        "<table_row><table_header><text>Name</text></table_header></table_row>"
+        "<table_row><table_cell><text>Value</text></table_cell></table_row>"
+        "</table>"
+        "<figure><text>Diagram</text></figure>"
+        "<text>Tail</text>"
+        "</list_item></list>",
+        report,
+    )
+
+    indentation = " " * 4
+    assert markdown.split("\n\n", 2)[2] == (
+        "12.\n"
+        f"{indentation}## Attached heading\n"
+        f"{indentation}| Name |\n"
+        f"{indentation}| --- |\n"
+        f"{indentation}| Value |\n"
+        f"{indentation}Diagram\n"
+        f"{indentation}Tail\n"
+    )
+
+
 @pytest.mark.parametrize(
-    "label",
-    ["2.", "1.", "1)", "(1)", "A.", "b)", "iv.", "IV)"],
+    ("label", "expected"),
+    [
+        ("2.", "2. Attach the bracket\n"),
+        ("1.", "1. Attach the bracket\n"),
+        ("1)", "1) Attach the bracket\n"),
+        ("(1)", "- (1) Attach the bracket\n"),
+        ("A.", "- A. Attach the bracket\n"),
+        ("b)", "- b) Attach the bracket\n"),
+        ("iv.", "- iv. Attach the bracket\n"),
+        ("IV)", "- IV) Attach the bracket\n"),
+        ("1", "- 1 Attach the bracket\n"),
+        ("123456789", "- 123456789 Attach the bracket\n"),
+        ("123456789.", "123456789. Attach the bracket\n"),
+        ("MMMCMXCIX)", "- MMMCMXCIX) Attach the bracket\n"),
+    ],
 )
 def test_meaningful_ordered_list_label_is_preserved_once(
     tmp_path: Path,
     label: str,
+    expected: str,
 ) -> None:
     markdown = _render(
         tmp_path,
@@ -368,8 +459,27 @@ def test_meaningful_ordered_list_label_is_preserved_once(
     )
 
     body = markdown.split("\n\n", 2)[2]
-    assert body == f"{label} Attach the bracket\n"
+    assert body == expected
     assert body.count(label) == 1
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["(1", "(1.", "1234567890", "1234567890.", "IIII.", "civil."],
+)
+def test_malformed_or_out_of_range_list_label_is_not_preserved(
+    tmp_path: Path,
+    label: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        f"<label><text>{label}</text></label>"
+        "<list_body><text>Body</text></list_body>"
+        "</list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == "- Body\n"
 
 
 @pytest.mark.parametrize("label", ["Step", "*", "\u0141", "\u0152"])
@@ -423,6 +533,48 @@ def test_multiple_direct_labels_preserve_every_ordered_token_in_source_order(
     assert body.count("A.") == 1
     assert "\u0141" not in markdown
     assert "\u0152" not in markdown
+
+
+def test_non_native_label_before_native_decimal_keeps_source_order(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>A.</text></label>"
+        "<label><text>2.</text></label>"
+        "<list_body><text>Body</text></list_body>"
+        "</list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == "- A. 2. Body\n"
+
+
+def test_nonordered_label_before_native_decimal_uses_decimal_marker(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>\u0141</text></label>"
+        "<label><text>2.</text></label>"
+        "<list_body><text>Body</text></list_body>"
+        "</list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == "2. Body\n"
+
+
+def test_labels_only_item_remains_a_valid_list_item(tmp_path: Path) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>\u0141</text></label>"
+        "<label><text>A.</text></label>"
+        "</list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == "- A.\n"
 
 
 def test_list_preserves_unexpected_direct_text(tmp_path: Path) -> None:
@@ -912,6 +1064,42 @@ def test_escapes_commonmark_block_openers_per_source_line(
     )
 
     assert f"\n{escaped}\n\nFollowing content\n" in markdown
+
+
+@pytest.mark.parametrize(
+    ("source", "escaped"),
+    [("1. text", r"1\. text"), ("1) text", r"1\) text")],
+)
+def test_escapes_only_decimal_marker_punctuation_at_top_level(
+    tmp_path: Path,
+    source: str,
+    escaped: str,
+) -> None:
+    markdown = _render(tmp_path, f"<paragraph><text>{source}</text></paragraph>")
+
+    assert markdown.split("\n\n", 2)[2] == f"{escaped}\n"
+    assert f"\\{source}" not in markdown
+
+
+@pytest.mark.parametrize(
+    ("source", "escaped"),
+    [("1. text", r"1\. text"), ("1) text", r"1\) text")],
+)
+def test_escapes_decimal_marker_punctuation_inside_list_item_body(
+    tmp_path: Path,
+    source: str,
+    escaped: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>\u0141</text></label>"
+        f"<list_body><text>{source}</text></list_body>"
+        "</list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == f"- {escaped}\n"
+    assert f"- \\{source}" not in markdown
 
 
 def test_escapes_link_reference_definition_without_changing_following_reference(

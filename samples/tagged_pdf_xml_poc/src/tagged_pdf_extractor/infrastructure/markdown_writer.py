@@ -14,10 +14,18 @@ from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
 _WHITESPACE = re.compile(r"\s+")
-_ORDERED_LABEL = re.compile(
-    r"^(?:\(?\d+[.)]?|[A-Za-z][.)]|[ivxlcdmIVXLCDM]+[.)])$"
+_NATIVE_DECIMAL_MARKER = re.compile(r"^\d{1,9}[.)]$")
+_PARENTHESIZED_NUMERIC_LABEL = re.compile(r"^\(\d{1,9}\)$")
+_BARE_NUMERIC_LABEL = re.compile(r"^\d{1,9}$")
+_ALPHABETIC_LABEL = re.compile(r"^[A-Za-z][.)]$")
+_ROMAN_LABEL = re.compile(
+    r"^(?=[MDCLXVI]+[.)]$)"
+    r"M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})"
+    r"(?:IX|IV|V?I{0,3})[.)]$",
+    re.IGNORECASE,
 )
-_MARKDOWN_LINE_PREFIX = re.compile(r"^(#{1,6}\s|>|[-+*]\s|\d+[.)]\s)")
+_MARKDOWN_LINE_PREFIX = re.compile(r"^(#{1,6}\s|>|[-+*]\s)")
+_DECIMAL_LINE_PREFIX = re.compile(r"^(\d{1,9})([.)])(?=\s)")
 _FENCED_CODE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
 _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _RAW_HTML_BLOCK_PREFIX = re.compile(
@@ -176,7 +184,7 @@ class MarkdownDocumentWriter:
             text = cls._text_value(element)
             return [cls._escape_line_prefix(text)] if text else []
         if element.tag == "list":
-            lines = cls._render_list(element, promoted, depth=0)
+            lines = cls._render_list(element, promoted, indent="")
             return ["\n".join(lines)] if lines else []
         if element.tag == "table":
             return [cls._render_table(element, promoted)]
@@ -191,7 +199,7 @@ class MarkdownDocumentWriter:
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
         *,
-        depth: int,
+        indent: str,
     ) -> list[str]:
         lines: list[str] = []
         text_parts: list[str] = []
@@ -199,7 +207,7 @@ class MarkdownDocumentWriter:
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
             if text:
-                lines.append(cls._escape_line_prefix(text))
+                lines.append(f"{indent}{cls._escape_line_prefix(text)}")
             text_parts.clear()
 
         for kind, value in cls._list_events(element, promoted):
@@ -207,10 +215,12 @@ class MarkdownDocumentWriter:
                 text_parts.append(cls._visible_text(value))
             elif kind == "list_item":
                 flush_text()
-                lines.extend(cls._render_list_item(value, promoted, depth=depth))
+                lines.extend(cls._render_list_item(value, promoted, indent=indent))
             else:
                 flush_text()
-                lines.extend(cls._render_list_block(value, promoted, depth=depth + 1))
+                lines.extend(
+                    cls._render_list_block(value, promoted, indent=f"{indent}  ")
+                )
         flush_text()
         return lines
 
@@ -220,10 +230,9 @@ class MarkdownDocumentWriter:
         item: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
         *,
-        depth: int,
+        indent: str,
     ) -> list[str]:
         lines: list[str] = []
-        text_parts: list[str] = []
         has_content = False
         marker_emitted = False
         direct_labels = tuple(
@@ -231,7 +240,14 @@ class MarkdownDocumentWriter:
             for child in cls._structural_children(item)
             if child.tag == "label"
         )
-        marker = cls._list_item_marker(direct_labels)
+        marker, source_labels = cls._analyze_list_labels(direct_labels)
+        content_labels = (
+            source_labels[1:]
+            if source_labels and marker == source_labels[0]
+            else source_labels
+        )
+        text_parts = [f"{' '.join(content_labels)} "] if content_labels else []
+        content_indent = f"{indent}{' ' * (len(marker) + 1)}"
 
         def flush_text() -> None:
             nonlocal has_content, marker_emitted
@@ -239,9 +255,9 @@ class MarkdownDocumentWriter:
             if text:
                 escaped = cls._escape_line_prefix(text)
                 if marker_emitted:
-                    lines.append(f"{'  ' * (depth + 1)}{escaped}")
+                    lines.append(f"{content_indent}{escaped}")
                 else:
-                    lines.append(f"{'  ' * depth}{marker} {escaped}")
+                    lines.append(f"{indent}{marker} {escaped}")
                     marker_emitted = True
                 has_content = True
             text_parts.clear()
@@ -249,7 +265,7 @@ class MarkdownDocumentWriter:
         def ensure_marker() -> None:
             nonlocal has_content, marker_emitted
             if not marker_emitted:
-                lines.append(f"{'  ' * depth}{marker}")
+                lines.append(f"{indent}{marker}")
                 marker_emitted = True
                 has_content = True
 
@@ -261,11 +277,15 @@ class MarkdownDocumentWriter:
             else:
                 flush_text()
                 ensure_marker()
-                lines.extend(cls._render_list_block(value, promoted, depth=depth + 1))
+                lines.extend(
+                    cls._render_list_block(
+                        value, promoted, indent=content_indent
+                    )
+                )
                 has_content = True
         flush_text()
         if not has_content:
-            lines.append(f"{'  ' * depth}{marker}")
+            lines.append(f"{indent}{marker}")
         return lines
 
     @classmethod
@@ -293,16 +313,33 @@ class MarkdownDocumentWriter:
     @classmethod
     def _list_marker(cls, label_text: str) -> str:
         normalized = cls._normalize_whitespace(label_text)
-        return normalized if _ORDERED_LABEL.fullmatch(normalized) else "-"
+        ordered = any(
+            pattern.fullmatch(normalized)
+            for pattern in (
+                _NATIVE_DECIMAL_MARKER,
+                _PARENTHESIZED_NUMERIC_LABEL,
+                _BARE_NUMERIC_LABEL,
+                _ALPHABETIC_LABEL,
+                _ROMAN_LABEL,
+            )
+        )
+        return normalized if ordered else "-"
 
     @classmethod
-    def _list_item_marker(cls, labels: Iterable[ET.Element]) -> str:
-        ordered_labels = [
+    def _analyze_list_labels(
+        cls, labels: Iterable[ET.Element]
+    ) -> tuple[str, tuple[str, ...]]:
+        source_labels = tuple(
             marker
             for label in labels
             if (marker := cls._list_marker(cls._element_text(label))) != "-"
-        ]
-        return " ".join(ordered_labels) if ordered_labels else "-"
+        )
+        marker = (
+            source_labels[0]
+            if source_labels and _NATIVE_DECIMAL_MARKER.fullmatch(source_labels[0])
+            else "-"
+        )
+        return marker, source_labels
 
     @classmethod
     def _render_list_block(
@@ -310,13 +347,12 @@ class MarkdownDocumentWriter:
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
         *,
-        depth: int,
+        indent: str,
     ) -> list[str]:
         if element.tag == "list":
-            return cls._render_list(element, promoted, depth=depth)
-        indentation = "  " * depth
+            return cls._render_list(element, promoted, indent=indent)
         return [
-            f"{indentation}{line}"
+            f"{indent}{line}"
             for block in cls._render_element(element, promoted)
             for line in block.splitlines()
         ]
@@ -557,9 +593,9 @@ class MarkdownDocumentWriter:
             else ()
         )
         if direct_labels:
-            marker = cls._list_item_marker(direct_labels)
-            if marker != "-":
-                yield f"{marker} "
+            _, source_labels = cls._analyze_list_labels(direct_labels)
+            if source_labels:
+                yield f"{' '.join(source_labels)} "
 
         excluded = frozenset(direct_labels)
         for child in cls._structural_children(element):
@@ -619,6 +655,12 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _escape_line_prefix(cls, value: str) -> str:
+        decimal = _DECIMAL_LINE_PREFIX.match(value)
+        if decimal is not None:
+            return (
+                f"{decimal.group(1)}\\{decimal.group(2)}"
+                f"{value[decimal.end():]}"
+            )
         if (
             _MARKDOWN_LINE_PREFIX.match(value)
             or _FENCED_CODE_PREFIX.match(value)

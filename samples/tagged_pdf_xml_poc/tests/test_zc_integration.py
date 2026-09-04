@@ -51,12 +51,17 @@ PDF = _resolve_zc_pdf()
 README = Path(__file__).parents[1] / "README.md"
 
 _TEXT_TOKEN = re.compile(r"\[CONTROL U\+[0-9A-F]{4,6}\]|\w+|[^\w\s]")
-_ORDERED_LIST_LABEL = re.compile(
-    r"^(?:\(?\d+[.)]?|[A-Za-z][.)]|[ivxlcdmIVXLCDM]+[.)])$"
-)
+_ZC_NONORDERED_LABEL_GLYPHS = frozenset({"\u2022", "\u2013"})
 _HEADING_PREFIX = re.compile(r"^#{2,6}\s+")
 _TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
 _FALLBACK_TABLE_ROW = re.compile(r"^-\s+행\s+\d+:\s*")
+_ESCAPED_DECIMAL_PREFIX = re.compile(r"^(\d{1,9})\\([.)])(?=\s)")
+_BLOCK_PREFIX = re.compile(r"^(?:#{1,6}\s|>|[-+*]\s)")
+_FENCE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
+_THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
+_RAW_HTML_PREFIX = re.compile(
+    r"^<(?:!--|[!?]|/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]))"
+)
 
 
 def _visible_source_text(value: str) -> str:
@@ -86,7 +91,7 @@ def _semantic_review_tokens(root: ET.Element) -> list[str]:
                     for text in label.iter("text")
                 ),
             ).strip()
-            if not _ORDERED_LIST_LABEL.fullmatch(label_text):
+            if label_text in _ZC_NONORDERED_LABEL_GLYPHS:
                 suppressed_label_texts.update(label.iter("text"))
 
     return [
@@ -118,14 +123,69 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
         if value.startswith("- "):
             value = value[2:]
         value = _HEADING_PREFIX.sub("", value)
-        if value.startswith("\\"):
-            value = value[1:]
+        value = _undo_writer_prefix_escape(value)
         source_lines.append(value)
     return _TEXT_TOKEN.findall("\n".join(source_lines))
 
 
+def _undo_writer_prefix_escape(value: str) -> str:
+    decimal = _ESCAPED_DECIMAL_PREFIX.match(value)
+    if decimal is not None:
+        return f"{decimal.group(1)}{decimal.group(2)}{value[decimal.end():]}"
+    if not value.startswith("\\"):
+        return value
+
+    source = value[1:]
+    if (
+        _BLOCK_PREFIX.match(source)
+        or _FENCE_PREFIX.match(source)
+        or _THEMATIC_BREAK.fullmatch(source)
+        or _RAW_HTML_PREFIX.match(source)
+        or _starts_reference_definition(source)
+    ):
+        return source
+    return value
+
+
+def _starts_reference_definition(value: str) -> bool:
+    if not value.startswith("["):
+        return False
+    index = 1
+    while index < len(value):
+        character = value[index]
+        if character in "\r\n":
+            return False
+        if character == "\\":
+            index += 2
+            continue
+        if character == "]":
+            return index > 1 and value[index + 1 : index + 2] == ":"
+        index += 1
+    return False
+
+
 def _candidate_heading_lines(markdown: str) -> Counter[tuple[str, str]]:
     return Counter(re.findall(r"(?m)^(#{2,6})\s+(.+?)\s*$", markdown))
+
+
+def test_markdown_token_oracle_reverses_only_writer_prefix_escapes() -> None:
+    markdown = (
+        "# Header\n\n- metadata\n\n"
+        "\\literal\n"
+        "1\\. decimal\n"
+        "\\* source asterisk\n"
+    )
+
+    assert _markdown_text_tokens(markdown) == [
+        "\\",
+        "literal",
+        "1",
+        ".",
+        "decimal",
+        "*",
+        "source",
+        "asterisk",
+    ]
 
 
 def _assert_candidate_headings(
@@ -375,10 +435,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert report_data["metrics"]["forbidden_xml_control_count"] == 0
     assert report_data["metrics"]["forbidden_xml_control_field_count"] == 0
     assert "[CONTROL U+" not in markdown
-    assert "\u0141" not in markdown
-    assert "\u0152" not in markdown
 
-    semantic_labels = {
+    semantic_label_counts = Counter(
         re.sub(
             r"\s+",
             " ",
@@ -389,10 +447,15 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         for item in semantic_root.iter("list_item")
         for label in item
         if label.tag == "label"
-    }
+    )
     # After byte-safe Type0 decoding, this sample exposes the source list glyphs
     # as bullet and en dash. Markdown suppresses them by role; XML keeps them.
-    assert {"\u2022", "\u2013"} <= semantic_labels
+    assert semantic_label_counts["\u2022"] == 184
+    assert semantic_label_counts["\u2013"] == 38
+    assert not re.search(
+        r"(?m)^\s*(?:-|\d{1,9}[.)])\s+[\u2022\u2013](?:\s|$)",
+        markdown,
+    )
 
     normalized_markdown = re.sub(r"\s+", " ", markdown)
     assert "Produit de catégorie II" in normalized_markdown

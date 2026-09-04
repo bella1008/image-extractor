@@ -57,6 +57,29 @@ def _page_with_xobject(name: object, subtype: object = ...) -> dict:
     }
 
 
+def _page_with_inherited_xobject(name: str, subtype: str):
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    del page["/Resources"]
+
+    xobject = DecodedStreamObject()
+    xobject.set_data(b"")
+    xobject[NameObject("/Type")] = NameObject("/XObject")
+    xobject[NameObject("/Subtype")] = NameObject(subtype)
+    xobject_reference = writer._add_object(xobject)
+    resources = DictionaryObject(
+        {
+            NameObject("/XObject"): DictionaryObject(
+                {NameObject(name): xobject_reference}
+            )
+        }
+    )
+    page["/Parent"].get_object()[NameObject("/Resources")] = writer._add_object(
+        resources
+    )
+    return page
+
+
 def _font_resources() -> DictionaryObject:
     return DictionaryObject(
         {
@@ -291,6 +314,46 @@ def test_resolves_named_indirect_xobject_resources() -> None:
     )
 
     assert result.diagnostics == ()
+
+
+def test_resolves_indirect_image_xobject_from_inherited_page_resources() -> None:
+    page = _page_with_inherited_xobject("/Im0", "/Image")
+
+    result = _collect_xobject(page, NameObject("/Im0"))
+
+    assert result.diagnostics == ()
+
+
+def test_reports_indirect_form_xobject_from_inherited_page_resources() -> None:
+    page = _page_with_inherited_xobject("/Fm0", "/Form")
+
+    result = _collect_xobject(page, NameObject("/Fm0"))
+
+    assert result.diagnostics == (
+        Diagnostic(
+            severity="warning",
+            code="tagged_form_xobject_unsupported",
+            message="Form XObject under tagged content is unsupported",
+            context={"page_index": 6, "operand_repr": "'/Fm0'"},
+        ),
+    )
+
+
+def test_malformed_inherited_resources_lookup_is_reported_as_unresolved() -> None:
+    class MalformedInheritedPage(dict):
+        def get_inherited(self, *, key: str, default: object = None) -> object:
+            raise ValueError("broken parent tree")
+
+    result = _collect_xobject(MalformedInheritedPage(), "/Im0")
+
+    assert result.diagnostics == (
+        Diagnostic(
+            severity="warning",
+            code="tagged_xobject_unresolved",
+            message="Tagged XObject reference could not be resolved",
+            context={"page_index": 6, "operand_repr": "'/Im0'"},
+        ),
+    )
 
 
 def test_restores_parent_mcid_after_nested_direct_mcid() -> None:

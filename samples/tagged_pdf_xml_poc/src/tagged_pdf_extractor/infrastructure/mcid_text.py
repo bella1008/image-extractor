@@ -40,7 +40,16 @@ def _resolve_properties(page: Any, operand: Any) -> Any:
 
 
 def _resolve_xobject(page: Any, operand: Any) -> Any:
-    resources = _mapping_value(page, "/Resources")
+    get_inherited = getattr(page, "get_inherited", None)
+    if callable(get_inherited):
+        try:
+            resources = _get_object(
+                get_inherited(key="/Resources", default=None)
+            )
+        except Exception:
+            resources = None
+    else:
+        resources = _mapping_value(page, "/Resources")
     xobjects = _mapping_value(resources, "/XObject")
     xobject = _mapping_value(xobjects, operand)
     if not callable(getattr(xobject, "get", None)):

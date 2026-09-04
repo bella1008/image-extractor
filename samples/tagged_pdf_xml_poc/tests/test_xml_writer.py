@@ -15,6 +15,83 @@ from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
 
 
+def _promotion(
+    child_path: tuple[int, ...], title: str = "Troubleshooting"
+) -> HeadingPromotion:
+    return HeadingPromotion(
+        child_path=child_path,
+        level=2,
+        label="03",
+        title=title,
+        series_index=0,
+        heading_font_size=16.0,
+        body_font_size=7.0,
+        font_size_ratio=16 / 7,
+        promotion_reason="numbered_chapter_structure_sequence_typography",
+    )
+
+
+def _list_item() -> StructureElement:
+    return StructureElement(
+        "LI",
+        "list_item",
+        children=(ContentFragment(0, 1, ("03 Troubleshooting",)),),
+    )
+
+
+def test_semantic_writer_rejects_duplicate_promotion_paths(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (_list_item(),),
+        heading_promotions=(_promotion((0,)), _promotion((0,))),
+    )
+
+    with pytest.raises(ValueError, match="duplicate heading promotion path"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+def test_semantic_writer_rejects_unresolved_promotion_path(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (_list_item(),),
+        heading_promotions=(_promotion((1,)),),
+    )
+
+    with pytest.raises(ValueError, match="unresolved heading promotion path"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+@pytest.mark.parametrize(
+    "target",
+    (
+        StructureElement("P", "paragraph"),
+        ContentFragment(0, 1, ("not an element",)),
+    ),
+    ids=("wrong-semantic-role", "content-fragment"),
+)
+def test_semantic_writer_rejects_wrong_promotion_target(
+    tmp_path: Path,
+    target: StructureElement | ContentFragment,
+) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (target,),
+        heading_promotions=(_promotion((0,)),),
+    )
+
+    with pytest.raises(ValueError, match="must target a list_item StructureElement"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
 def test_numbered_heading_promotion_changes_only_semantic_xml(
     tmp_path: Path,
 ) -> None:
@@ -43,19 +120,7 @@ def test_numbered_heading_promotion_changes_only_semantic_xml(
         (),
         (StructureElement("L", "list", children=(item,)),),
         heading_promotions=(
-            HeadingPromotion(
-                child_path=(0, 0),
-                level=2,
-                label="03",
-                title="Troubleshooting and Maintenance",
-                series_index=0,
-                heading_font_size=16.0,
-                body_font_size=7.0,
-                font_size_ratio=16 / 7,
-                promotion_reason=(
-                    "numbered_chapter_structure_sequence_typography"
-                ),
-            ),
+            _promotion((0, 0), "Troubleshooting and Maintenance"),
         ),
     )
     raw_path = tmp_path / "raw.xml"

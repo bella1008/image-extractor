@@ -7,6 +7,9 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from tagged_pdf_extractor.domain.heading_promotion_validation import (
+    HeadingPromotionTracker,
+)
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
@@ -182,10 +185,7 @@ class XmlDocumentWriter:
         root = ET.Element("document")
         expected_parts: list[str] = []
         decisions: list[dict[str, object]] = []
-        promotion_by_path = {
-            promotion.child_path: promotion
-            for promotion in document.heading_promotions
-        }
+        promotion_tracker = HeadingPromotionTracker(document.heading_promotions)
 
         for index, child in enumerate(document.children):
             self._append_semantic_child(
@@ -194,11 +194,12 @@ class XmlDocumentWriter:
                 parent_path="",
                 parent_child_path=(),
                 child_index=index,
-                promotion_by_path=promotion_by_path,
+                promotion_tracker=promotion_tracker,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
 
+        promotion_tracker.assert_all_applied()
         self._write_and_verify(
             root,
             path,
@@ -240,10 +241,12 @@ class XmlDocumentWriter:
         parent_path: str,
         parent_child_path: tuple[int, ...],
         child_index: int,
-        promotion_by_path: dict[tuple[int, ...], HeadingPromotion],
+        promotion_tracker: HeadingPromotionTracker,
         expected_parts: list[str],
         decisions: list[dict[str, object]],
     ) -> None:
+        child_path = (*parent_child_path, child_index)
+        promotion = promotion_tracker.apply(child_path, child)
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)
             text_element = ET.SubElement(
@@ -266,8 +269,6 @@ class XmlDocumentWriter:
                 )
             return
 
-        child_path = (*parent_child_path, child_index)
-        promotion = promotion_by_path.get(child_path)
         tag = (
             "heading"
             if promotion is not None
@@ -296,7 +297,7 @@ class XmlDocumentWriter:
                 parent_path=element_path,
                 parent_child_path=child_path,
                 child_index=index,
-                promotion_by_path=promotion_by_path,
+                promotion_tracker=promotion_tracker,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )

@@ -176,7 +176,7 @@ class MarkdownDocumentWriter:
         if element.tag == "heading" and cls._has_mixed_content_descendant(
             element, promoted
         ):
-            return cls._render_mixed_content(element, promoted)
+            return cls._render_mixed_heading(element, promoted)
         if element.tag == "heading":
             level = max(1, min(int(element.get("level", "1")), 6))
             text = cls._element_text(element)
@@ -571,6 +571,37 @@ class MarkdownDocumentWriter:
             blocks.extend(cls._render_element(value, promoted))
         flush_text()
         flush_deferred_figures()
+        return blocks
+
+    @classmethod
+    def _render_mixed_heading(
+        cls,
+        element: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> list[str]:
+        blocks: list[str] = []
+        text_parts: list[str] = []
+        heading_emitted = False
+        level = max(1, min(int(element.get("level", "1")), 6))
+
+        def flush_text() -> None:
+            nonlocal heading_emitted
+            text = cls._join_text_parts(text_parts)
+            if text:
+                if heading_emitted:
+                    blocks.append(cls._escape_line_prefix(text))
+                else:
+                    blocks.append(f"{'#' * level} {text}")
+                    heading_emitted = True
+            text_parts.clear()
+
+        for kind, value in cls._mixed_content_events(element, promoted):
+            if kind == "text":
+                text_parts.append(cls._visible_text(value))
+                continue
+            flush_text()
+            blocks.extend(cls._render_element(value, promoted))
+        flush_text()
         return blocks
 
     @classmethod

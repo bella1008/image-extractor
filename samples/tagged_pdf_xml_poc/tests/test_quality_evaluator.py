@@ -283,6 +283,13 @@ def test_numbered_promotions_are_counted_and_reported_as_heading_evidence() -> N
 
     assert report.metrics["heading_count"] == 2
     assert report.metrics["numbered_heading_promotion_count"] == 2
+    assert report.metrics["numbered_heading_promotion_count"] == len(
+        [
+            entry
+            for entry in report.heading_hierarchy
+            if entry["classification"] == "numbered_chapter_promotion"
+        ]
+    )
     assert report.hard_gates["has_heading"] is True
     assert report.heading_hierarchy == (
         {
@@ -340,8 +347,10 @@ def test_one_valid_numbered_heading_series_has_consistent_count_gate() -> None:
 
 
 def test_mismatched_numbered_heading_series_counts_fail_without_hiding_promotions() -> None:
+    base = _passing_document()
     document = replace(
-        _passing_document(),
+        base,
+        children=(base.children[0], _numbered_item("01", "Body")),
         heading_promotions=(_promotion((1,), "01", "Body"),),
         numbered_heading_series=(
             NumberedHeadingSeriesAudit(0, ("01", "02"), True),
@@ -351,7 +360,7 @@ def test_mismatched_numbered_heading_series_counts_fail_without_hiding_promotion
     )
 
     report = QualityEvaluator().evaluate(
-        document, "Heading Body", xml_round_trip_ok=True
+        document, "Heading 01 Body", xml_round_trip_ok=True
     )
 
     assert report.metrics["numbered_heading_promotion_count"] == 1
@@ -419,13 +428,15 @@ def test_no_numbered_heading_candidates_leave_new_gates_open() -> None:
 
 
 def test_actual_heading_and_numbered_promotion_count_once_each() -> None:
+    base = _passing_document()
     document = replace(
-        _passing_document(),
+        base,
+        children=(base.children[0], _numbered_item("01", "Body")),
         heading_promotions=(_promotion((1,), "01", "Body"),),
     )
 
     report = QualityEvaluator().evaluate(
-        document, "Heading Body", xml_round_trip_ok=True
+        document, "Heading 01 Body", xml_round_trip_ok=True
     )
 
     assert report.metrics["heading_count"] == 2
@@ -435,19 +446,28 @@ def test_actual_heading_and_numbered_promotion_count_once_each() -> None:
     ]
 
 
-def test_promotion_does_not_double_count_an_actual_heading() -> None:
+def test_evaluator_rejects_promotion_targeting_an_actual_heading() -> None:
     document = replace(
         _passing_document(),
         heading_promotions=(_promotion((0,), "01", "Heading"),),
     )
 
-    report = QualityEvaluator().evaluate(
-        document, "Heading Body", xml_round_trip_ok=True
+    with pytest.raises(ValueError, match="must target a list_item StructureElement"):
+        QualityEvaluator().evaluate(
+            document, "Heading Body", xml_round_trip_ok=True
+        )
+
+
+def test_evaluator_rejects_unresolved_promotion_path() -> None:
+    document = replace(
+        _passing_document(),
+        heading_promotions=(_promotion((9,), "01", "Missing"),),
     )
 
-    assert report.metrics["heading_count"] == 1
-    assert report.metrics["numbered_heading_promotion_count"] == 1
-    assert report.heading_hierarchy[0]["classification"] == "heading"
+    with pytest.raises(ValueError, match="unresolved heading promotion path"):
+        QualityEvaluator().evaluate(
+            document, "Heading Body", xml_round_trip_ok=True
+        )
 
 
 def test_comparison_normalizes_nfc_and_whitespace_without_mutating_raw_text() -> None:

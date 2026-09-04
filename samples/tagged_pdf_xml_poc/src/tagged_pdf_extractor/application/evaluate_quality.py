@@ -8,10 +8,12 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from tagged_pdf_extractor.domain.heading_promotion_validation import (
+    HeadingPromotionTracker,
+)
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
-    HeadingPromotion,
     QualityReport,
     StructureElement,
     TaggedDocument,
@@ -171,11 +173,9 @@ class QualityEvaluator:
             traversal.count_text_field(source_role)
             traversal.count_text_field(mapped_role)
 
-        promotion_by_path = {
-            promotion.child_path: promotion
-            for promotion in document.heading_promotions
-        }
-        self._walk(document.children, "", (), promotion_by_path, traversal)
+        promotion_tracker = HeadingPromotionTracker(document.heading_promotions)
+        self._walk(document.children, "", (), promotion_tracker, traversal)
+        promotion_tracker.assert_all_applied()
         tagged_text = " ".join(
             fragment for fragment in traversal.tagged_fragments if fragment
         )
@@ -249,9 +249,7 @@ class QualityEvaluator:
             "element_count": traversal.element_count,
             "fragment_count": traversal.fragment_count,
             "heading_count": traversal.heading_count,
-            "numbered_heading_promotion_count": len(
-                document.heading_promotions
-            ),
+            "numbered_heading_promotion_count": promotion_tracker.applied_count,
             "numbered_heading_series": [
                 {
                     "series_index": audit.series_index,
@@ -311,12 +309,13 @@ class QualityEvaluator:
         children: tuple[StructureElement | ContentFragment, ...],
         parent_path: str,
         parent_child_path: tuple[int, ...],
-        promotion_by_path: dict[tuple[int, ...], HeadingPromotion],
+        promotion_tracker: HeadingPromotionTracker,
         traversal: _Traversal,
     ) -> bool:
         has_descendant_text = False
         for child_index, child in enumerate(children):
             child_path = (*parent_child_path, child_index)
+            promotion = promotion_tracker.apply(child_path, child)
             if isinstance(child, ContentFragment):
                 traversal.fragment_count += 1
                 traversal.count_fragment(child)
@@ -337,7 +336,6 @@ class QualityEvaluator:
 
             traversal.element_count += 1
             traversal.source_role_counts[child.source_role] += 1
-            promotion = promotion_by_path.get(child_path)
             is_heading = child.semantic_role == "heading"
             is_promoted_heading = promotion is not None and not is_heading
             traversal.heading_count += is_heading or is_promoted_heading
@@ -362,7 +360,7 @@ class QualityEvaluator:
                 child.children,
                 element_path,
                 child_path,
-                promotion_by_path,
+                promotion_tracker,
                 traversal,
             )
             if heading_entry_index is not None:

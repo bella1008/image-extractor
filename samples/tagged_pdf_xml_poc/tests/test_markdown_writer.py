@@ -70,6 +70,54 @@ def test_actual_heading_directly_under_list_is_a_heading_not_a_list_item(
     assert "1. Normal step" in markdown
 
 
+def test_mixed_heading_keeps_title_prefix_and_following_blocks_in_order(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <heading level="2">
+          <text>03 Troubleshooting</text>
+          <list><list_item><text>Nested step</text></list_item></list>
+          <table>
+            <table_row><table_header><text>Key</text></table_header></table_row>
+            <table_row><table_cell><text>Value</text></table_cell></table_row>
+          </table>
+          <figure><text></text></figure>
+          <text>Closing note</text>
+        </heading>
+        """,
+    )
+
+    assert markdown.count("03 Troubleshooting") == 1
+    assert "## 03 Troubleshooting" in markdown
+    assert markdown.index("## 03 Troubleshooting") < markdown.index("- Nested step")
+    assert markdown.index("- Nested step") < markdown.index("| Key |")
+    assert markdown.index("| Key |") < markdown.index("[그림: 텍스트 없음]")
+    assert markdown.index("[그림: 텍스트 없음]") < markdown.index("Closing note")
+
+
+def test_mixed_heading_preserves_block_before_first_inline_title(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <heading level="2">
+          <figure><text></text></figure>
+          <text>03 Troubleshooting</text>
+          <list><list_item><text>Nested step</text></list_item></list>
+        </heading>
+        """,
+    )
+
+    assert markdown.count("03 Troubleshooting") == 1
+    assert markdown.index("[그림: 텍스트 없음]") < markdown.index(
+        "## 03 Troubleshooting"
+    )
+    assert markdown.index("## 03 Troubleshooting") < markdown.index("- Nested step")
+
+
 def test_promotes_only_candidates_in_order_using_absolute_child_indexes(
     tmp_path: Path,
 ) -> None:

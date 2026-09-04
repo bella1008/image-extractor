@@ -48,7 +48,13 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 
 입력은 PDF 원본 그대로 사용합니다. Acrobat에서 XML로 먼저 변환할 필요가 없으므로, 작업자가 파일을 한 번 더 가공하는 단계도 없습니다.
 
-통합 테스트는 `TAGGED_PDF_ZC_SAMPLE`, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 샘플을 찾습니다. 모두 없을 때만 샘플 통합 테스트를 명시적으로 건너뜁니다.
+통합 테스트의 PDF 위치를 직접 지정해야 할 때는 다음 환경변수를 사용합니다.
+
+- `TAGGED_PDF_ZC_SAMPLE`: ZC 기준 PDF
+- `TAGGED_PDF_ZA_SAMPLE`: ZA 레이아웃 회귀 PDF
+- `TAGGED_PDF_ZG_SAMPLE`: ZG BOOK 레이아웃 회귀 PDF
+
+각 테스트는 해당 환경변수, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 자기 샘플을 찾습니다. ZA 또는 ZG 같은 선택적 회귀 샘플이 없으면 그 샘플의 테스트만 독립적으로 건너뛰며, 다른 샘플 테스트는 계속 실행합니다.
 
 종료 코드는 다음과 같습니다.
 

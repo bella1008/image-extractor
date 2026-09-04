@@ -26,6 +26,7 @@ _SAMPLES = {
         / "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf",
     ),
 }
+_README = Path(__file__).parents[1] / "README.md"
 
 
 def _resolve_sample(
@@ -66,34 +67,66 @@ def _extract_report(path: Path):
     return document, report
 
 
-@pytest.mark.parametrize("sample", ("ZA", "ZG"))
-def test_tagged_layout_retains_structure_and_clean_page_text(sample: str) -> None:
-    path = _resolve_sample(sample)
-    if path is None:
-        pytest.skip(f"{sample} tagged PDF sample is not available")
+def _assert_complete_page_quality(page_quality, expected_pages: set[str]) -> None:
+    assert set(page_quality) == expected_pages
+    for page_index in sorted(expected_pages, key=int):
+        metric = page_quality[page_index]
+        assert metric["fragment_count"] > 0
+        assert metric["character_count"] > 0
+        assert metric["forbidden_xml_control_count"] == 0
 
-    document, report = _extract_report(path)
 
+def _assert_common_layout_quality(document, report, expected_pages: set[str]) -> None:
     assert document.marked is True
     assert report.metrics["unresolved_mcid_count"] == 0
     assert report.metrics["forbidden_xml_control_count"] == 0
     assert report.metrics["element_count"] > 0
     assert report.metrics["body_count"] > 0
-
-    page_quality = report.metrics["text_quality_by_page"]
-    assert page_quality
-    assert all(
-        metric["forbidden_xml_control_count"] == 0
-        for metric in page_quality.values()
+    _assert_complete_page_quality(
+        report.metrics["text_quality_by_page"], expected_pages
     )
 
 
-def test_zg_keeps_form_xobject_text_loss_diagnostics_visible() -> None:
+def test_page_quality_rejects_a_missing_expected_page() -> None:
+    page_quality = {
+        "0": {
+            "fragment_count": 1,
+            "character_count": 1,
+            "forbidden_xml_control_count": 0,
+        }
+    }
+
+    with pytest.raises(AssertionError):
+        _assert_complete_page_quality(page_quality, {"0", "1"})
+
+
+def test_readme_documents_sample_overrides_and_independent_skips() -> None:
+    readme = _README.read_text(encoding="utf-8")
+
+    assert "TAGGED_PDF_ZC_SAMPLE" in readme
+    assert "TAGGED_PDF_ZA_SAMPLE" in readme
+    assert "TAGGED_PDF_ZG_SAMPLE" in readme
+    assert "그 샘플의 테스트만 독립적으로 건너뛰" in readme
+
+
+def test_za_retains_complete_structure_and_clean_page_text() -> None:
+    path = _resolve_sample("ZA")
+    if path is None:
+        pytest.skip("ZA tagged PDF sample is not available")
+
+    document, report = _extract_report(path)
+    _assert_common_layout_quality(document, report, {"0", "1"})
+
+
+def test_zg_retains_all_pages_and_keeps_form_xobject_diagnostics_visible() -> None:
     path = _resolve_sample("ZG")
     if path is None:
         pytest.skip("ZG tagged PDF sample is not available")
 
-    _, report = _extract_report(path)
+    document, report = _extract_report(path)
+    _assert_common_layout_quality(
+        document, report, {str(page_index) for page_index in range(52)}
+    )
     diagnostics = [
         diagnostic
         for diagnostic in report.diagnostics

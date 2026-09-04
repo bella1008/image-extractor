@@ -492,6 +492,66 @@ def test_runner_propagates_callback_exception_without_internal_context(
     )
 
 
+def test_runner_preserves_explicit_callback_exception_chain() -> None:
+    page = _in_memory_page(b"BT /F1 12 Tf (Text) Tj ET")
+    original_cause = ValueError("original explicit cause")
+    expected = CallbackError("explicit callback failure")
+
+    def on_text(_value: str) -> None:
+        try:
+            raise original_cause
+        except ValueError as cause:
+            raise expected from cause
+
+    with pytest.raises(CallbackError) as raised:
+        PypdfOperationTextRunner().run(
+            page, on_boundary=lambda *_: None, on_text=on_text
+        )
+
+    assert raised.value is expected
+    assert raised.value.__cause__ is original_cause
+    assert raised.value.__context__ is original_cause
+    assert raised.value.__suppress_context__ is True
+    traceback_names = [
+        frame.name for frame in traceback.extract_tb(raised.value.__traceback__)
+    ]
+    assert traceback_names[-1] == "on_text"
+    formatted = "".join(traceback.format_exception(raised.value))
+    assert "original explicit cause" in formatted
+    assert "explicit callback failure" in formatted
+    assert "_CallbackRaised" not in formatted
+
+
+def test_runner_preserves_implicit_callback_exception_context() -> None:
+    page = _in_memory_page(b"/P << /MCID 2 >> BDC EMC")
+    original_context = ValueError("original implicit context")
+    expected = CallbackError("implicit callback failure")
+
+    def on_boundary(_operator: bytes, _operands: list[object]) -> None:
+        try:
+            raise original_context
+        except ValueError:
+            raise expected
+
+    with pytest.raises(CallbackError) as raised:
+        PypdfOperationTextRunner().run(
+            page, on_boundary=on_boundary, on_text=lambda _value: None
+        )
+
+    assert raised.value is expected
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is original_context
+    assert raised.value.__suppress_context__ is False
+    traceback_names = [
+        frame.name for frame in traceback.extract_tb(raised.value.__traceback__)
+    ]
+    assert traceback_names[-1] == "on_boundary"
+    formatted = "".join(traceback.format_exception(raised.value))
+    assert "original implicit context" in formatted
+    assert "implicit callback failure" in formatted
+    assert "_CallbackRaised" not in formatted
+
+
 @pytest.mark.parametrize("expected", [KeyboardInterrupt(), SystemExit(7)])
 def test_runner_propagates_callback_base_exception_unchanged(
     expected: BaseException,

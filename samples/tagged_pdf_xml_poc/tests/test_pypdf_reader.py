@@ -85,7 +85,7 @@ def test_translates_decoder_failure_at_page_boundary(
         TaggedPdfReader(FailingCollector()).read(tmp_path / "decoder-failure.pdf")
 
     assert str(raised.value) == (
-        "Failed to decode tagged text on page 0: decoder state failed"
+        "Failed to decode tagged text on page index 0: decoder state failed"
     )
     assert raised.value.__cause__ is decoder_error
     assert not hasattr(raised.value, "diagnostics")

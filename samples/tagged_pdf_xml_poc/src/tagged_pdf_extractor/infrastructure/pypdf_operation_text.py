@@ -26,6 +26,10 @@ def _load_pypdf_text_helpers() -> tuple[Any, Any, Any]:
 class _CallbackRaised(Exception):
     def __init__(self, error: BaseException) -> None:
         self.error = error
+        self.cause = error.__cause__
+        self.context = error.__context__
+        self.suppress_context = error.__suppress_context__
+        self.traceback = error.__traceback__
 
 
 def _invoke_callback(callback: Callable[..., None], *args: Any) -> None:
@@ -46,7 +50,7 @@ class PypdfOperationTextRunner:
         on_text: Callable[[str], None],
         on_xobject: Callable[[Any], None] | None = None,
     ) -> None:
-        callback_error: BaseException | None = None
+        callback_failure: _CallbackRaised | None = None
         try:
             Font, TextExtraction, ContentStream = _load_pypdf_text_helpers()
             resources = page.get_inherited(key="/Resources", default=None)
@@ -131,7 +135,7 @@ class PypdfOperationTextRunner:
 
             extractor._flush_text()
         except _CallbackRaised as exc:
-            callback_error = exc.error
+            callback_failure = exc
         except PypdfOperationTextError:
             raise
         except Exception as exc:
@@ -139,6 +143,10 @@ class PypdfOperationTextRunner:
                 "Unable to run pypdf text extraction operations"
             ) from exc
 
-        if callback_error is not None:
-            callback_error.__context__ = None
-            raise callback_error from None
+        if callback_failure is not None:
+            callback_error = callback_failure.error
+            callback_error.__cause__ = callback_failure.cause
+            callback_error.__context__ = callback_failure.context
+            callback_error.__suppress_context__ = callback_failure.suppress_context
+            callback_error.__traceback__ = callback_failure.traceback
+            raise callback_error

@@ -101,7 +101,7 @@ class TaggedPdfReader:
                 result = self.collector.collect(page, index)
             except PypdfOperationTextError as exc:
                 raise TaggedPdfError(
-                    f"Failed to decode tagged text on page {index}: {exc}"
+                    f"Failed to decode tagged text on page index {index}: {exc}"
                 ) from exc
             mcid_text[index] = result.parts_by_mcid
             seen_mcids[index] = result.seen_mcids

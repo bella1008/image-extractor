@@ -62,7 +62,7 @@ def test_cli_returns_two_for_reader_translated_decoder_failure(
 
     decoder_error = PypdfOperationTextError("decoder state failed")
     translated = TaggedPdfError(
-        "Failed to decode tagged text on page 0: decoder state failed"
+        "Failed to decode tagged text on page index 0: decoder state failed"
     )
     translated.__cause__ = decoder_error
 
@@ -77,7 +77,7 @@ def test_cli_returns_two_for_reader_translated_decoder_failure(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        "error: Failed to decode tagged text on page 0: decoder state failed\n"
+        "error: Failed to decode tagged text on page index 0: decoder state failed\n"
     )
     assert "Traceback" not in captured.err
     assert not output.exists()

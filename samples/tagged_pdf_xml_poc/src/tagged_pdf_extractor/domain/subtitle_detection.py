@@ -17,6 +17,7 @@ _KEYWORD_WEIGHTS = (
     ("extrabold", 800),
     ("semibold", 600),
     ("demibold", 600),
+    ("bold", 700),
     ("medium", 500),
     ("regular", 400),
     ("normal", 400),
@@ -33,7 +34,7 @@ def normalize_font_weight(font_name: str | None) -> int | None:
         return int(numeric.group(1))
     compact = re.sub(r"[^a-z]", "", normalized)
     for keyword, weight in _KEYWORD_WEIGHTS:
-        if keyword in compact:
+        if compact.endswith(keyword):
             return weight
     return None
 
@@ -121,15 +122,10 @@ def _row_hint(
         ):
             continue
 
-        structural_children = [
-            (child_index, child)
-            for child_index, child in enumerate(text_cell.children)
-            if isinstance(child, StructureElement)
-        ]
-        if len(structural_children) < 2:
+        if len(text_cell.children) < 2:
             continue
-        title_index, title = structural_children[0]
-        _, qualifier = structural_children[1]
+        title = text_cell.children[0]
+        qualifier = text_cell.children[1]
         if not (_is_paragraph(title) and _is_paragraph(qualifier)):
             continue
 
@@ -146,7 +142,7 @@ def _row_hint(
             continue
 
         return SubtitleHint(
-            child_path=(*row_path, index + 1, title_index),
+            child_path=(*row_path, index + 1, 0),
             font_weight=title_weight,
             comparison_body_font_weight=body_weight,
             observed_line_count=len(title_lines),

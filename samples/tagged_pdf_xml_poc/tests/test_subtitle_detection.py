@@ -80,12 +80,16 @@ def _valid_children(
         ("Family-900", 900),
         ("FamilyBlack", 900),
         ("Family-ExtraBold", 800),
-        ("Family-SemiBold", 600),
-        ("Family-DemiBold", 600),
+        ("SamsungOne-Semibold", 600),
+        ("SamsungOne_DemiBold", 600),
         ("Family-Medium", 500),
         ("Family-Regular", 400),
         ("Family-Normal", 400),
         ("Family-Light", 300),
+        ("Arial-Bold", 700),
+        ("Regular", 400),
+        ("MysteryBlackbird", None),
+        ("NotSemiboldish", None),
         ("Family-950", None),
         ("MysteryTypeface", None),
         (None, None),
@@ -263,6 +267,19 @@ def test_never_selects_a_nonleading_text_cell_paragraph() -> None:
     )
 
 
+def test_rejects_text_cell_with_leading_content_fragment_before_paragraphs() -> None:
+    leading_fragment = _fragment(
+        "구조 밖 선행 텍스트", "SamsungOne-400", mcid=30
+    )
+
+    assert (
+        detect_subtitle_hints(
+            _valid_children(text_cell_prefix=(leading_fragment,))
+        )
+        == ()
+    )
+
+
 def test_requires_wrapper_to_contain_exactly_one_table() -> None:
     children = _valid_children()
     section = children[0]
@@ -320,4 +337,3 @@ def test_detection_has_no_language_buyer_or_title_dictionary_dependency() -> Non
     assert detect_table_subtitles(first).subtitle_hints == detect_table_subtitles(
         second
     ).subtitle_hints
-

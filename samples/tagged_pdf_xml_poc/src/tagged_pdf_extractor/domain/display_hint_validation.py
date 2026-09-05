@@ -17,7 +17,6 @@ from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 
 
 _INLINE_ROLES = frozenset({"span", "link"})
-_BLOCK_ROLES = frozenset({"list", "table", "section"})
 _TEXT_DISPLAY_ROLES = frozenset({"section_heading", "strong_label"})
 
 
@@ -75,6 +74,13 @@ def validate_review_formatting_hints(
                     f"{line_path} and {text_path}"
                 )
     for index, path in enumerate(text_paths):
+        for other_path in text_paths[index + 1 :]:
+            if _paths_overlap(path, other_path):
+                raise ValueError(
+                    "overlapping text display hint paths "
+                    f"{path} and {other_path}"
+                )
+    for path in text_paths:
         target = _resolved_structure_element(elements, path, "text display hint")
         hint = text_display_by_path[path]
         if hint.display_role not in _TEXT_DISPLAY_ROLES:
@@ -89,12 +95,14 @@ def validate_review_formatting_hints(
             )
         if not _valid_typography(hint):
             raise ValueError(f"invalid text display typography at {path}")
-        for other_path in text_paths[index + 1 :]:
-            if _paths_overlap(path, other_path):
-                raise ValueError(
-                    "overlapping text display hint paths "
-                    f"{path} and {other_path}"
-                )
+        if not (
+            hint.font_weight > hint.comparison_body_font_weight
+            and hint.font_size > hint.comparison_body_font_size
+        ):
+            raise ValueError(
+                "text display typography must be strictly stronger than body "
+                f"typography at {path}"
+            )
         _reject_path_conflict(path, promotion_paths, "heading promotion")
         _reject_path_conflict(path, subtitle_paths, "subtitle")
         _reject_path_conflict(path, source_heading_paths, "heading candidate")
@@ -177,7 +185,7 @@ def _is_nonempty_leaf_paragraph(element: StructureElement) -> bool:
         if isinstance(child, ContentFragment):
             text_parts.extend(child.text_parts)
             continue
-        if child.semantic_role in _BLOCK_ROLES:
+        if child.semantic_role not in _INLINE_ROLES:
             return False
         if child.actual_text is not None:
             text_parts.append(child.actual_text)

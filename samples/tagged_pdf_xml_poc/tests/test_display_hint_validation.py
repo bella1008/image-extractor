@@ -276,6 +276,32 @@ def test_text_display_hint_rejects_non_paragraph_target() -> None:
 
 
 @pytest.mark.parametrize(
+    "descendant_role",
+    [
+        "figure",
+        "caption",
+        "article",
+        "division",
+        "paragraph",
+        "table",
+        "list",
+        "section",
+    ],
+)
+def test_text_display_leaf_paragraph_rejects_every_non_inline_descendant(
+    descendant_role: str,
+) -> None:
+    target = _element(
+        "paragraph",
+        _element(descendant_role, _fragment("Nested visible text")),
+    )
+    document = _text_document(target=target)
+
+    with pytest.raises(ValueError, match=r"nonempty leaf paragraph.*\(0,"):
+        validate_review_formatting_hints(document)
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("font_weight", True),
@@ -291,6 +317,26 @@ def test_rejects_invalid_typography_numbers(field: str, value: Any) -> None:
     document = _text_document(hints=(hint,))
 
     with pytest.raises(ValueError, match=r"typography.*\(0,"):
+        validate_review_formatting_hints(document)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("font_weight", 400),
+        ("font_weight", 399),
+        ("font_size", 6.5),
+        ("font_size", 6.4),
+    ],
+)
+def test_text_display_typography_must_be_strictly_stronger_than_body(
+    field: str,
+    value: int | float,
+) -> None:
+    hint = replace(_text_hint(), **{field: value})
+    document = _text_document(hints=(hint,))
+
+    with pytest.raises(ValueError, match=r"strictly stronger.*\(0,"):
         validate_review_formatting_hints(document)
 
 

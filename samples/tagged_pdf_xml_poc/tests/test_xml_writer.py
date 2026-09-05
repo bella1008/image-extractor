@@ -119,7 +119,19 @@ def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(
 
 
 @pytest.mark.parametrize(
-    "block_role", ("list", "table", "figure", "heading", "paragraph")
+    "block_role",
+    (
+        "list",
+        "table",
+        "figure",
+        "heading",
+        "paragraph",
+        "caption",
+        "section",
+        "article",
+        "division",
+        "unknown",
+    ),
 )
 def test_semantic_writer_rejects_subtitle_paragraph_with_block_descendant(
     tmp_path: Path, block_role: str

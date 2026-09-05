@@ -195,7 +195,10 @@ def test_output_bundle_invalid_subtitle_hint_is_atomic(tmp_path: Path) -> None:
     assert _owned_temporary_paths(tmp_path, "bundle") == []
 
 
-def test_output_bundle_rejects_nested_subtitle_block_atomically(tmp_path: Path) -> None:
+@pytest.mark.parametrize("nested_role", ("caption", "section"))
+def test_output_bundle_rejects_nested_subtitle_block_atomically(
+    tmp_path: Path, nested_role: str
+) -> None:
     document = TaggedDocument(
         tmp_path / "manual.pdf",
         True,
@@ -207,7 +210,7 @@ def test_output_bundle_rejects_nested_subtitle_block_atomically(tmp_path: Path) 
                 "paragraph",
                 children=(
                     ContentFragment(0, 1, ("Title",)),
-                    StructureElement("L", "list"),
+                    StructureElement(nested_role, nested_role),
                 ),
             ),
         ),

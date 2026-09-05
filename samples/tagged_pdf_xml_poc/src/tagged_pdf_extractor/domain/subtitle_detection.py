@@ -24,9 +24,7 @@ _KEYWORD_WEIGHTS = (
     ("normal", 400),
     ("light", 300),
 )
-_SUBTITLE_BLOCK_ROLES = frozenset(
-    {"list", "table", "figure", "heading", "paragraph"}
-)
+_SUBTITLE_INLINE_ROLES = frozenset({"span", "link"})
 
 
 def normalize_font_weight(font_name: str | None) -> int | None:
@@ -85,7 +83,7 @@ def has_subtitle_block_descendant(paragraph: StructureElement) -> bool:
         for child in children:
             if not isinstance(child, StructureElement):
                 continue
-            if child.semantic_role in _SUBTITLE_BLOCK_ROLES:
+            if child.semantic_role not in _SUBTITLE_INLINE_ROLES:
                 return True
             if visit(child.children):
                 return True

@@ -214,7 +214,19 @@ def test_rejects_numbered_promotion_target_as_subtitle() -> None:
 
 
 @pytest.mark.parametrize(
-    "block_role", ("list", "table", "figure", "heading", "paragraph")
+    "block_role",
+    (
+        "list",
+        "table",
+        "figure",
+        "heading",
+        "paragraph",
+        "caption",
+        "section",
+        "article",
+        "division",
+        "unknown",
+    ),
 )
 def test_rejects_title_paragraph_with_block_descendant(block_role: str) -> None:
     title = _element(
@@ -235,7 +247,15 @@ def test_allows_title_paragraph_with_inline_span_descendant() -> None:
                 "Span",
                 "span",
                 children=(
-                    _fragment("inline title", "SamsungOne-600", mcid=21),
+                    StructureElement(
+                        "Link",
+                        "link",
+                        children=(
+                            _fragment(
+                                "inline title", "SamsungOne-600", mcid=21
+                            ),
+                        ),
+                    ),
                 ),
             ),
         ),

@@ -195,6 +195,33 @@ def test_output_bundle_invalid_subtitle_hint_is_atomic(tmp_path: Path) -> None:
     assert _owned_temporary_paths(tmp_path, "bundle") == []
 
 
+def test_output_bundle_rejects_manual_subtitle_on_heading_candidate_atomically(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        tmp_path / "manual.pdf",
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "Heading2",
+                "paragraph",
+                children=(ContentFragment(0, 1, ("Candidate",)),),
+            ),
+        ),
+        subtitle_hints=(SubtitleHint((0,), 600, 400, 1),),
+    )
+    output = tmp_path / "bundle"
+    report = QualityReport("pass", {}, {"xml_round_trip": True}, (), ())
+
+    with pytest.raises(ValueError, match="source-role heading candidate"):
+        OutputBundleWriter().write(document, report, output)
+
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "bundle") == []
+
+
 @pytest.mark.parametrize("nested_role", ("caption", "section"))
 def test_output_bundle_rejects_nested_subtitle_block_atomically(
     tmp_path: Path, nested_role: str

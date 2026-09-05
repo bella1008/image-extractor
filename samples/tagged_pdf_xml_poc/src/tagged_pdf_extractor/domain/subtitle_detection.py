@@ -92,6 +92,24 @@ def has_subtitle_block_descendant(paragraph: StructureElement) -> bool:
     return visit(paragraph.children)
 
 
+def subtitle_target_rejection(
+    target: StructureElement | ContentFragment,
+    *,
+    promoted: bool = False,
+) -> str | None:
+    if (
+        not isinstance(target, StructureElement)
+        or target.semantic_role != "paragraph"
+        or promoted
+    ):
+        return "not_unpromoted_paragraph"
+    if is_heading_candidate(target.source_role):
+        return "source_role_heading_candidate"
+    if has_subtitle_block_descendant(target):
+        return "block_descendant"
+    return None
+
+
 def _single_wrapped_table(wrapper: StructureElement) -> StructureElement | None:
     if not _is_paragraph(wrapper) or len(wrapper.children) != 1:
         return None
@@ -151,11 +169,9 @@ def _row_hint(
             continue
         title = text_cell.children[0]
         qualifier = text_cell.children[1]
-        if not (_is_paragraph(title) and _is_paragraph(qualifier)):
+        if not _is_paragraph(qualifier):
             continue
-        if is_heading_candidate(title.source_role):
-            continue
-        if has_subtitle_block_descendant(title):
+        if subtitle_target_rejection(title) is not None:
             continue
 
         title_text = _normalized_text(title)

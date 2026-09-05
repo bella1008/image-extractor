@@ -19,7 +19,7 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.domain.subtitle_detection import (
-    has_subtitle_block_descendant,
+    subtitle_target_rejection,
 )
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
@@ -283,20 +283,26 @@ class XmlDocumentWriter:
         promotion = promotion_tracker.apply(child_path, child)
         subtitle = subtitle_by_path.get(child_path)
         if subtitle is not None:
-            if (
-                not isinstance(child, StructureElement)
-                or child.semantic_role != "paragraph"
-                or promotion is not None
-            ):
+            rejection = subtitle_target_rejection(
+                child, promoted=promotion is not None
+            )
+            if rejection == "not_unpromoted_paragraph":
                 raise ValueError(
                     "subtitle hint must target an unpromoted paragraph "
                     f"StructureElement at {child_path}"
                 )
-            if has_subtitle_block_descendant(child):
+            if rejection == "source_role_heading_candidate":
+                raise ValueError(
+                    "subtitle hint must not target a source-role heading candidate "
+                    f"at {child_path}"
+                )
+            if rejection == "block_descendant":
                 raise ValueError(
                     "subtitle paragraph must not contain block descendants "
                     f"at {child_path}"
                 )
+            if rejection is not None:
+                raise AssertionError(f"unknown subtitle target rejection {rejection}")
             consumed_subtitle_paths.add(child_path)
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)

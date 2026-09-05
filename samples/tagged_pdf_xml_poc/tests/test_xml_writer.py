@@ -271,6 +271,34 @@ def test_semantic_writer_rejects_invalid_subtitle_target(
         XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
 
 
+@pytest.mark.parametrize("source_role", ("Title", "Heading2"))
+def test_semantic_writer_rejects_manual_subtitle_on_heading_candidate(
+    tmp_path: Path, source_role: str
+) -> None:
+    target = tmp_path / "semantic.xml"
+    target.write_text("existing", encoding="utf-8")
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                source_role,
+                "paragraph",
+                children=(ContentFragment(0, 1, ("Candidate",)),),
+            ),
+        ),
+        subtitle_hints=(_subtitle_hint((0,)),),
+    )
+
+    with pytest.raises(ValueError, match="source-role heading candidate"):
+        XmlDocumentWriter().write_semantic(document, target)
+
+    assert target.read_text(encoding="utf-8") == "existing"
+    assert list(tmp_path.glob(".semantic.xml.*.tmp")) == []
+
+
 def test_semantic_writer_rejects_duplicate_promotion_paths(tmp_path: Path) -> None:
     document = TaggedDocument(
         Path("manual.pdf"),

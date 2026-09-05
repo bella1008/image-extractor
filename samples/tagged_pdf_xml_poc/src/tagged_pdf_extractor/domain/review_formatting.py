@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
@@ -281,9 +282,12 @@ def _table_label_groups(
                 details.extend(cell_details)
         if len(labels) >= 2:
             qualifying.append((labels, details))
-    if len(qualifying) != 1:
+    if not qualifying:
         return [], []
-    return qualifying[0]
+    return (
+        [label for labels, _ in qualifying for label in labels],
+        [detail for _, details in qualifying for detail in details],
+    )
 
 
 def _direct_nonempty_paragraphs(
@@ -320,13 +324,15 @@ def _descendants_with_role(
             path = (*parent_path, index)
             if child.semantic_role == role:
                 found.append((child, path))
+            if child.semantic_role == "section":
+                continue
             stack.append((child, path))
     return tuple(sorted(found, key=lambda item: item[1]))
 
 
 def _display_hint(
     record: _ParagraphRecord,
-    role: str,
+    role: Literal["section_heading", "strong_label"],
     body_weight: int,
     body_size: float,
     reason: str,
@@ -334,7 +340,7 @@ def _display_hint(
     assert record.evidence.font_size is not None
     return TextDisplayHint(
         child_path=record.path,
-        display_role=role,  # type: ignore[arg-type]
+        display_role=role,
         font_weight=record.evidence.font_weight,
         font_size=record.evidence.font_size,
         comparison_body_font_weight=body_weight,

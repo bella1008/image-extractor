@@ -1,5 +1,6 @@
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
+from typing import Literal, get_type_hints
 
 import pytest
 
@@ -248,6 +249,58 @@ def test_long_direct_detail_remains_valid_body_evidence() -> None:
     hints = detect_form_cluster_hints(document)
 
     assert sum(hint.display_role == "strong_label" for hint in hints) == 5
+
+
+def test_parent_cluster_does_not_use_nested_section_table_evidence() -> None:
+    parent_document = _form_document(include_table=False)
+    parent = parent_document.children[0]
+    nested = _form_document().children[0]
+    assert isinstance(parent, StructureElement)
+    assert isinstance(nested, StructureElement)
+    nested_index = len(parent.children)
+    document = replace(
+        parent_document,
+        children=(replace(parent, children=(*parent.children, nested)),),
+    )
+
+    hints = detect_form_cluster_hints(document)
+
+    nested_path = (0, nested_index)
+    assert len(hints) == 6
+    assert all(hint.child_path[: len(nested_path)] == nested_path for hint in hints)
+
+
+def test_cluster_accepts_multiple_valid_tables_and_includes_all_table_labels() -> None:
+    document = _form_document()
+    section = document.children[0]
+    assert isinstance(section, StructureElement)
+    first_table_wrapper = section.children[-1]
+    document = replace(
+        document,
+        children=(
+            replace(
+                section,
+                children=(*section.children, first_table_wrapper),
+            ),
+        ),
+    )
+
+    hints = detect_form_cluster_hints(document)
+
+    assert sum(hint.display_role == "section_heading" for hint in hints) == 1
+    assert sum(hint.display_role == "strong_label" for hint in hints) == 7
+    assert {hint.child_path for hint in hints if hint.display_role == "strong_label"} >= {
+        (0, 7, 0, 0, 0, 0),
+        (0, 7, 0, 0, 1, 0),
+        (0, 8, 0, 0, 0, 0),
+        (0, 8, 0, 0, 1, 0),
+    }
+
+
+def test_display_hint_role_parameter_uses_closed_literal_type() -> None:
+    annotations = get_type_hints(review_formatting._display_hint)
+
+    assert annotations["role"] == Literal["section_heading", "strong_label"]
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,6 @@
 import base64
+from dataclasses import replace
+import math
 from pathlib import Path
 from typing import cast
 from xml.etree import ElementTree as ET
@@ -8,9 +10,11 @@ import pytest
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
+    LineBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
+    TextDisplayHint,
     TextStyle,
 )
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
@@ -50,6 +54,366 @@ def _subtitle_hint(child_path: tuple[int, ...]) -> SubtitleHint:
         comparison_body_font_weight=400,
         observed_line_count=2,
     )
+
+
+def _text_display_hint(
+    child_path: tuple[int, ...], display_role: str = "section_heading"
+) -> TextDisplayHint:
+    return TextDisplayHint(
+        child_path=child_path,
+        display_role=cast(object, display_role),
+        font_weight=800,
+        font_size=8.0,
+        comparison_body_font_weight=400,
+        comparison_body_font_size=6.5,
+        reason="form_cluster_relative_typography",
+    )
+
+
+def _review_formatting_document() -> TaggedDocument:
+    heading = StructureElement(
+        "P", "paragraph", children=(ContentFragment(0, 1, ("Form title",)),)
+    )
+    label = StructureElement(
+        "P", "paragraph", children=(ContentFragment(0, 2, ("Field label",)),)
+    )
+    rf_paragraph = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            ContentFragment(0, 3, ("Band one,",)),
+            StructureElement("Span", "span", actual_text="\n"),
+            ContentFragment(0, 4, ("Band two",)),
+        ),
+    )
+    wrapper = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            StructureElement(
+                "Table",
+                "table",
+                children=(
+                    StructureElement(
+                        "TR",
+                        "table_row",
+                        children=(
+                            StructureElement(
+                                "TD", "table_cell", children=(rf_paragraph,)
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    return TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (StructureElement("Sect", "section", children=(heading, label, wrapper)),),
+        line_break_hints=(LineBreakHint((0, 2, 0, 0, 0, 0, 1)),),
+        text_display_hints=(
+            _text_display_hint((0, 0)),
+            replace(
+                _text_display_hint((0, 1)),
+                display_role="strong_label",
+                font_weight=600,
+                font_size=7.0,
+            ),
+        ),
+    )
+
+
+def test_semantic_writer_serializes_validated_review_formatting_only_semantically(
+    tmp_path: Path,
+) -> None:
+    document = _review_formatting_document()
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw = raw_path.read_text(encoding="utf-8")
+    assert "display-role" not in raw
+    assert "display-level" not in raw
+    assert "display-reason" not in raw
+    assert "line-break-reason" not in raw
+
+    root = ET.parse(semantic_path).getroot()
+    heading = root.find("./section/paragraph[1]")
+    label = root.find("./section/paragraph[2]")
+    line_break = root.find(".//table_cell/paragraph/span")
+    assert heading is not None
+    assert heading.attrib == {
+        "display-role": "section-heading",
+        "display-level": "2",
+        "display-reason": "form_cluster_relative_typography",
+        "font-weight": "800",
+        "font-size": "8",
+        "comparison-body-font-weight": "400",
+        "comparison-body-font-size": "6.5",
+    }
+    assert label is not None
+    assert label.attrib == {
+        "display-role": "strong-label",
+        "display-reason": "form_cluster_relative_typography",
+        "font-weight": "600",
+        "font-size": "7",
+        "comparison-body-font-weight": "400",
+        "comparison-body-font-size": "6.5",
+    }
+    assert line_break is not None
+    assert line_break.attrib == {
+        "actual-text": "\n",
+        "display-role": "preserved-line-break",
+        "line-break-reason": "source_actual_text_newline_after_comma_in_table_cell",
+    }
+
+
+@pytest.mark.parametrize(
+    "collection,invalid_path",
+    (
+        ("line_break_hints", ()),
+        ("line_break_hints", (-1,)),
+        ("line_break_hints", (True,)),
+        ("line_break_hints", [0]),
+        ("text_display_hints", ()),
+        ("text_display_hints", (-1,)),
+        ("text_display_hints", (False,)),
+        ("text_display_hints", [0]),
+    ),
+)
+def test_semantic_writer_rejects_invalid_review_hint_paths_before_writing(
+    tmp_path: Path, collection: str, invalid_path: object
+) -> None:
+    document = _review_formatting_document()
+    if collection == "line_break_hints":
+        document = replace(
+            document,
+            line_break_hints=(LineBreakHint(cast(tuple[int, ...], invalid_path)),),
+            text_display_hints=(),
+        )
+    else:
+        document = replace(
+            document,
+            line_break_hints=(),
+            text_display_hints=(
+                _text_display_hint(cast(tuple[int, ...], invalid_path)),
+            ),
+        )
+    target = tmp_path / "semantic.xml"
+    target.write_text("sentinel", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid .* hint path"):
+        XmlDocumentWriter().write_semantic(document, target)
+
+    assert target.read_text(encoding="utf-8") == "sentinel"
+
+
+@pytest.mark.parametrize("collection", ("line_break_hints", "text_display_hints"))
+def test_semantic_writer_rejects_duplicate_review_hint_paths(
+    tmp_path: Path, collection: str
+) -> None:
+    document = _review_formatting_document()
+    hints = getattr(document, collection)
+    document = replace(document, **{collection: (hints[0], hints[0])})
+
+    with pytest.raises(ValueError, match=f"duplicate {collection[:-1].replace('_', ' ')} path"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+@pytest.mark.parametrize("collection", ("line_break_hints", "text_display_hints"))
+def test_semantic_writer_rejects_unresolved_review_hint_paths(
+    tmp_path: Path, collection: str
+) -> None:
+    document = _review_formatting_document()
+    if collection == "line_break_hints":
+        document = replace(
+            document,
+            line_break_hints=(LineBreakHint((9,)),),
+            text_display_hints=(),
+        )
+    else:
+        document = replace(
+            document,
+            line_break_hints=(),
+            text_display_hints=(_text_display_hint((9,)),),
+        )
+
+    with pytest.raises(ValueError, match=f"unresolved {collection[:-1].replace('_', ' ')} path"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+def test_semantic_writer_rejects_review_hint_targeting_content_fragment(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        None,
+        (),
+        (ContentFragment(0, 1, ("text",)),),
+        text_display_hints=(_text_display_hint((0,)),),
+    )
+
+    with pytest.raises(ValueError, match="StructureElement"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+@pytest.mark.parametrize(
+    "mutator,error",
+    (
+        (
+            lambda d: replace(
+                d,
+                children=(StructureElement("Span", "span"),),
+                text_display_hints=(_text_display_hint((0,)),),
+                line_break_hints=(),
+            ),
+            "paragraph",
+        ),
+        (
+            lambda d: replace(
+                d,
+                text_display_hints=(
+                    replace(d.text_display_hints[0], display_role=cast(object, "bold")),
+                ),
+                line_break_hints=(),
+            ),
+            "display role",
+        ),
+        (
+            lambda d: replace(
+                d,
+                text_display_hints=(replace(d.text_display_hints[0], font_size=math.nan),),
+                line_break_hints=(),
+            ),
+            "typography",
+        ),
+        (
+            lambda d: replace(
+                d,
+                text_display_hints=(
+                    replace(d.text_display_hints[0], comparison_body_font_size=0.0),
+                ),
+                line_break_hints=(),
+            ),
+            "typography",
+        ),
+    ),
+)
+def test_semantic_writer_rejects_invalid_text_display_hint_runtime_data(
+    tmp_path: Path, mutator: object, error: str
+) -> None:
+    document = cast(object, mutator)(_review_formatting_document())
+
+    with pytest.raises(ValueError, match=error):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+def test_semantic_writer_rejects_empty_or_block_bearing_text_display_paragraph(
+    tmp_path: Path,
+) -> None:
+    for paragraph in (
+        StructureElement("P", "paragraph"),
+        StructureElement(
+            "P",
+            "paragraph",
+            children=(
+                ContentFragment(0, 1, ("title",)),
+                StructureElement("Table", "table"),
+            ),
+        ),
+    ):
+        document = TaggedDocument(
+            Path("manual.pdf"),
+            True,
+            None,
+            (),
+            (paragraph,),
+            text_display_hints=(_text_display_hint((0,)),),
+        )
+        with pytest.raises(ValueError, match="nonempty leaf paragraph"):
+            XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+def test_semantic_writer_revalidates_manual_line_break_adjacency(
+    tmp_path: Path,
+) -> None:
+    document = _review_formatting_document()
+    section = cast(StructureElement, document.children[0])
+    wrapper = cast(StructureElement, section.children[2])
+    table = cast(StructureElement, wrapper.children[0])
+    row = cast(StructureElement, table.children[0])
+    cell = cast(StructureElement, row.children[0])
+    paragraph = cast(StructureElement, cell.children[0])
+    invalid_paragraph = replace(
+        paragraph,
+        children=(ContentFragment(0, 3, ("Band one",)), *paragraph.children[1:]),
+    )
+    invalid = replace(
+        document,
+        children=(
+            replace(
+                section,
+                children=(
+                    *section.children[:2],
+                    replace(
+                        wrapper,
+                        children=(
+                            replace(
+                                table,
+                                children=(
+                                    replace(
+                                        row,
+                                        children=(replace(cell, children=(invalid_paragraph,)),),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        text_display_hints=(),
+    )
+
+    with pytest.raises(ValueError, match="line-break adjacency evidence"):
+        XmlDocumentWriter().write_semantic(invalid, tmp_path / "semantic.xml")
+
+
+def test_semantic_writer_rejects_text_display_conflicts(
+    tmp_path: Path,
+) -> None:
+    base = _review_formatting_document()
+    section = cast(StructureElement, base.children[0])
+    heading = cast(StructureElement, section.children[0])
+    cases = (
+        replace(base, subtitle_hints=(_subtitle_hint((0, 0)),), line_break_hints=()),
+        replace(
+            base,
+            children=(replace(section, children=(replace(heading, source_role="Heading2"), *section.children[1:])),),
+            line_break_hints=(),
+        ),
+        replace(
+            base,
+            children=(StructureElement("LI", "list_item", children=(heading,)),),
+            heading_promotions=(_promotion((0,)),),
+            text_display_hints=(_text_display_hint((0, 0)),),
+            line_break_hints=(),
+        ),
+        replace(
+            base,
+            text_display_hints=(_text_display_hint((0, 2)),),
+        ),
+    )
+    for document in cases:
+        with pytest.raises(ValueError, match="conflict|overlap"):
+            XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
 
 
 def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(

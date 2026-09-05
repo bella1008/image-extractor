@@ -1,22 +1,28 @@
 from __future__ import annotations
 
 import base64
-import json
 import binascii
+import json
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.heading_promotion_validation import (
     HeadingPromotionTracker,
 )
+from tagged_pdf_extractor.domain.display_hint_validation import (
+    validate_display_hints,
+)
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
+    LineBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
+    TextDisplayHint,
 )
 from tagged_pdf_extractor.domain.subtitle_detection import (
     subtitle_target_rejection,
@@ -187,6 +193,7 @@ class XmlDocumentWriter:
     def write_semantic(
         self, document: TaggedDocument, path: Path
     ) -> tuple[dict[str, object], ...]:
+        validated_display_hints = validate_display_hints(document)
         for hint in document.subtitle_hints:
             child_path = hint.child_path
             if (
@@ -212,6 +219,8 @@ class XmlDocumentWriter:
         if len(subtitle_by_path) != len(document.subtitle_hints):
             raise ValueError("duplicate subtitle hint path")
         consumed_subtitle_paths: set[tuple[int, ...]] = set()
+        consumed_line_break_paths: set[tuple[int, ...]] = set()
+        consumed_text_display_paths: set[tuple[int, ...]] = set()
 
         for index, child in enumerate(document.children):
             self._append_semantic_child(
@@ -223,6 +232,10 @@ class XmlDocumentWriter:
                 promotion_tracker=promotion_tracker,
                 subtitle_by_path=subtitle_by_path,
                 consumed_subtitle_paths=consumed_subtitle_paths,
+                line_break_by_path=validated_display_hints.line_break_by_path,
+                consumed_line_break_paths=consumed_line_break_paths,
+                text_display_by_path=validated_display_hints.text_display_by_path,
+                consumed_text_display_paths=consumed_text_display_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -232,6 +245,16 @@ class XmlDocumentWriter:
         if unresolved_subtitle_paths:
             unresolved = sorted(unresolved_subtitle_paths)[0]
             raise ValueError(f"unresolved subtitle hint path {unresolved}")
+        self._assert_display_hints_consumed(
+            validated_display_hints.line_break_by_path,
+            consumed_line_break_paths,
+            "line break hint",
+        )
+        self._assert_display_hints_consumed(
+            validated_display_hints.text_display_by_path,
+            consumed_text_display_paths,
+            "text display hint",
+        )
         self._write_and_verify(
             root,
             path,
@@ -276,12 +299,18 @@ class XmlDocumentWriter:
         promotion_tracker: HeadingPromotionTracker,
         subtitle_by_path: dict[tuple[int, ...], SubtitleHint],
         consumed_subtitle_paths: set[tuple[int, ...]],
+        line_break_by_path: Mapping[tuple[int, ...], LineBreakHint],
+        consumed_line_break_paths: set[tuple[int, ...]],
+        text_display_by_path: Mapping[tuple[int, ...], TextDisplayHint],
+        consumed_text_display_paths: set[tuple[int, ...]],
         expected_parts: list[str],
         decisions: list[dict[str, object]],
     ) -> None:
         child_path = (*parent_child_path, child_index)
         promotion = promotion_tracker.apply(child_path, child)
         subtitle = subtitle_by_path.get(child_path)
+        line_break = line_break_by_path.get(child_path)
+        text_display = text_display_by_path.get(child_path)
         if subtitle is not None:
             rejection = subtitle_target_rejection(
                 child, promoted=promotion is not None
@@ -343,6 +372,12 @@ class XmlDocumentWriter:
             )
         if subtitle is not None:
             attributes.update(self._subtitle_attributes(subtitle))
+        if line_break is not None:
+            attributes.update(self._line_break_attributes(line_break))
+            consumed_line_break_paths.add(child_path)
+        if text_display is not None:
+            attributes.update(self._text_display_attributes(text_display))
+            consumed_text_display_paths.add(child_path)
         element = ET.SubElement(
             parent,
             tag,
@@ -359,6 +394,10 @@ class XmlDocumentWriter:
                 promotion_tracker=promotion_tracker,
                 subtitle_by_path=subtitle_by_path,
                 consumed_subtitle_paths=consumed_subtitle_paths,
+                line_break_by_path=line_break_by_path,
+                consumed_line_break_paths=consumed_line_break_paths,
+                text_display_by_path=text_display_by_path,
+                consumed_text_display_paths=consumed_text_display_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -374,6 +413,41 @@ class XmlDocumentWriter:
             ),
             "observed-line-count": str(subtitle.observed_line_count),
         }
+
+    @staticmethod
+    def _line_break_attributes(hint: LineBreakHint) -> dict[str, str]:
+        return {
+            "display-role": "preserved-line-break",
+            "line-break-reason": hint.reason,
+        }
+
+    @staticmethod
+    def _text_display_attributes(hint: TextDisplayHint) -> dict[str, str]:
+        attributes = {
+            "display-role": hint.display_role.replace("_", "-"),
+            "display-reason": hint.reason,
+            "font-weight": str(hint.font_weight),
+            "font-size": XmlDocumentWriter._format_number(hint.font_size),
+            "comparison-body-font-weight": str(
+                hint.comparison_body_font_weight
+            ),
+            "comparison-body-font-size": XmlDocumentWriter._format_number(
+                hint.comparison_body_font_size
+            ),
+        }
+        if hint.display_role == "section_heading":
+            attributes["display-level"] = "2"
+        return attributes
+
+    @staticmethod
+    def _assert_display_hints_consumed(
+        hints_by_path: Mapping[tuple[int, ...], object],
+        consumed_paths: set[tuple[int, ...]],
+        name: str,
+    ) -> None:
+        unresolved = set(hints_by_path) - consumed_paths
+        if unresolved:
+            raise ValueError(f"unresolved {name} path {sorted(unresolved)[0]}")
 
     @staticmethod
     def _promotion_attributes(

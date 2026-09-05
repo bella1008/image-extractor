@@ -14,6 +14,7 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
     HeadingPromotion,
+    LineBreakHint,
     QualityReport,
     StructureElement,
     SubtitleHint,
@@ -192,6 +193,39 @@ def test_output_bundle_invalid_subtitle_hint_is_atomic(tmp_path: Path) -> None:
         OutputBundleWriter().write(document, report, output)
 
     assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "bundle") == []
+
+
+def test_output_bundle_invalid_review_formatting_hint_preserves_existing_outputs(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        tmp_path / "manual.pdf",
+        True,
+        "en",
+        (),
+        (StructureElement("P", "paragraph", children=(ContentFragment(0, 1, ("text",)),)),),
+        line_break_hints=(LineBreakHint((0,)),),
+    )
+    output = tmp_path / "bundle"
+    output.mkdir()
+    sentinels = {
+        name: f"sentinel:{name}" for name in output_bundle_module.REQUIRED_OUTPUT_NAMES
+    }
+    for name, value in sentinels.items():
+        (output / name).write_text(value, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="line break hint must target"):
+        OutputBundleWriter().write(
+            document,
+            QualityReport("pass", {}, {"xml_round_trip": True}, (), ()),
+            output,
+            overwrite=True,
+        )
+
+    assert {
+        name: (output / name).read_text(encoding="utf-8") for name in sentinels
+    } == sentinels
     assert _owned_temporary_paths(tmp_path, "bundle") == []
 
 

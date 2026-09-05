@@ -1,5 +1,6 @@
 import base64
 from pathlib import Path
+from typing import cast
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -143,6 +144,41 @@ def test_semantic_writer_rejects_unresolved_subtitle_hint_path(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="unresolved subtitle hint path"):
         XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    (
+        (),
+        (False,),
+        ("0",),
+        (0.0,),
+        (-1,),
+        [0],
+    ),
+    ids=("empty", "bool", "string", "float", "negative", "not-tuple"),
+)
+def test_semantic_writer_rejects_mistyped_subtitle_hint_path_before_writing(
+    tmp_path: Path, invalid_path: object
+) -> None:
+    target = tmp_path / "semantic.xml"
+    target.write_text("existing", encoding="utf-8")
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (StructureElement("P", "paragraph"),),
+        subtitle_hints=(
+            _subtitle_hint(cast(tuple[int, ...], invalid_path)),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invalid subtitle hint path"):
+        XmlDocumentWriter().write_semantic(document, target)
+
+    assert target.read_text(encoding="utf-8") == "existing"
+    assert list(tmp_path.glob(".semantic.xml.*.tmp")) == []
 
 
 @pytest.mark.parametrize(

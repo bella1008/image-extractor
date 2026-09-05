@@ -1,13 +1,26 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     LineBreakHint,
     StructureElement,
+    TaggedDocument,
 )
+from tagged_pdf_extractor.domain.profile_scope import review_formatting_scope
 
 
 _INLINE_ROLES = frozenset({"span", "link"})
+
+
+def apply_profile_review_formatting(document: TaggedDocument) -> TaggedDocument:
+    if not review_formatting_scope(document.source_path).enabled:
+        return document
+    return replace(
+        document,
+        line_break_hints=detect_rf_line_break_hints(document.children),
+    )
 
 
 def detect_rf_line_break_hints(

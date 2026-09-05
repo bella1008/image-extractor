@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
@@ -9,7 +9,11 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain import review_formatting
 from tagged_pdf_extractor.domain.review_formatting import detect_rf_line_break_hints
+
+
+ZG_NAME = "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
 
 
 def _fragment(text: str) -> ContentFragment:
@@ -32,6 +36,7 @@ def _element(
 def _document(
     paragraph_children: tuple[StructureElement | ContentFragment, ...],
     *,
+    filename: str = "manual.pdf",
     in_table_cell: bool = True,
 ) -> TaggedDocument:
     paragraph = _element("paragraph", *paragraph_children)
@@ -44,7 +49,7 @@ def _document(
         )
     else:
         children = (paragraph,)
-    return TaggedDocument(Path("manual.pdf"), True, "en", (), children)
+    return TaggedDocument(Path(filename), True, "en", (), children)
 
 
 def _newline(actual_text: str = "\n") -> StructureElement:
@@ -146,3 +151,81 @@ def test_does_not_descend_through_a_block_inside_a_paragraph() -> None:
     document = _document((nested_block,))
 
     assert detect_rf_line_break_hints(document.children) == ()
+
+
+def test_exposes_profile_scoped_review_formatting_application() -> None:
+    assert callable(
+        getattr(review_formatting, "apply_profile_review_formatting", None)
+    )
+
+
+def test_enabled_profile_replaces_manual_hints_with_detected_source_truth() -> None:
+    document = _document(
+        (_fragment("first,"), _newline(), _fragment("second")),
+        filename=ZG_NAME,
+    )
+    manual_hint = LineBreakHint((9,), "manual")
+    document = replace(document, line_break_hints=(manual_hint, manual_hint))
+
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    detected = detect_rf_line_break_hints(document.children)
+    assert formatted.line_break_hints == detected
+    assert formatted.line_break_hints != document.line_break_hints
+    assert len(formatted.line_break_hints) == 1
+    assert replace(formatted, line_break_hints=document.line_break_hints) == document
+
+
+def test_enabled_profile_clears_manual_hints_when_source_has_no_evidence() -> None:
+    document = _document((_fragment("ordinary text"),), filename=ZG_NAME)
+    document = replace(document, line_break_hints=(LineBreakHint((9,), "manual"),))
+
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    assert formatted is not document
+    assert formatted.line_break_hints == ()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf",
+        "BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf",
+        "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
+        "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
+    ],
+)
+def test_disabled_profiles_preserve_identity_and_manual_hints(filename: str) -> None:
+    document = _document(
+        (_fragment("first,"), _newline(), _fragment("second")),
+        filename=filename,
+    )
+    document = replace(document, line_break_hints=(LineBreakHint((9,), "manual"),))
+
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    assert formatted is document
+    assert formatted.line_break_hints == document.line_break_hints
+
+
+def test_malformed_filename_preserves_identity_and_manual_hints() -> None:
+    document = _document(
+        (_fragment("first,"), _newline(), _fragment("second")),
+        filename="BN68-invalid_ZG XN ZT_L05.pdf",
+    )
+    document = replace(document, line_break_hints=(LineBreakHint((9,), "manual"),))
+
+    assert review_formatting.apply_profile_review_formatting(document) is document
+
+
+def test_parent_folder_cannot_enable_xy_filename() -> None:
+    filename = str(
+        Path("ZG XN ZT_L05")
+        / "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf"
+    )
+    document = _document(
+        (_fragment("first,"), _newline(), _fragment("second")),
+        filename=filename,
+    )
+
+    assert review_formatting.apply_profile_review_formatting(document) is document

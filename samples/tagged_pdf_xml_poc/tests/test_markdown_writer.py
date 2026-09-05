@@ -1043,6 +1043,72 @@ def test_promotes_heading_candidate_inside_table_without_duplicate_or_lost_text(
     assert markdown.index("## Table heading") < markdown.index("Cell tail")
 
 
+def test_promotes_direct_table_row_candidate_once_in_source_order(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/table[0]/table_row[1]",
+            "source_role": "Heading1",
+            "semantic_role": "table_row",
+            "level": 1,
+            "joined_text": "Promoted row",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        """
+        <table>
+          <caption><text>Before row</text></caption>
+          <table_row><table_cell><text>Promoted row</text></table_cell></table_row>
+          <caption><text>After row</text></caption>
+        </table>
+        """,
+        report,
+    )
+
+    assert markdown.count("## Promoted row") == 1
+    for text in ("Before row", "Promoted row", "After row"):
+        assert markdown.count(text) == 1
+    assert markdown.index("Before row") < markdown.index("## Promoted row")
+    assert markdown.index("## Promoted row") < markdown.index("After row")
+
+
+def test_promotes_direct_table_cell_candidate_once_in_source_order(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        {
+            "structure_path": "/table[0]/table_row[0]/table_cell[1]",
+            "source_role": "Heading1",
+            "semantic_role": "table_cell",
+            "level": 1,
+            "joined_text": "Promoted cell",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+    markdown = _render(
+        tmp_path,
+        """
+        <table><table_row>
+          <table_cell><text>Before cell</text></table_cell>
+          <table_cell><text>Promoted cell</text></table_cell>
+          <table_cell><text>After cell</text></table_cell>
+        </table_row></table>
+        """,
+        report,
+    )
+
+    assert markdown.count("## Promoted cell") == 1
+    for text in ("Before cell", "Promoted cell", "After cell"):
+        assert markdown.count(text) == 1
+    assert markdown.index("Before cell") < markdown.index("## Promoted cell")
+    assert markdown.index("## Promoted cell") < markdown.index("After cell")
+
+
 @pytest.mark.parametrize(
     "container_tag",
     ["paragraph", "heading", "caption", "label", "figure"],

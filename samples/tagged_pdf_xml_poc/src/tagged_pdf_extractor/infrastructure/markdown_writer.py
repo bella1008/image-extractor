@@ -430,12 +430,16 @@ class MarkdownDocumentWriter:
         lines: list[str] = []
         row_index = 0
         for child in table_children:
+            if child in promoted:
+                cls._append_indented_blocks(
+                    lines,
+                    cls._render_element(child, promoted),
+                    indent="",
+                )
+                continue
             if child.tag != "table_row":
                 blocks = cls._render_element(child, promoted)
-                if child in promoted:
-                    cls._append_indented_blocks(lines, blocks, indent="")
-                else:
-                    cls._append_indented_blocks(lines, blocks, indent="- ")
+                cls._append_indented_blocks(lines, blocks, indent="- ")
                 continue
 
             row_index += 1
@@ -483,7 +487,11 @@ class MarkdownDocumentWriter:
         *,
         indent: str,
     ) -> None:
-        blocks = cls._render_children(cell, promoted)
+        blocks = (
+            cls._render_element(cell, promoted)
+            if cell in promoted
+            else cls._render_children(cell, promoted)
+        )
         if not blocks:
             lines.append(f"{indent}[빈 셀]")
             return

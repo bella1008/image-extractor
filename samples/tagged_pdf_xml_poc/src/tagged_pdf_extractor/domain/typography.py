@@ -25,7 +25,7 @@ _WeightedValue = TypeVar("_WeightedValue", int, float)
 @dataclass(frozen=True)
 class TypographyEvidence:
     font_weight: int
-    font_size: float
+    font_size: float | None
     observed_lines: frozenset[tuple[int, int]]
 
 
@@ -44,14 +44,17 @@ def normalize_font_weight(font_name: str | None) -> int | None:
 
 def typography_evidence(
     element: StructureElement,
+    *,
+    require_size: bool = True,
 ) -> TypographyEvidence | None:
     weight_samples: list[tuple[int, int]] = []
     size_samples: list[tuple[float, int]] = []
     observed_lines: set[tuple[int, int]] = set()
     valid = True
+    size_complete = True
 
     def visit(children: tuple[StructureElement | ContentFragment, ...]) -> None:
-        nonlocal valid
+        nonlocal size_complete, valid
         for child in children:
             if isinstance(child, StructureElement):
                 visit(child.children)
@@ -70,19 +73,27 @@ def typography_evidence(
                     continue
                 style = child.text_styles[part_index]
                 weight = normalize_font_weight(style.font_name)
-                if weight is None or style.font_size is None or style.font_size <= 0:
+                if weight is None:
                     valid = False
                     continue
                 weight_samples.append((weight, visible_count))
-                size_samples.append((style.font_size, visible_count))
+                if style.font_size is None or style.font_size <= 0:
+                    size_complete = False
+                else:
+                    size_samples.append((style.font_size, visible_count))
                 observed_lines.add((child.page_index, child.mcid))
 
     visit(element.children)
-    if not valid or not weight_samples or not size_samples or not observed_lines:
+    if (
+        not valid
+        or not weight_samples
+        or not observed_lines
+        or (require_size and not size_complete)
+    ):
         return None
     return TypographyEvidence(
         font_weight=_weighted_median(weight_samples),
-        font_size=_weighted_median(size_samples),
+        font_size=_weighted_median(size_samples) if size_complete else None,
         observed_lines=frozenset(observed_lines),
     )
 

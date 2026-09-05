@@ -127,6 +127,23 @@ def test_no_visible_text_has_no_typography_evidence() -> None:
     assert typography_evidence(_paragraph(ContentFragment(0, 1, ("  ",)))) is None
 
 
+def test_weight_only_evidence_can_be_requested_without_font_size() -> None:
+    paragraph = _paragraph(
+        ContentFragment(
+            3,
+            7,
+            ("visible",),
+            text_styles=(TextStyle("Family-600", None),),
+        )
+    )
+
+    assert typography_evidence(paragraph, require_size=False) == TypographyEvidence(
+        font_weight=600,
+        font_size=None,
+        observed_lines=frozenset({(3, 7)}),
+    )
+
+
 @pytest.mark.parametrize(
     ("font_name", "expected"),
     [

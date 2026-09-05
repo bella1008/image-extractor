@@ -545,6 +545,31 @@ def test_character_weighted_median_controls_title_and_body_comparison() -> None:
     )
 
 
+def test_subtitle_detection_preserves_weight_evidence_when_font_size_is_missing() -> None:
+    title = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            41,
+            ("title",),
+            text_styles=(TextStyle("Font-600", None),),
+        ),
+    )
+    body = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            42,
+            ("body",),
+            text_styles=(TextStyle("Font-400", None),),
+        ),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title, body=body)) == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
 def test_detects_multiple_qualifying_rows_with_globally_unique_paths() -> None:
     table = _element(
         "table",

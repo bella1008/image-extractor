@@ -155,8 +155,8 @@ def _row_hint(
         title_text = _normalized_text(title)
         if not 1 <= len(title_text) <= 160:
             continue
-        title_evidence = typography_evidence(title)
-        body_evidence = typography_evidence(body)
+        title_evidence = typography_evidence(title, require_size=False)
+        body_evidence = typography_evidence(body, require_size=False)
         if title_evidence is None or body_evidence is None:
             continue
         if (

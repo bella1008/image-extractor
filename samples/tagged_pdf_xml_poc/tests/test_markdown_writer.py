@@ -80,6 +80,118 @@ def test_subtitle_escapes_only_emphasis_breaking_characters(tmp_path: Path) -> N
     assert "## Path" not in markdown
 
 
+def test_renders_validated_section_heading_once_without_report_promotion(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph display-role="section-heading" display-level="2">
+          <text>Arbitrary form title</text>
+        </paragraph>
+        """,
+    )
+
+    assert markdown.splitlines().count("## Arbitrary form title") == 1
+    assert markdown.count("Arbitrary form title") == 1
+
+
+def test_renders_validated_strong_label_once_and_escapes_emphasis(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        r"""
+        <paragraph display-role="strong-label"><text>Path C:\Temp *star* _name_</text></paragraph>
+        <paragraph><text>Separate detail</text></paragraph>
+        """,
+    )
+
+    assert r"**Path C:\\Temp \*star\* \_name\_**" in markdown
+    assert markdown.count("Separate detail") == 1
+    assert markdown.index("**Path") < markdown.index("Separate detail")
+
+
+def test_preserves_only_approved_inline_actual_text_newline_in_complex_table(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <table><table_row><table_cell><paragraph>
+          <text>First specification,</text>
+          <span actual-text="&#10;" display-role="preserved-line-break" />
+          <text>Second specification,</text>
+          <span actual-text="&#10;" />
+          <text>Third specification</text>
+        </paragraph></table_cell></table_row></table>
+        """,
+    )
+
+    assert "First specification,\n  Second specification,Third specification" in markdown
+    for text in (
+        "First specification,",
+        "Second specification,",
+        "Third specification",
+    ):
+        assert markdown.count(text) == 1
+
+
+def test_unknown_display_role_is_rendered_as_existing_plain_text(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        '<paragraph display-role="future-role"><text>Plain fallback</text></paragraph>',
+    )
+
+    assert "\nPlain fallback\n" in markdown
+    assert "## Plain fallback" not in markdown
+    assert "**Plain fallback**" not in markdown
+
+
+@pytest.mark.parametrize("display_level", ["1", "6", "not-a-number"])
+def test_malformed_section_heading_level_is_not_inferred_or_repaired(
+    tmp_path: Path,
+    display_level: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        f'<paragraph display-role="section-heading" display-level="{display_level}">'
+        "<text>Plain malformed heading</text></paragraph>",
+    )
+
+    assert "\nPlain malformed heading\n" in markdown
+    assert "# Plain malformed heading" not in markdown
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            '<paragraph display-role="preserved-line-break"><text>Body</text></paragraph>',
+            "Before Body After",
+        ),
+        (
+            '<span display-role="preserved-line-break" actual-text="not-newline" />',
+            "Before After",
+        ),
+    ],
+)
+def test_malformed_preserved_line_break_is_not_inferred_or_repaired(
+    tmp_path: Path,
+    body: str,
+    expected: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        f"<paragraph><text>Before</text>{body}<text>After</text></paragraph>",
+    )
+
+    assert expected in markdown
+    assert "Before\nAfter" not in markdown
+
+
 def test_actual_heading_directly_under_list_is_a_heading_not_a_list_item(
     tmp_path: Path,
 ) -> None:

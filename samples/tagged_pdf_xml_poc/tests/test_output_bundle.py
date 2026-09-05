@@ -13,6 +13,7 @@ from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    ExtractionArtifacts,
     HeadingPromotion,
     LineBreakHint,
     QualityReport,
@@ -2294,6 +2295,227 @@ def test_extract_document_validates_source_and_wires_dependencies(tmp_path: Path
     with pytest.raises(IsADirectoryError, match="directory.pdf"):
         use_case.run(directory, output)
     assert [name for name, _ in calls] == ["reader", "baseline", "validate", "evaluator", "writer"]
+
+
+def test_extract_document_applies_profile_formatting_once_before_baseline_and_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+    source_document = _document(tmp_path)
+    formatted_document = TaggedDocument(
+        source_path=source_document.source_path,
+        marked=source_document.marked,
+        language="formatted",
+        role_map=source_document.role_map,
+        children=source_document.children,
+        diagnostics=source_document.diagnostics,
+    )
+    report = _report(formatted_document)
+
+    def apply_once(document: TaggedDocument) -> TaggedDocument:
+        calls.append(("format", document))
+        return formatted_document
+
+    monkeypatch.setattr(
+        extract_document_module,
+        "apply_profile_review_formatting",
+        apply_once,
+        raising=False,
+    )
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            calls.append(("reader", path))
+            return source_document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            calls.append(("baseline", path))
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(
+            self,
+            actual_document: TaggedDocument,
+            baseline: str,
+            xml_round_trip_ok: bool,
+        ) -> QualityReport:
+            calls.append(("evaluator", actual_document))
+            return report
+
+    class Writer:
+        def validate(self, actual_document: TaggedDocument) -> OutputValidation:
+            calls.append(("validate", actual_document))
+            return OutputValidation(report.join_decisions)
+
+        def write(
+            self,
+            actual_document: TaggedDocument,
+            actual_report: QualityReport,
+            output: Path,
+            overwrite: bool = False,
+        ) -> object:
+            calls.append(("writer", actual_document))
+            return object()
+
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+    ExtractDocument(Reader(), Baseline(), Evaluator(), Writer()).run(
+        source, tmp_path / "out"
+    )
+
+    assert [name for name, _ in calls] == [
+        "reader",
+        "format",
+        "baseline",
+        "validate",
+        "evaluator",
+        "writer",
+    ]
+    assert sum(name == "format" for name, _ in calls) == 1
+    for name, value in calls:
+        if name in {"validate", "evaluator", "writer"}:
+            assert value is formatted_document
+
+
+def _review_formatting_document(source: Path) -> TaggedDocument:
+    def fragment(text: str, weight: int, size: float, mcid: int) -> ContentFragment:
+        return ContentFragment(
+            0,
+            mcid,
+            (text,),
+            text_styles=(TextStyle(f"Synthetic-{weight}", size),),
+        )
+
+    def paragraph(text: str, weight: int, size: float, mcid: int) -> StructureElement:
+        return StructureElement(
+            "P",
+            "paragraph",
+            children=(fragment(text, weight, size, mcid),),
+        )
+
+    title = paragraph("Arbitrary form title", 800, 8.0, 1)
+    direct: list[StructureElement] = []
+    for index in range(3):
+        direct.extend(
+            (
+                paragraph(f"Direct label {index}", 600, 7.0, 10 + index * 2),
+                paragraph(f"Direct detail {index}", 400, 6.5, 11 + index * 2),
+            )
+        )
+    newline = StructureElement("Span", "span", actual_text="\n")
+    rf_detail = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            fragment("First specification,", 400, 6.5, 30),
+            newline,
+            fragment("Second specification", 400, 6.5, 31),
+        ),
+    )
+    cells = (
+        StructureElement(
+            "TD",
+            "table_cell",
+            children=(paragraph("Cell label 0", 600, 7.0, 20), rf_detail),
+        ),
+        StructureElement(
+            "TD",
+            "table_cell",
+            children=(
+                paragraph("Cell label 1", 600, 7.0, 21),
+                paragraph("Cell detail 1", 400, 6.5, 22),
+            ),
+        ),
+    )
+    table = StructureElement(
+        "Table",
+        "table",
+        children=(StructureElement("TR", "table_row", children=cells),),
+    )
+    wrapper = StructureElement("P", "paragraph", children=(table,))
+    section = StructureElement(
+        "Sect",
+        "section",
+        children=(title, *direct, wrapper),
+    )
+    return TaggedDocument(source, True, "en", (), (section,))
+
+
+def _run_review_formatting_bundle(source: Path, output: Path) -> ExtractionArtifacts:
+    document = _review_formatting_document(source)
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            return document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(
+            self,
+            actual_document: TaggedDocument,
+            baseline: str,
+            xml_round_trip_ok: bool,
+        ) -> QualityReport:
+            return _report(actual_document)
+
+    _, _, artifacts = ExtractDocument(
+        Reader(), Baseline(), Evaluator(), OutputBundleWriter()
+    ).run(source, output)
+    return artifacts
+
+
+def test_extract_document_renders_zg_review_formatting_end_to_end(
+    tmp_path: Path,
+) -> None:
+    source = (
+        tmp_path
+        / "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
+    )
+    source.write_bytes(b"pdf")
+
+    artifacts = _run_review_formatting_bundle(source, tmp_path / "zg-output")
+
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert len(semantic.findall(".//*[@display-role='section-heading']")) == 1
+    assert len(semantic.findall(".//*[@display-role='strong-label']")) == 5
+    assert len(semantic.findall(".//*[@display-role='preserved-line-break']")) == 1
+    assert markdown.count("## Arbitrary form title") == 1
+    assert markdown.count("**Direct label 0**") == 1
+    assert "First specification,\n" in markdown
+    assert markdown.count("Second specification") == 1
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf",
+        "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
+    ],
+)
+def test_extract_document_keeps_review_formatting_disabled_for_other_profiles(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    source = tmp_path / filename
+    source.write_bytes(b"pdf")
+
+    artifacts = _run_review_formatting_bundle(
+        source, tmp_path / f"disabled-{source.stem}"
+    )
+
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert semantic.find(".//*[@display-role='section-heading']") is None
+    assert semantic.find(".//*[@display-role='strong-label']") is None
+    assert semantic.find(".//*[@display-role='preserved-line-break']") is None
+    assert "## Arbitrary form title" not in markdown
+    assert "**Direct label 0**" not in markdown
 
 
 def test_extract_document_validation_failure_prevents_evaluation_and_write(

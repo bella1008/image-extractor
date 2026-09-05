@@ -332,14 +332,14 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(tmp_path: Path) -
     _assert_separate_markdown_lines(
         declaration,
         (
-            "EMC",
+            "**EMC**",
             "EN 301 489-1 V2.2.3",
             "EN 301 489-17 V3.3.1",
-            "Safety",
+            "**Safety**",
             "EN IEC 62368- 1:2020+A11:2020",
             "EN IEC 62368-3 :2020",
             "EN 62479:2010",
-            "Radio",
+            "**Radio**",
             "EN 300 328 V2.2.2",
         ),
     )

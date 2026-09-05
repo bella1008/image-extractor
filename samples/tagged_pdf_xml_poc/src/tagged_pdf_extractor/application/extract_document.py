@@ -8,6 +8,9 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.domain.numbered_heading_promotion import (
     promote_numbered_chapter_headings,
 )
+from tagged_pdf_extractor.domain.review_formatting import (
+    apply_profile_review_formatting,
+)
 from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitles
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
 from tagged_pdf_extractor.ports.output_writer import (
@@ -46,6 +49,7 @@ class ExtractDocument:
         document = self.reader.read(pdf_path)
         document = promote_numbered_chapter_headings(document)
         document = detect_table_subtitles(document)
+        document = apply_profile_review_formatting(document)
         baseline = self.baseline_reader.read_text(pdf_path)
         validation = self.writer.validate(document)
         if not isinstance(validation, OutputValidation):

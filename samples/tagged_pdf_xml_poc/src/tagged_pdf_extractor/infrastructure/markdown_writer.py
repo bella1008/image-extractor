@@ -38,6 +38,7 @@ _NESTED_TABLE_BLOCK_TAGS = frozenset(
     {"paragraph", "heading", "caption", "label", "list", "table", "figure"}
 )
 _SPAN_ATTRIBUTE_NAMES = frozenset({"rowspan", "colspan"})
+_PRESERVED_LINE_BREAK = "\x00preserved-markdown-line-break\x00"
 
 
 class MarkdownDocumentWriter:
@@ -164,6 +165,18 @@ class MarkdownDocumentWriter:
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> list[str]:
+        display_role = element.get("display-role")
+        if (
+            element.tag == "paragraph"
+            and display_role == "section-heading"
+            and element.get("display-level") == "2"
+        ):
+            text = cls._element_text(element)
+            return [f"## {text}"] if text else []
+        if element.tag == "paragraph" and display_role == "strong-label":
+            text = cls._element_text(element)
+            return [f"**{cls._escape_emphasis_text(text)}**"] if text else []
+
         heading = promoted.get(element)
         if heading is not None:
             source_level = heading.get("level")
@@ -738,6 +751,13 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _element_text_parts(cls, element: ET.Element) -> Iterable[str]:
+        if (
+            element.tag in {"span", "link"}
+            and element.get("display-role") == "preserved-line-break"
+            and element.get("actual-text") == "\n"
+        ):
+            yield _PRESERVED_LINE_BREAK
+            return
         if element.tag == "text":
             yield cls._visible_text(element)
             return
@@ -764,11 +784,22 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _join_text_parts(cls, parts: Iterable[str]) -> str:
-        normalized = [
-            _WHITESPACE.sub(" ", part)
-            for part in parts
-            if part and part.strip()
-        ]
+        normalized = []
+        for part in parts:
+            if part == _PRESERVED_LINE_BREAK:
+                normalized.append(part)
+            elif part and part.strip():
+                normalized.append(_WHITESPACE.sub(" ", part))
+        if _PRESERVED_LINE_BREAK in normalized:
+            segments: list[list[str]] = [[]]
+            for part in normalized:
+                if part == _PRESERVED_LINE_BREAK:
+                    segments.append([])
+                else:
+                    segments[-1].append(part)
+            return "\n".join(
+                cls._join_text_parts(segment) for segment in segments
+            ).strip()
         for index in range(1, len(normalized)):
             previous = normalized[index - 1]
             if not previous[-1].isspace():

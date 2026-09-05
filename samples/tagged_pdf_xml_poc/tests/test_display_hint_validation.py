@@ -244,6 +244,65 @@ def test_line_hint_recomputes_detector_evidence_to_block_manual_adjacency_bypass
         validate_review_formatting_hints(document)
 
 
+def test_rejects_line_break_inside_source_role_heading_candidate() -> None:
+    document, _ = _line_document()
+    table = cast(StructureElement, document.children[0])
+    row = cast(StructureElement, table.children[0])
+    cell = cast(StructureElement, row.children[0])
+    paragraph = replace(
+        cast(StructureElement, cell.children[0]),
+        source_role="Heading2",
+    )
+    document = replace(
+        document,
+        children=(
+            replace(
+                table,
+                children=(
+                    replace(
+                        row,
+                        children=(replace(cell, children=(paragraph,)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"heading candidate.*conflict.*line break hint.*\(0, 0, 0, 0, 1\)",
+    ):
+        validate_review_formatting_hints(document)
+
+
+def test_rejects_line_break_inside_heading_promotion_target_subtree() -> None:
+    document, _ = _line_document()
+    document = replace(
+        document,
+        heading_promotions=(_promotion((0, 0, 0, 0)),),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"heading promotion.*conflict.*line break hint.*\(0, 0, 0, 0, 1\)",
+    ):
+        validate_review_formatting_hints(document)
+
+
+def test_rejects_line_break_inside_subtitle_paragraph() -> None:
+    document, _ = _line_document()
+    document = replace(
+        document,
+        subtitle_hints=(_subtitle((0, 0, 0, 0)),),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"subtitle.*conflict.*line break hint.*\(0, 0, 0, 0, 1\)",
+    ):
+        validate_review_formatting_hints(document)
+
+
 @pytest.mark.parametrize("role", ["section_heading", "strong_label"])
 def test_accepts_each_runtime_text_display_role(role: str) -> None:
     document = _text_document(hints=(_text_hint(display_role=role),))

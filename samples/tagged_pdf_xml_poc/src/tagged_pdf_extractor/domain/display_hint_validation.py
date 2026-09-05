@@ -67,6 +67,13 @@ def validate_review_formatting_hints(
     subtitle_paths = tuple(item.child_path for item in document.subtitle_hints)
     text_paths = tuple(text_display_by_path)
     for line_path in line_break_by_path:
+        _reject_line_path_conflict(
+            line_path, source_heading_paths, "heading candidate"
+        )
+        _reject_line_path_conflict(
+            line_path, promotion_paths, "heading promotion"
+        )
+        _reject_line_path_conflict(line_path, subtitle_paths, "subtitle")
         for text_path in text_display_by_path:
             if _paths_overlap(line_path, text_path):
                 raise ValueError(
@@ -215,6 +222,15 @@ def _reject_path_conflict(
 ) -> None:
     if any(_paths_overlap(path, candidate) for candidate in candidates):
         raise ValueError(f"{name} conflict for text display hint at {path}")
+
+
+def _reject_line_path_conflict(
+    path: tuple[int, ...],
+    candidates: tuple[tuple[int, ...], ...] | set[tuple[int, ...]],
+    name: str,
+) -> None:
+    if any(_paths_overlap(path, candidate) for candidate in candidates):
+        raise ValueError(f"{name} conflict for line break hint at {path}")
 
 
 def _paths_overlap(left: tuple[int, ...], right: tuple[int, ...]) -> bool:

@@ -68,13 +68,14 @@ Runtime logic must not test for literal strings such as `Correct Disposal`.
 
 A paragraph can receive a subtitle display hint only when all of these conditions hold:
 
-- it is the leading text paragraph in a structured table cell;
-- the same cell contains a second direct paragraph immediately after it;
+- it is the leading text paragraph in a table cell whose immediately preceding sibling cell is figure-only and contains no visible text;
+- the same text cell contains a second direct paragraph immediately after it, preserving the qualifier as a separate paragraph;
+- the enclosing table wrapper is immediately followed, in the same structural parent, by a body paragraph;
 - its normalized text is at most 160 characters and occupies at most two observed PDF lines;
-- its weighted-median observed PDF font weight is at least one normalized weight step, or 100 numeric weight units, stronger than the immediately following paragraph;
-- all text fragments used for the comparison have resolved page and font evidence.
+- its weighted-median observed PDF font weight is at least one normalized weight step, or 100 numeric weight units, stronger than that following body paragraph;
+- all title and comparison-body text fragments have resolved page, MCID, and font evidence.
 
-Font family names are audit evidence, not hardcoded business rules. Common style names such as `Regular`, `Medium`, `Semibold`, and `Bold`, and numeric suffixes such as `400`, `600`, and `700`, are normalized into ordered weight steps. The decision compares relative weight within the same local cell, so the same rule can work with another language or font family. If either paragraph has mixed or unresolved typography, paragraphs remain separate but the first paragraph is not automatically bolded.
+Font family names are audit evidence, not hardcoded business rules. Common style names such as `Regular`, `Medium`, `Semibold`, and `Bold`, and numeric suffixes such as `400`, `600`, and `700`, are normalized into ordered weight steps. The decision compares the title with its structurally associated following body, so the same rule can work with another language or font family. The parenthetical qualifier is not used as the weight comparator because the verified ZG source uses weight 600 for both title and qualifier while the following body uses weight 400. If the title or comparison body has mixed or unresolved typography, paragraphs remain separate but the first paragraph is not automatically bolded.
 
 This is a Markdown display hint, not promotion to a document heading. It must not add the paragraph to the numbered heading hierarchy.
 

@@ -195,9 +195,9 @@ Add to `domain/models.py`:
 class SubtitleHint:
     child_path: tuple[int, ...]
     font_weight: int
-    following_font_weight: int
+    comparison_body_font_weight: int
     observed_line_count: int
-    reason: str = "leading_table_cell_paragraph_stronger_font"
+    reason: str = "figure_table_title_stronger_than_following_body"
 ```
 
 Add to `TaggedDocument`:
@@ -224,32 +224,46 @@ def _paragraph(text: str, font: str, *, mcid: int) -> StructureElement:
     )
 
 
-def test_detects_stronger_leading_paragraph_without_matching_words() -> None:
-    cell = StructureElement(
+def test_detects_figure_table_title_stronger_than_following_body_without_words() -> None:
+    figure_cell = StructureElement(
+        "TD",
+        "table_cell",
+        children=(
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(StructureElement("Figure", "figure"),),
+            ),
+        ),
+    )
+    text_cell = StructureElement(
         "TD",
         "table_cell",
         children=(
             _paragraph("Titre vérifié", "Subset+SamsungOne-600", mcid=1),
-            _paragraph("(Texte explicatif)", "Subset+SamsungOne-400", mcid=2),
+            _paragraph("(Texte explicatif)", "Subset+SamsungOne-600", mcid=2),
         ),
     )
-    row = StructureElement("TR", "table_row", children=(cell,))
+    row = StructureElement("TR", "table_row", children=(figure_cell, text_cell))
     table = StructureElement("Table", "table", children=(row,))
+    wrapper = StructureElement("P", "paragraph", children=(table,))
+    body = _paragraph("Following body", "Subset+SamsungOne-400", mcid=3)
+    section = StructureElement("Sect", "section", children=(wrapper, body))
 
-    hints = detect_subtitle_hints((table,))
+    hints = detect_subtitle_hints((section,))
 
     assert hints == (
         SubtitleHint(
-            child_path=(0, 0, 0, 0),
+            child_path=(0, 0, 0, 0, 1, 0),
             font_weight=600,
-            following_font_weight=400,
+            comparison_body_font_weight=400,
             observed_line_count=1,
         ),
     )
 
 
 @pytest.mark.parametrize(
-    "first_font,second_font,first_text",
+    "title_font,body_font,title_text",
     [
         ("SamsungOne-400", "SamsungOne-400", "Same weight"),
         ("UnknownFont", "SamsungOne-400", "Unresolved weight"),
@@ -257,20 +271,18 @@ def test_detects_stronger_leading_paragraph_without_matching_words() -> None:
     ],
 )
 def test_rejects_ambiguous_or_non_title_evidence(
-    first_font: str, second_font: str, first_text: str
+    title_font: str, body_font: str, title_text: str
 ) -> None:
-    cell = StructureElement(
-        "TD",
-        "table_cell",
-        children=(
-            _paragraph(first_text, first_font, mcid=1),
-            _paragraph("Following", second_font, mcid=2),
-        ),
+    section = _figure_title_section(
+        title_text=title_text,
+        title_font=title_font,
+        qualifier_font=title_font,
+        body_font=body_font,
     )
-    assert detect_subtitle_hints((cell,)) == ()
+    assert detect_subtitle_hints((section,)) == ()
 ```
 
-Also cover: more than two observed non-empty MCIDs, missing styles, mixed resolved/unresolved font names, a paragraph outside a table cell, and a non-leading paragraph.
+Define `_figure_title_section` in the test file using the exact structure from the positive example. Also cover: more than two observed non-empty title MCIDs, missing styles, mixed resolved/unresolved font names, missing figure-only sibling cell, visible text in the figure cell, missing following body sibling, a paragraph outside a table cell, and a non-leading paragraph.
 
 - [ ] **Step 2: Run detector tests and verify RED**
 
@@ -322,17 +334,16 @@ def detect_subtitle_hints(
             child_path = (*path, index)
             if not isinstance(value, StructureElement):
                 continue
-            if value.semantic_role == "table_cell":
-                hint = _subtitle_hint(value, child_path)
-                if hint is not None:
-                    hints.append(hint)
+            hint = _subtitle_hint_from_sibling_pair(values, index, path)
+            if hint is not None:
+                hints.append(hint)
             visit(value.children, child_path)
 
     visit(children, ())
     return tuple(hints)
 ```
 
-Implement `_subtitle_hint` so it requires the first two direct structural children to be paragraphs, the first normalized text to contain 1–160 characters, at most two distinct non-empty `(page_index, mcid)` line keys, and weighted-median first weight to be at least 100 above the second. Every non-empty text part in both paragraphs must have a style with a resolvable font name, and every contributing fragment must have `page_index >= 0` and a non-`None` MCID. Weight samples use visible-character count, not fragment count.
+Implement `_subtitle_hint_from_sibling_pair` so the current structural child is a wrapper containing one table, the next direct sibling is a body paragraph, and the table has a row with a figure-only cell immediately followed by a text cell. The text cell's first two direct structural children must be paragraphs. The leading title must contain 1–160 normalized characters and at most two distinct non-empty `(page_index, mcid)` line keys. Compare its weighted-median font weight with the following body sibling, not with the same-cell qualifier; require a difference of at least 100. Every non-empty title and body text part must have a style with a resolvable font name, and every contributing fragment must have `page_index >= 0` and a non-`None` MCID. Weight samples use visible-character count, not fragment count. Return at most one hint for each qualifying table row and deduplicate by exact title child path.
 
 - [ ] **Step 4: Run subtitle unit tests and verify GREEN**
 
@@ -368,9 +379,9 @@ Add an XML writer test asserting the exact attributes on the hinted paragraph:
 ```python
 assert subtitle.attrib == {
     "display-role": "subtitle",
-    "subtitle-reason": "leading_table_cell_paragraph_stronger_font",
+    "subtitle-reason": "figure_table_title_stronger_than_following_body",
     "font-weight": "600",
-    "following-font-weight": "400",
+    "comparison-body-font-weight": "400",
     "observed-line-count": "2",
 }
 assert "".join(subtitle.itertext()) == "Generic title"
@@ -384,8 +395,8 @@ def test_renders_subtitle_hint_as_bold_without_heading_promotion(tmp_path: Path)
         tmp_path,
         """
         <table><table_row><table_cell>
-          <paragraph display-role="subtitle" subtitle-reason="leading_table_cell_paragraph_stronger_font"
-                     font-weight="600" following-font-weight="400" observed-line-count="1">
+          <paragraph display-role="subtitle" subtitle-reason="figure_table_title_stronger_than_following_body"
+                     font-weight="600" comparison-body-font-weight="400" observed-line-count="1">
             <text>Arbitrary localized title</text>
           </paragraph>
           <paragraph><text>(Qualifier)</text></paragraph>

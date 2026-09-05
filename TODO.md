@@ -214,6 +214,16 @@ Notes
 
 ## Next Work
 
+### Tagged PDF XML/Markdown Review Follow-ups
+
+- Preserve complex table structure in `samples/tagged_pdf_xml_poc` Markdown output instead of flattening nested paragraphs and lists into a single `- 행 N:` line.
+- Add typography-backed subtitle display hints. Do not hardcode `Correct Disposal...` wording; use verified structure plus relative PDF font weight and keep uncertain cases as separate plain paragraphs.
+- Add a conservative verified-icon catalog for recurring icon-only figures. Name only verified matches, retain evidence, and leave unknown icons for human review.
+- After the Markdown structure work is verified, analyze and implement the detailed hierarchy under `Declaration of Conformity`, including grouped EMC, Safety, and Radio content. Do not promote these items to headings until PDF structure and typography evidence justify it.
+- Later, install and integrate local Tesseract OCR for targeted risky regions rather than whole-page OCR. First target: extract the PDF-visible manual code such as `BN68-25100B-00`, retain crop/confidence evidence, and compare it with the filename manual code and version. A filename-derived value must never be reported as PDF-observed OCR text.
+
+Design reference: `docs/superpowers/specs/2026-09-05-semantic-markdown-icon-review-design.md`.
+
 ### 1. Build Localized Heading Rule Mapping
 
 Before broad multilingual extraction, create a canonical heading rule table:

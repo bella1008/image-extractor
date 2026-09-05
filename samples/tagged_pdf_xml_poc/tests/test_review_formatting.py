@@ -11,9 +11,13 @@ from tagged_pdf_extractor.domain.models import (
 )
 from tagged_pdf_extractor.domain import review_formatting
 from tagged_pdf_extractor.domain.review_formatting import detect_rf_line_break_hints
+from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
+
+from .acceptance_support import require_sample
 
 
 ZG_NAME = "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
+ZG_SAMPLE = Path(__file__).parents[2] / "SUG_RAW" / "TV_ZG" / ZG_NAME
 
 
 def _fragment(text: str) -> ContentFragment:
@@ -151,6 +155,65 @@ def test_does_not_descend_through_a_block_inside_a_paragraph() -> None:
     document = _document((nested_block,))
 
     assert detect_rf_line_break_hints(document.children) == ()
+
+
+def test_detects_inner_paragraph_inside_outer_paragraph_table_wrapper() -> None:
+    inner_paragraph = _element(
+        "paragraph",
+        _fragment("first,"),
+        _newline(),
+        _fragment("second"),
+    )
+    children = (
+        _element(
+            "paragraph",
+            _element(
+                "table",
+                _element(
+                    "table_row",
+                    _element("table_cell", inner_paragraph),
+                ),
+            ),
+        ),
+    )
+
+    assert detect_rf_line_break_hints(children) == (
+        LineBreakHint(child_path=(0, 0, 0, 0, 0, 1)),
+    )
+
+
+def test_outer_table_wrapper_does_not_join_separate_inner_paragraphs() -> None:
+    first_paragraph = _element("paragraph", _fragment("first,"))
+    second_paragraph = _element(
+        "paragraph",
+        _newline(),
+        _fragment("second"),
+    )
+    children = (
+        _element(
+            "paragraph",
+            _element(
+                "table",
+                _element(
+                    "table_row",
+                    _element(
+                        "table_cell",
+                        first_paragraph,
+                        second_paragraph,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert detect_rf_line_break_hints(children) == ()
+
+
+def test_zg_sample_contains_90_source_authored_table_line_breaks() -> None:
+    sample = require_sample(ZG_SAMPLE if ZG_SAMPLE.is_file() else None, "ZG")
+    document = TaggedPdfReader().read(sample)
+
+    assert len(detect_rf_line_break_hints(document.children)) == 90
 
 
 def test_exposes_profile_scoped_review_formatting_application() -> None:

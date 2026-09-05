@@ -40,6 +40,17 @@ def detect_rf_line_break_hints(
             if child.semantic_role == "paragraph":
                 if inside_table_cell:
                     hints.extend(_paragraph_hints(child, child_path))
+                for nested_index, nested_child in enumerate(child.children):
+                    if (
+                        isinstance(nested_child, StructureElement)
+                        and nested_child.semantic_role == "table"
+                    ):
+                        nested_path = (*child_path, nested_index)
+                        visit(
+                            nested_child.children,
+                            nested_path,
+                            inside_table_cell,
+                        )
                 continue
             visit(
                 child.children,

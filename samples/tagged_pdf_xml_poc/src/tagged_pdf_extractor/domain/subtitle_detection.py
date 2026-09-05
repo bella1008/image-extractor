@@ -32,9 +32,8 @@ def normalize_font_weight(font_name: str | None) -> int | None:
     numeric = _TRAILING_WEIGHT.search(normalized)
     if numeric:
         return int(numeric.group(1))
-    compact = re.sub(r"[^a-z]", "", normalized)
     for keyword, weight in _KEYWORD_WEIGHTS:
-        if compact.endswith(keyword):
+        if re.search(rf"(?:^|[-_\s]){re.escape(keyword)}$", normalized):
             return weight
     return None
 

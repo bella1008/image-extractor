@@ -23,7 +23,9 @@ Activation is initially limited to the verified profile represented by the sourc
 filename token `ZG XN ZT_L05` with `doc_type=BOOK`. All five language sections in
 the BOOK PDF are eligible because matching uses structure and typography rather
 than localized text. Other profiles retain their current output until their PDFs
-validate the same behavior and their dispatch scope is explicitly enabled.
+validate the same behavior and their dispatch scope is explicitly enabled. XY ENG
+and KR KOR are explicit negative-control profiles: their extraction must remain
+unchanged and they must not receive ZG-only RF or DoC display hints.
 
 The isolated POC must not import the root application's profile repository. A
 small local profile-scope policy parses the source token from the standard PDF
@@ -178,8 +180,10 @@ Unit tests must prove:
 
 Real-sample regression tests must cover ZG ENG, DEU, FRA, ITA, and DUT DoC sections,
 both English DoC instances, all verified RF rows, unchanged ZC/ZA output, unchanged
-numbered chapter headings, and unchanged Correct Disposal formatting.
+numbered chapter headings, and unchanged Correct Disposal formatting. XY ENG and
+KR KOR must also be extracted as required samples and must prove that no ZG-only
+RF line-break, DoC heading, or DoC bold-label hints are emitted.
 
-The final gate is the complete POC test suite with required ZC, ZA, and ZG samples,
-POC/repository compile checks, no-title-hardcoding audit, and regenerated ZG
-reviewer Markdown.
+The final gate is the complete POC test suite with required ZC, ZA, ZG, XY, and KR
+samples, POC/repository compile checks, no-title-hardcoding audit, regenerated ZG
+reviewer Markdown, and unchanged reviewer Markdown bundles for XY and KR.

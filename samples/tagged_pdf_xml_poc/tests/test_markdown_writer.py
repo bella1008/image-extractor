@@ -45,6 +45,41 @@ def _render(
     return output.read_text(encoding="utf-8")
 
 
+def test_renders_subtitle_hint_as_bold_without_heading_promotion(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <table><table_row><table_cell>
+          <paragraph display-role="subtitle" subtitle-reason="figure_table_title_stronger_than_following_body"
+                     font-weight="600" comparison-body-font-weight="400" observed-line-count="1">
+            <text>Arbitrary localized title</text>
+          </paragraph>
+          <paragraph><text>(Qualifier)</text></paragraph>
+        </table_cell></table_row></table>
+        """,
+    )
+
+    assert "**Arbitrary localized title**" in markdown
+    assert "## Arbitrary localized title" not in markdown
+    assert markdown.index("**Arbitrary localized title**") < markdown.index(
+        "(Qualifier)"
+    )
+
+
+def test_subtitle_escapes_only_emphasis_breaking_characters(tmp_path: Path) -> None:
+    markdown = _render(
+        tmp_path,
+        r"""
+        <paragraph display-role="subtitle"><text>Path C:\Temp *star* _name_</text></paragraph>
+        """,
+    )
+
+    assert r"**Path C:\\Temp \*star\* \_name\_**" in markdown
+    assert "## Path" not in markdown
+
+
 def test_actual_heading_directly_under_list_is_a_heading_not_a_list_item(
     tmp_path: Path,
 ) -> None:

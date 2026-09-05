@@ -182,6 +182,13 @@ class MarkdownDocumentWriter:
             text = cls._element_text(element)
             return [f"{'#' * level} {text}"] if text else []
 
+        if (
+            element.tag == "paragraph"
+            and element.get("display-role") == "subtitle"
+        ):
+            text = cls._element_text(element)
+            return [f"**{cls._escape_emphasis_text(text)}**"] if text else []
+
         atomic_tags = {"paragraph", "heading", "caption", "label", "figure"}
         if element.tag in atomic_tags and cls._has_mixed_content_descendant(
             element, promoted
@@ -202,6 +209,10 @@ class MarkdownDocumentWriter:
             text = cls._element_text(element)
             return [cls._escape_line_prefix(text) if text else "[그림: 텍스트 없음]"]
         return cls._render_children(element, promoted)
+
+    @staticmethod
+    def _escape_emphasis_text(text: str) -> str:
+        return text.replace("\\", r"\\").replace("*", r"\*").replace("_", r"\_")
 
     @classmethod
     def _render_list(

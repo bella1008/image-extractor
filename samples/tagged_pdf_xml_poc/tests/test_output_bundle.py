@@ -5,6 +5,9 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
+from tagged_pdf_extractor.application import (
+    extract_document as extract_document_module,
+)
 from tagged_pdf_extractor.application.extract_document import ExtractDocument
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
@@ -12,6 +15,7 @@ from tagged_pdf_extractor.domain.models import (
     HeadingPromotion,
     QualityReport,
     StructureElement,
+    SubtitleHint,
     TaggedDocument,
 )
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
@@ -126,6 +130,134 @@ def test_output_bundle_keeps_raw_list_and_renders_one_promoted_heading(
     assert semantic_root.find(".//heading") is not None
     assert markdown.count("## 03 Troubleshooting") == 1
     assert "- 03 Troubleshooting" not in markdown
+
+
+def test_output_bundle_publishes_subtitle_metadata_without_heading_hierarchy(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        tmp_path / "manual.pdf",
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(ContentFragment(0, 1, ("Visible subtitle",)),),
+            ),
+        ),
+        subtitle_hints=(
+            SubtitleHint(
+                child_path=(0,),
+                font_weight=600,
+                comparison_body_font_weight=400,
+                observed_line_count=1,
+            ),
+        ),
+    )
+    report = _report(document)
+    output = tmp_path / "bundle"
+
+    artifacts = OutputBundleWriter().write(document, report, output)
+
+    subtitle = ET.parse(artifacts.semantic_xml).getroot().find("paragraph")
+    assert subtitle is not None
+    assert subtitle.get("display-role") == "subtitle"
+    assert "**Visible subtitle**" in artifacts.semantic_markdown.read_text(
+        encoding="utf-8"
+    )
+    assert report.heading_hierarchy == ()
+    assert json.loads(artifacts.report_json.read_text(encoding="utf-8"))[
+        "heading_hierarchy"
+    ] == []
+    assert not any(path.name.startswith(".bundle.") for path in tmp_path.iterdir())
+
+
+def test_output_bundle_invalid_subtitle_hint_is_atomic(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        tmp_path / "manual.pdf",
+        True,
+        "en",
+        (),
+        (StructureElement("Span", "span"),),
+        subtitle_hints=(SubtitleHint((0,), 600, 400, 1),),
+    )
+    output = tmp_path / "bundle"
+    report = QualityReport("pass", {}, {"xml_round_trip": True}, (), ())
+
+    with pytest.raises(ValueError, match="subtitle hint must target"):
+        OutputBundleWriter().write(document, report, output)
+
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "bundle") == []
+
+
+def test_extract_document_detects_subtitles_after_heading_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    document = _document(tmp_path)
+    report = _report(document)
+
+    def promote(actual: TaggedDocument) -> TaggedDocument:
+        calls.append("promote")
+        return actual
+
+    def detect(actual: TaggedDocument) -> TaggedDocument:
+        calls.append("subtitle")
+        return actual
+
+    monkeypatch.setattr(
+        extract_document_module, "promote_numbered_chapter_headings", promote
+    )
+    monkeypatch.setattr(extract_document_module, "detect_table_subtitles", detect)
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            calls.append("reader")
+            return document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            calls.append("baseline")
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(
+            self,
+            actual_document: TaggedDocument,
+            baseline: str,
+            xml_round_trip_ok: bool,
+        ) -> QualityReport:
+            calls.append("evaluate")
+            return report
+
+    class Writer:
+        def validate(self, actual_document: TaggedDocument) -> OutputValidation:
+            calls.append("validate")
+            return OutputValidation(report.join_decisions)
+
+        def write(self, *args: object, **kwargs: object) -> object:
+            calls.append("write")
+            return object()
+
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+
+    ExtractDocument(Reader(), Baseline(), Evaluator(), Writer()).run(
+        source, tmp_path / "output"
+    )
+
+    assert calls == [
+        "reader",
+        "promote",
+        "subtitle",
+        "baseline",
+        "validate",
+        "evaluate",
+        "write",
+    ]
 
 
 def test_json_report_writer_preserves_dataclass_order_unicode_paths_and_controls(

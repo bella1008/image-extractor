@@ -8,6 +8,7 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
     StructureElement,
+    SubtitleHint,
     TaggedDocument,
     TextStyle,
 )
@@ -39,6 +40,132 @@ def _list_item() -> StructureElement:
         "list_item",
         children=(ContentFragment(0, 1, ("03 Troubleshooting",)),),
     )
+
+
+def _subtitle_hint(child_path: tuple[int, ...]) -> SubtitleHint:
+    return SubtitleHint(
+        child_path=child_path,
+        font_weight=600,
+        comparison_body_font_weight=400,
+        observed_line_count=2,
+    )
+
+
+def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(
+    tmp_path: Path,
+) -> None:
+    title = StructureElement(
+        "P",
+        "paragraph",
+        children=(ContentFragment(0, 11, ("Generic title",)),),
+    )
+    qualifier = StructureElement(
+        "P",
+        "paragraph",
+        children=(ContentFragment(0, 12, ("(Qualifier)",)),),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "Sect",
+                "section",
+                children=(
+                    StructureElement(
+                        "Table",
+                        "table",
+                        children=(
+                            StructureElement(
+                                "TR",
+                                "table_row",
+                                children=(
+                                    StructureElement(
+                                        "TD",
+                                        "table_cell",
+                                        children=(title, qualifier),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        subtitle_hints=(_subtitle_hint((0, 0, 0, 0, 0)),),
+    )
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    root = ET.parse(semantic_path).getroot()
+    subtitle = root.find("./section/table/table_row/table_cell/paragraph")
+    assert subtitle is not None
+    assert subtitle.attrib == {
+        "display-role": "subtitle",
+        "subtitle-reason": "figure_table_title_stronger_than_following_body",
+        "font-weight": "600",
+        "comparison-body-font-weight": "400",
+        "observed-line-count": "2",
+    }
+    assert "".join(subtitle.itertext()) == "Generic title"
+    cell = root.find("./section/table/table_row/table_cell")
+    assert cell is not None
+    assert [child.tag for child in cell] == ["paragraph", "paragraph"]
+    assert "".join(root.itertext()) == "Generic title(Qualifier)"
+
+
+def test_semantic_writer_rejects_duplicate_subtitle_hint_paths(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (StructureElement("P", "paragraph"),),
+        subtitle_hints=(_subtitle_hint((0,)), _subtitle_hint((0,))),
+    )
+
+    with pytest.raises(ValueError, match="duplicate subtitle hint path"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+def test_semantic_writer_rejects_unresolved_subtitle_hint_path(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (StructureElement("P", "paragraph"),),
+        subtitle_hints=(_subtitle_hint((1,)),),
+    )
+
+    with pytest.raises(ValueError, match="unresolved subtitle hint path"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+@pytest.mark.parametrize(
+    "promoted", (False, True), ids=("non-paragraph", "heading")
+)
+def test_semantic_writer_rejects_invalid_subtitle_target(
+    tmp_path: Path, promoted: bool
+) -> None:
+    target = _list_item() if promoted else StructureElement("Span", "span")
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (target,),
+        heading_promotions=(_promotion((0,)),) if promoted else (),
+        subtitle_hints=(_subtitle_hint((0,)),),
+    )
+
+    with pytest.raises(
+        ValueError, match="subtitle hint must target an unpromoted paragraph"
+    ):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
 
 
 def test_semantic_writer_rejects_duplicate_promotion_paths(tmp_path: Path) -> None:

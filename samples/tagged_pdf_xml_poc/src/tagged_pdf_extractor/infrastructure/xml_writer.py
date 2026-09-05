@@ -15,6 +15,7 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
     StructureElement,
+    SubtitleHint,
     TaggedDocument,
 )
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
@@ -187,6 +188,12 @@ class XmlDocumentWriter:
         expected_parts: list[str] = []
         decisions: list[dict[str, object]] = []
         promotion_tracker = HeadingPromotionTracker(document.heading_promotions)
+        subtitle_by_path = {
+            hint.child_path: hint for hint in document.subtitle_hints
+        }
+        if len(subtitle_by_path) != len(document.subtitle_hints):
+            raise ValueError("duplicate subtitle hint path")
+        consumed_subtitle_paths: set[tuple[int, ...]] = set()
 
         for index, child in enumerate(document.children):
             self._append_semantic_child(
@@ -196,11 +203,17 @@ class XmlDocumentWriter:
                 parent_child_path=(),
                 child_index=index,
                 promotion_tracker=promotion_tracker,
+                subtitle_by_path=subtitle_by_path,
+                consumed_subtitle_paths=consumed_subtitle_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
 
         promotion_tracker.assert_all_applied()
+        unresolved_subtitle_paths = set(subtitle_by_path) - consumed_subtitle_paths
+        if unresolved_subtitle_paths:
+            unresolved = sorted(unresolved_subtitle_paths)[0]
+            raise ValueError(f"unresolved subtitle hint path {unresolved}")
         self._write_and_verify(
             root,
             path,
@@ -243,11 +256,25 @@ class XmlDocumentWriter:
         parent_child_path: tuple[int, ...],
         child_index: int,
         promotion_tracker: HeadingPromotionTracker,
+        subtitle_by_path: dict[tuple[int, ...], SubtitleHint],
+        consumed_subtitle_paths: set[tuple[int, ...]],
         expected_parts: list[str],
         decisions: list[dict[str, object]],
     ) -> None:
         child_path = (*parent_child_path, child_index)
         promotion = promotion_tracker.apply(child_path, child)
+        subtitle = subtitle_by_path.get(child_path)
+        if subtitle is not None:
+            if (
+                not isinstance(child, StructureElement)
+                or child.semantic_role != "paragraph"
+                or promotion is not None
+            ):
+                raise ValueError(
+                    "subtitle hint must target an unpromoted paragraph "
+                    f"StructureElement at {child_path}"
+                )
+            consumed_subtitle_paths.add(child_path)
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)
             text_element = ET.SubElement(
@@ -285,6 +312,8 @@ class XmlDocumentWriter:
             attributes.update(
                 self._promotion_attributes(promotion, source_role=child.source_role)
             )
+        if subtitle is not None:
+            attributes.update(self._subtitle_attributes(subtitle))
         element = ET.SubElement(
             parent,
             tag,
@@ -299,9 +328,23 @@ class XmlDocumentWriter:
                 parent_child_path=child_path,
                 child_index=index,
                 promotion_tracker=promotion_tracker,
+                subtitle_by_path=subtitle_by_path,
+                consumed_subtitle_paths=consumed_subtitle_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
+
+    @staticmethod
+    def _subtitle_attributes(subtitle: SubtitleHint) -> dict[str, str]:
+        return {
+            "display-role": "subtitle",
+            "subtitle-reason": subtitle.reason,
+            "font-weight": str(subtitle.font_weight),
+            "comparison-body-font-weight": str(
+                subtitle.comparison_body_font_weight
+            ),
+            "observed-line-count": str(subtitle.observed_line_count),
+        }
 
     @staticmethod
     def _promotion_attributes(

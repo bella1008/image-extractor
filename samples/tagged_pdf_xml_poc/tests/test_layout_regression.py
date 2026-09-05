@@ -147,6 +147,19 @@ _ZG_FORM_LABEL_GROUPS = (
         "Ondertekend voor en namens: Samsung",
     ),
 )
+_ZG_SUBTITLE_COUNTS = Counter(
+    {
+        "Correct Disposal of This Product "
+        "(Waste Electrical & Electronic Equipment)": 1,
+        "Correct disposal of batteries in this product": 1,
+        "Ordnungsgemäße Entsorgung der Batterien in diesem Gerät": 1,
+        "Elimination des batteries de ce produit": 1,
+        "Corretto smaltimento delle batterie del prodotto": 1,
+        "Correcte verwijdering van dit product "
+        "(elektrische & elektronische afvalapparatuur)": 1,
+        "Correcte behandeling van een gebruikte accu uit dit product": 1,
+    }
+)
 
 
 def _resolve_sample(
@@ -324,6 +337,27 @@ def _assert_no_zg_display_evidence(document, semantic_xml: Path) -> None:
         assert root.find(f".//*[@display-role='{role}']") is None
 
 
+def _assert_zg_subtitles(root: ET.Element, markdown: str) -> None:
+    semantic_subtitles = Counter(
+        _element_text(element)
+        for element in root.findall(".//*[@display-role='subtitle']")
+    )
+    assert semantic_subtitles == _ZG_SUBTITLE_COUNTS, (
+        "semantic subtitle evidence must preserve all seven reviewed ZG subtitles"
+    )
+
+    markdown_subtitles = Counter(
+        line.strip()[2:-2]
+        for line in markdown.splitlines()
+        if line.strip().startswith("**")
+        and line.strip().endswith("**")
+        and line.strip()[2:-2] in _ZG_SUBTITLE_COUNTS
+    )
+    assert markdown_subtitles == _ZG_SUBTITLE_COUNTS, (
+        "Markdown must render every reviewed ZG subtitle exactly once"
+    )
+
+
 def _preserved_line_break_pairs(root: ET.Element) -> list[tuple[str, str]]:
     parent_by_child = {
         child: parent for parent in root.iter() for child in parent
@@ -433,6 +467,23 @@ def test_page_quality_rejects_a_missing_expected_page() -> None:
 
     with pytest.raises(AssertionError):
         _assert_complete_page_quality(page_quality, {"0", "1"})
+
+
+def test_zg_subtitle_gate_rejects_a_missing_localized_subtitle() -> None:
+    root = ET.Element("document")
+    for subtitle in _ZG_SUBTITLE_COUNTS:
+        paragraph = ET.SubElement(root, "paragraph", {"display-role": "subtitle"})
+        ET.SubElement(paragraph, "text").text = subtitle
+    localized = next(
+        paragraph
+        for paragraph in root.findall(".//*[@display-role='subtitle']")
+        if _element_text(paragraph).startswith("Ordnungsgemäße")
+    )
+    root.remove(localized)
+    markdown = "\n".join(f"**{subtitle}**" for subtitle in _ZG_SUBTITLE_COUNTS)
+
+    with pytest.raises(AssertionError, match="semantic subtitle evidence"):
+        _assert_zg_subtitles(root, markdown)
 
 
 def test_readme_documents_sample_overrides_and_independent_skips() -> None:
@@ -606,6 +657,7 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
 
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
     _assert_preserved_breaks_are_physical_markdown_lines(semantic_root, markdown)
+    _assert_zg_subtitles(semantic_root, markdown)
 
     expected_form_headings = Counter(
         heading for heading in _ZG_FORM_HEADINGS for _ in range(2)
@@ -648,11 +700,6 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
     ) == expected_form_labels
     _assert_form_labels_and_details_remain_separate(semantic_root, markdown)
 
-    assert (
-        "**Correct Disposal of This Product "
-        "(Waste Electrical & Electronic Equipment)**"
-    ) in markdown
-    assert "**Correct disposal of batteries in this product**" in markdown
     assert markdown.count(
         "(Applicable in countries with separate collection systems)"
     ) == 2

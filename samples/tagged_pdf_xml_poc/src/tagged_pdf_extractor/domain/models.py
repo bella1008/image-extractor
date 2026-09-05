@@ -77,6 +77,15 @@ class NumberedHeadingSeriesAudit:
 
 
 @dataclass(frozen=True)
+class SubtitleHint:
+    child_path: tuple[int, ...]
+    font_weight: int
+    comparison_body_font_weight: int
+    observed_line_count: int
+    reason: str = "figure_table_title_stronger_than_following_body"
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -87,6 +96,7 @@ class TaggedDocument:
     heading_promotions: tuple[HeadingPromotion, ...] = ()
     numbered_heading_series: tuple[NumberedHeadingSeriesAudit, ...] = ()
     numbered_heading_series_consistent: bool | None = None
+    subtitle_hints: tuple[SubtitleHint, ...] = ()
 
 
 @dataclass(frozen=True)

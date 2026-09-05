@@ -1,0 +1,323 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from tagged_pdf_extractor.domain.models import (
+    ContentFragment,
+    StructureElement,
+    SubtitleHint,
+    TaggedDocument,
+    TextStyle,
+)
+from tagged_pdf_extractor.domain.subtitle_detection import (
+    detect_subtitle_hints,
+    detect_table_subtitles,
+    normalize_font_weight,
+)
+
+
+def _fragment(
+    text: str,
+    font_name: str | None,
+    *,
+    page_index: int = 0,
+    mcid: int | None = 1,
+) -> ContentFragment:
+    return ContentFragment(
+        page_index=page_index,
+        mcid=mcid,
+        text_parts=(text,),
+        text_styles=(TextStyle(font_name, 6.5),),
+    )
+
+
+def _element(
+    role: str,
+    *children: StructureElement | ContentFragment,
+) -> StructureElement:
+    return StructureElement(role, role, children=children)
+
+
+def _valid_children(
+    *,
+    title: StructureElement | None = None,
+    qualifier: StructureElement | None = None,
+    body: StructureElement | None = None,
+    figure_cell: StructureElement | None = None,
+    text_cell_prefix: tuple[StructureElement | ContentFragment, ...] = (),
+) -> tuple[StructureElement | ContentFragment, ...]:
+    title = title or _element(
+        "paragraph", _fragment("任意の地域向け回収案内", "SamsungOne-600", mcid=11)
+    )
+    qualifier = qualifier or _element(
+        "paragraph", _fragment("（対象製品のみ）", "SamsungOne-600", mcid=12)
+    )
+    body = body or _element(
+        "paragraph",
+        _fragment("地域の回収規則に従って処分してください。", "SamsungOne-400", mcid=13),
+    )
+    figure_cell = figure_cell or _element(
+        "table_cell", _element("figure")
+    )
+    text_cell = _element(
+        "table_cell", *text_cell_prefix, title, qualifier
+    )
+    row = _element("table_row", figure_cell, text_cell)
+    table = _element("table", row)
+    wrapper = _element("paragraph", table)
+    section = _element("section", wrapper, body)
+    return (section,)
+
+
+@pytest.mark.parametrize(
+    ("font_name", "expected"),
+    [
+        ("ABCDEF+SamsungOne-600", 600),
+        ("Family-100", 100),
+        ("Family-900", 900),
+        ("FamilyBlack", 900),
+        ("Family-ExtraBold", 800),
+        ("Family-SemiBold", 600),
+        ("Family-DemiBold", 600),
+        ("Family-Medium", 500),
+        ("Family-Regular", 400),
+        ("Family-Normal", 400),
+        ("Family-Light", 300),
+        ("Family-950", None),
+        ("MysteryTypeface", None),
+        (None, None),
+    ],
+)
+def test_normalize_font_weight_uses_only_verified_numeric_or_keyword_evidence(
+    font_name: str | None, expected: int | None
+) -> None:
+    assert normalize_font_weight(font_name) == expected
+
+
+def test_detects_language_independent_table_subtitle_from_following_body_weight() -> None:
+    children = _valid_children(
+        title=_element(
+            "paragraph",
+            _fragment("地域固有の題名", "AAAAAA+SamsungOne-600", mcid=21),
+            _fragment(" 続き", "SamsungOne-SemiBold", mcid=21),
+        )
+    )
+
+    assert detect_subtitle_hints(children) == (
+        SubtitleHint(
+            child_path=(0, 0, 0, 0, 1, 0),
+            font_weight=600,
+            comparison_body_font_weight=400,
+            observed_line_count=1,
+        ),
+    )
+
+
+def test_detect_table_subtitles_returns_replaced_immutable_document() -> None:
+    document = TaggedDocument(Path("localized.pdf"), True, "xx", (), _valid_children())
+
+    detected = detect_table_subtitles(document)
+
+    assert detected is not document
+    assert document.subtitle_hints == ()
+    assert detected.subtitle_hints == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
+@pytest.mark.parametrize(
+    "title_font,body_font",
+    [
+        ("SamsungOne-400", "SamsungOne-400"),
+        ("UnknownTitle", "SamsungOne-400"),
+        ("SamsungOne-600", "UnknownBody"),
+    ],
+)
+def test_rejects_insufficient_or_unresolved_font_weight(
+    title_font: str, body_font: str
+) -> None:
+    title = _element("paragraph", _fragment("제목", title_font, mcid=21))
+    body = _element("paragraph", _fragment("본문", body_font, mcid=22))
+
+    assert detect_subtitle_hints(_valid_children(title=title, body=body)) == ()
+
+
+def test_rejects_title_longer_than_160_normalized_characters() -> None:
+    title = _element(
+        "paragraph", _fragment("가 " * 81, "SamsungOne-600", mcid=21)
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_rejects_title_observed_on_more_than_two_distinct_lines() -> None:
+    title = _element(
+        "paragraph",
+        _fragment("첫째", "SamsungOne-600", mcid=21),
+        _fragment("둘째", "SamsungOne-600", mcid=22),
+        _fragment("셋째", "SamsungOne-600", mcid=23),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_rejects_nonempty_title_or_body_part_without_styles() -> None:
+    title = _element(
+        "paragraph", ContentFragment(0, 21, ("스타일 없는 제목",))
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_rejects_mixed_resolved_and_unresolved_font_names() -> None:
+    title = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            21,
+            ("resolved", " unresolved"),
+            text_styles=(
+                TextStyle("SamsungOne-600", 6.5),
+                TextStyle("UnknownFont", 6.5),
+            ),
+        ),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_rejects_row_without_immediately_preceding_figure_only_cell() -> None:
+    nonfigure_cell = _element("table_cell", _element("paragraph"))
+
+    assert detect_subtitle_hints(_valid_children(figure_cell=nonfigure_cell)) == ()
+
+
+def test_rejects_figure_cell_that_contains_visible_text() -> None:
+    figure_cell = _element(
+        "table_cell",
+        _element("figure"),
+        _fragment("visible caption", "SamsungOne-400", mcid=9),
+    )
+
+    assert detect_subtitle_hints(_valid_children(figure_cell=figure_cell)) == ()
+
+
+def test_rejects_wrapper_without_immediately_following_body_paragraph() -> None:
+    children = _valid_children()
+    section = children[0]
+    assert isinstance(section, StructureElement)
+
+    assert detect_subtitle_hints((replace(section, children=section.children[:1]),)) == ()
+
+
+@pytest.mark.parametrize("page_index,mcid", [(-1, 21), (0, None)])
+@pytest.mark.parametrize("target", ["title", "body"])
+def test_rejects_unresolved_title_or_body_line_identity(
+    target: str, page_index: int, mcid: int | None
+) -> None:
+    title = _element(
+        "paragraph",
+        _fragment(
+            "제목",
+            "SamsungOne-600",
+            page_index=page_index if target == "title" else 0,
+            mcid=mcid if target == "title" else 21,
+        ),
+    )
+    body = _element(
+        "paragraph",
+        _fragment(
+            "본문",
+            "SamsungOne-400",
+            page_index=page_index if target == "body" else 0,
+            mcid=mcid if target == "body" else 22,
+        ),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title, body=body)) == ()
+
+
+def test_rejects_paragraph_outside_required_table_structure() -> None:
+    title = _element("paragraph", _fragment("제목", "SamsungOne-600", mcid=1))
+    body = _element("paragraph", _fragment("본문", "SamsungOne-400", mcid=2))
+
+    assert detect_subtitle_hints((_element("section", title, body),)) == ()
+
+
+def test_never_selects_a_nonleading_text_cell_paragraph() -> None:
+    plain_lead = _element(
+        "paragraph", _fragment("일반 선행 문단", "SamsungOne-400", mcid=31)
+    )
+    strong_second = _element(
+        "paragraph", _fragment("강한 둘째 문단", "SamsungOne-700", mcid=32)
+    )
+
+    assert (
+        detect_subtitle_hints(
+            _valid_children(title=plain_lead, qualifier=strong_second)
+        )
+        == ()
+    )
+
+
+def test_requires_wrapper_to_contain_exactly_one_table() -> None:
+    children = _valid_children()
+    section = children[0]
+    assert isinstance(section, StructureElement)
+    wrapper, body = section.children
+    assert isinstance(wrapper, StructureElement)
+    extra = _element("paragraph", _fragment("extra", "SamsungOne-400", mcid=99))
+    malformed_wrapper = replace(wrapper, children=(*wrapper.children, extra))
+
+    assert (
+        detect_subtitle_hints(
+            (replace(section, children=(malformed_wrapper, body)),)
+        )
+        == ()
+    )
+
+
+def test_character_weighted_median_controls_title_and_body_comparison() -> None:
+    title = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            41,
+            ("X", "긴 제목 문자열"),
+            text_styles=(TextStyle("Font-900", 6.5), TextStyle("Font-600", 6.5)),
+        ),
+    )
+    body = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            42,
+            ("Y", "긴 본문 문자열"),
+            text_styles=(TextStyle("Font-100", 6.5), TextStyle("Font-400", 6.5)),
+        ),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title, body=body)) == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
+def test_exact_title_paths_are_deduplicated() -> None:
+    children = _valid_children()
+
+    hints = detect_subtitle_hints(children)
+
+    assert len(hints) == len({hint.child_path for hint in hints}) == 1
+
+
+def test_detection_has_no_language_buyer_or_title_dictionary_dependency() -> None:
+    first = TaggedDocument(Path("one.pdf"), True, "zz", (), _valid_children())
+    second = replace(first, source_path=Path("buyer-token.pdf"), language="yy")
+
+    assert detect_table_subtitles(first).subtitle_hints == detect_table_subtitles(
+        second
+    ).subtitle_hints
+

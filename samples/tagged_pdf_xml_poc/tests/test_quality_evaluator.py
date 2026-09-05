@@ -8,6 +8,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
+from tagged_pdf_extractor.application import evaluate_quality as evaluate_quality_module
 from tagged_pdf_extractor.application.evaluate_quality import (
     QualityEvaluationLimitError,
     QualityEvaluator,
@@ -27,6 +28,50 @@ import tagged_pdf_extractor.infrastructure.pymupdf_baseline as baseline_module
 
 
 SPECIAL_CHARACTERS = ">→/&:[]()"
+
+
+def test_quality_evaluator_uses_shared_heading_candidate_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        evaluate_quality_module,
+        "is_heading_candidate",
+        lambda source_role: source_role == "SharedCandidate",
+    )
+    monkeypatch.setattr(
+        evaluate_quality_module,
+        "heading_candidate_level",
+        lambda source_role: 4 if source_role == "SharedCandidate" else None,
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "SharedCandidate",
+                "paragraph",
+                children=(ContentFragment(0, 1, ("Shared title",)),),
+            ),
+        ),
+    )
+
+    report = QualityEvaluator().evaluate(
+        document, "Shared title", xml_round_trip_ok=True
+    )
+
+    assert report.heading_hierarchy == (
+        {
+            "structure_path": "/paragraph[0]",
+            "source_role": "SharedCandidate",
+            "semantic_role": "paragraph",
+            "level": 4,
+            "joined_text": "Shared title",
+            "title": None,
+            "classification": "source_role_candidate",
+        },
+    )
 
 
 def _document(

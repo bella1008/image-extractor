@@ -9,6 +9,7 @@ from tagged_pdf_extractor.domain.models import (
     SubtitleHint,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 
 
 _TRAILING_WEIGHT = re.compile(r"(?:^|[-_\s])([1-9]00)$")
@@ -22,6 +23,9 @@ _KEYWORD_WEIGHTS = (
     ("regular", 400),
     ("normal", 400),
     ("light", 300),
+)
+_SUBTITLE_BLOCK_ROLES = frozenset(
+    {"list", "table", "figure", "heading", "paragraph"}
 )
 
 
@@ -67,7 +71,27 @@ def detect_subtitle_hints(
 
 
 def detect_table_subtitles(document: TaggedDocument) -> TaggedDocument:
-    return replace(document, subtitle_hints=detect_subtitle_hints(document.children))
+    promoted_paths = {promotion.child_path for promotion in document.heading_promotions}
+    hints = tuple(
+        hint
+        for hint in detect_subtitle_hints(document.children)
+        if hint.child_path not in promoted_paths
+    )
+    return replace(document, subtitle_hints=hints)
+
+
+def has_subtitle_block_descendant(paragraph: StructureElement) -> bool:
+    def visit(children: tuple[StructureElement | ContentFragment, ...]) -> bool:
+        for child in children:
+            if not isinstance(child, StructureElement):
+                continue
+            if child.semantic_role in _SUBTITLE_BLOCK_ROLES:
+                return True
+            if visit(child.children):
+                return True
+        return False
+
+    return visit(paragraph.children)
 
 
 def _single_wrapped_table(wrapper: StructureElement) -> StructureElement | None:
@@ -130,6 +154,10 @@ def _row_hint(
         title = text_cell.children[0]
         qualifier = text_cell.children[1]
         if not (_is_paragraph(title) and _is_paragraph(qualifier)):
+            continue
+        if is_heading_candidate(title.source_role):
+            continue
+        if has_subtitle_block_descendant(title):
             continue
 
         title_text = _normalized_text(title)

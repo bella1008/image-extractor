@@ -18,6 +18,9 @@ from tagged_pdf_extractor.domain.models import (
     SubtitleHint,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.subtitle_detection import (
+    has_subtitle_block_descendant,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -288,6 +291,11 @@ class XmlDocumentWriter:
                 raise ValueError(
                     "subtitle hint must target an unpromoted paragraph "
                     f"StructureElement at {child_path}"
+                )
+            if has_subtitle_block_descendant(child):
+                raise ValueError(
+                    "subtitle paragraph must not contain block descendants "
+                    f"at {child_path}"
                 )
             consumed_subtitle_paths.add(child_path)
         if isinstance(child, ContentFragment):

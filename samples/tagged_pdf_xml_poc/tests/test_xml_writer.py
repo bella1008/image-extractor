@@ -118,6 +118,61 @@ def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(
     assert "".join(root.itertext()) == "Generic title(Qualifier)"
 
 
+@pytest.mark.parametrize(
+    "block_role", ("list", "table", "figure", "heading", "paragraph")
+)
+def test_semantic_writer_rejects_subtitle_paragraph_with_block_descendant(
+    tmp_path: Path, block_role: str
+) -> None:
+    paragraph = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            ContentFragment(0, 1, ("Title",)),
+            StructureElement(block_role, block_role),
+        ),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (paragraph,),
+        subtitle_hints=(_subtitle_hint((0,)),),
+    )
+
+    with pytest.raises(ValueError, match="subtitle paragraph must not contain block"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
+def test_subtitle_display_metadata_never_enters_raw_xml(tmp_path: Path) -> None:
+    paragraph = StructureElement(
+        "P",
+        "paragraph",
+        children=(ContentFragment(0, 1, ("Title",)),),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (paragraph,),
+        subtitle_hints=(_subtitle_hint((0,)),),
+    )
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw = raw_path.read_text(encoding="utf-8")
+    semantic = semantic_path.read_text(encoding="utf-8")
+    assert "display-role" not in raw
+    assert "subtitle-reason" not in raw
+    assert 'display-role="subtitle"' in semantic
+
+
 def test_semantic_writer_rejects_duplicate_subtitle_hint_paths(tmp_path: Path) -> None:
     document = TaggedDocument(
         Path("manual.pdf"),

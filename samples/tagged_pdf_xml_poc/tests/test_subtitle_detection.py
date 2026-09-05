@@ -7,6 +7,7 @@ import pytest
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    HeadingPromotion,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
@@ -149,6 +150,98 @@ def test_detect_table_subtitles_returns_replaced_immutable_document() -> None:
     assert detected is not document
     assert document.subtitle_hints == ()
     assert detected.subtitle_hints == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
+@pytest.mark.parametrize("source_role", ("Heading2", "Cover_Title"))
+def test_rejects_source_role_heading_or_title_candidates(source_role: str) -> None:
+    title = StructureElement(
+        source_role,
+        "paragraph",
+        children=(_fragment("candidate", "SamsungOne-600", mcid=21),),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_actual_zg_style_p_paragraph_remains_subtitle_eligible() -> None:
+    title = StructureElement(
+        "P",
+        "paragraph",
+        children=(_fragment("disposal title", "SamsungOne-600", mcid=21),),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
+def test_rejects_actual_semantic_heading_as_subtitle() -> None:
+    title = StructureElement(
+        "P",
+        "heading",
+        heading_level=2,
+        children=(_fragment("semantic heading", "SamsungOne-600", mcid=21),),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_rejects_numbered_promotion_target_as_subtitle() -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        _valid_children(),
+        heading_promotions=(
+            HeadingPromotion(
+                child_path=(0, 0, 0, 0, 1, 0),
+                level=2,
+                label="01",
+                title="candidate",
+                series_index=0,
+                heading_font_size=12.0,
+                body_font_size=8.0,
+                font_size_ratio=1.5,
+                promotion_reason="numbered_chapter_structure_sequence_typography",
+            ),
+        ),
+    )
+
+    assert detect_table_subtitles(document).subtitle_hints == ()
+
+
+@pytest.mark.parametrize(
+    "block_role", ("list", "table", "figure", "heading", "paragraph")
+)
+def test_rejects_title_paragraph_with_block_descendant(block_role: str) -> None:
+    title = _element(
+        "paragraph",
+        _fragment("title", "SamsungOne-600", mcid=21),
+        _element(block_role),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_allows_title_paragraph_with_inline_span_descendant() -> None:
+    title = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            StructureElement(
+                "Span",
+                "span",
+                children=(
+                    _fragment("inline title", "SamsungOne-600", mcid=21),
+                ),
+            ),
+        ),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == (
         SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
     )
 

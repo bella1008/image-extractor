@@ -1,3 +1,6 @@
+import re
+
+
 ROLE_MAP = {
     "Document": "document",
     "Part": "part",
@@ -18,6 +21,22 @@ ROLE_MAP = {
     "Span": "span",
     "Link": "link",
 }
+_HEADING_CANDIDATE = re.compile(
+    r"heading(?:(?P<level>[1-6])(?=$|\D)|$)", re.IGNORECASE
+)
+_TITLE_CANDIDATE = re.compile(r"(?:^|[_-])title$", re.IGNORECASE)
+
+
+def heading_candidate_level(source_role: str) -> int | None:
+    match = _HEADING_CANDIDATE.search(source_role)
+    return int(match.group("level")) if match and match.group("level") else None
+
+
+def is_heading_candidate(source_role: str) -> bool:
+    return bool(
+        _HEADING_CANDIDATE.search(source_role)
+        or _TITLE_CANDIDATE.search(source_role)
+    )
 
 
 def map_role(source_role: str, role_map: dict[str, str]) -> tuple[str, int | None]:

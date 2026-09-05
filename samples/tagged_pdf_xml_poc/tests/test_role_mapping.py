@@ -1,7 +1,31 @@
 import pytest
 
 from tagged_pdf_extractor.domain.models import ContentFragment, StructureElement
-from tagged_pdf_extractor.domain.role_mapping import map_role
+from tagged_pdf_extractor.domain.role_mapping import (
+    heading_candidate_level,
+    is_heading_candidate,
+    map_role,
+)
+
+
+@pytest.mark.parametrize(
+    ("source_role", "expected_candidate", "expected_level"),
+    (
+        ("Heading", True, None),
+        ("Heading2_0_2", True, 2),
+        ("Cover_Title", True, None),
+        ("cover-title", True, None),
+        ("NotHeading", True, None),
+        ("Heading20", False, None),
+        ("Subtitle", False, None),
+        ("P", False, None),
+    ),
+)
+def test_heading_candidate_helpers_preserve_quality_evaluator_policy(
+    source_role: str, expected_candidate: bool, expected_level: int | None
+) -> None:
+    assert is_heading_candidate(source_role) is expected_candidate
+    assert heading_candidate_level(source_role) == expected_level
 
 
 def test_maps_headings_and_preserves_unknown_source_role() -> None:

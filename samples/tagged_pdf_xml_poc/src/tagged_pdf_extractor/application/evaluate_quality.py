@@ -25,6 +25,10 @@ from tagged_pdf_extractor.domain.quality_diagnostics import (
     EXTRACTION_LOSS_DIAGNOSTIC_CODES,
     UNRESOLVED_REFERENCE_DIAGNOSTIC_CODES,
 )
+from tagged_pdf_extractor.domain.role_mapping import (
+    heading_candidate_level,
+    is_heading_candidate,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -47,10 +51,6 @@ _BODY_ROLES = frozenset(
 )
 _SPECIAL_CHARACTERS = ">→/&:[]()"
 _WHITESPACE = re.compile(r"\s+")
-_HEADING_CANDIDATE = re.compile(
-    r"heading(?:(?P<level>[1-6])(?=$|\D)|$)", re.IGNORECASE
-)
-_TITLE_CANDIDATE = re.compile(r"(?:^|[_-])title$", re.IGNORECASE)
 _BIT_MASK_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
 _SPARSE_MATCH_PAIR_BUDGET = 10_000_000
 _SPARSE_MEMORY_BUDGET_BYTES = 16 * 1024 * 1024
@@ -352,7 +352,7 @@ class QualityEvaluator:
             if (
                 is_heading
                 or is_promoted_heading
-                or self._is_heading_candidate(child.source_role)
+                or is_heading_candidate(child.source_role)
             ):
                 heading_entry_index = len(traversal.heading_hierarchy)
                 traversal.heading_hierarchy.append({})
@@ -364,12 +364,7 @@ class QualityEvaluator:
                 traversal,
             )
             if heading_entry_index is not None:
-                match = _HEADING_CANDIDATE.search(child.source_role)
-                candidate_level = (
-                    int(match.group("level"))
-                    if match and match.group("level")
-                    else None
-                )
+                candidate_level = heading_candidate_level(child.source_role)
                 heading_evidence = {
                     "structure_path": element_path,
                     "source_role": child.source_role,
@@ -758,13 +753,6 @@ class QualityEvaluator:
                 else:
                     increasing_tails[insertion_index] = position
         return len(increasing_tails)
-
-    @staticmethod
-    def _is_heading_candidate(source_role: str) -> bool:
-        return bool(
-            _HEADING_CANDIDATE.search(source_role)
-            or _TITLE_CANDIDATE.search(source_role)
-        )
 
     @staticmethod
     def _has_useful_reference_context(diagnostic: Diagnostic) -> bool:

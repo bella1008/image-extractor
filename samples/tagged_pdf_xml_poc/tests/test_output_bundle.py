@@ -9,6 +9,7 @@ from tagged_pdf_extractor.application import (
     extract_document as extract_document_module,
 )
 from tagged_pdf_extractor.application.extract_document import ExtractDocument
+from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
@@ -17,6 +18,7 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
     SubtitleHint,
     TaggedDocument,
+    TextStyle,
 )
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
@@ -191,6 +193,119 @@ def test_output_bundle_invalid_subtitle_hint_is_atomic(tmp_path: Path) -> None:
 
     assert not output.exists()
     assert _owned_temporary_paths(tmp_path, "bundle") == []
+
+
+def test_output_bundle_rejects_nested_subtitle_block_atomically(tmp_path: Path) -> None:
+    document = TaggedDocument(
+        tmp_path / "manual.pdf",
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(
+                    ContentFragment(0, 1, ("Title",)),
+                    StructureElement("L", "list"),
+                ),
+            ),
+        ),
+        subtitle_hints=(SubtitleHint((0,), 600, 400, 1),),
+    )
+    output = tmp_path / "bundle"
+    report = QualityReport("pass", {}, {"xml_round_trip": True}, (), ())
+
+    with pytest.raises(ValueError, match="subtitle paragraph must not contain block"):
+        OutputBundleWriter().write(document, report, output)
+
+    assert not output.exists()
+    assert _owned_temporary_paths(tmp_path, "bundle") == []
+
+
+def test_real_pipeline_never_marks_source_role_candidate_as_subtitle_and_heading(
+    tmp_path: Path,
+) -> None:
+    def styled(text: str, font: str, mcid: int) -> ContentFragment:
+        return ContentFragment(
+            0,
+            mcid,
+            (text,),
+            text_styles=(TextStyle(font, 6.5),),
+        )
+
+    title = StructureElement(
+        "Heading2",
+        "paragraph",
+        children=(styled("Candidate title", "SamsungOne-600", 1),),
+    )
+    qualifier = StructureElement(
+        "P",
+        "paragraph",
+        children=(styled("(Qualifier)", "SamsungOne-600", 2),),
+    )
+    figure_cell = StructureElement(
+        "TD",
+        "table_cell",
+        children=(StructureElement("Figure", "figure"),),
+    )
+    text_cell = StructureElement(
+        "TD", "table_cell", children=(title, qualifier)
+    )
+    table = StructureElement(
+        "Table",
+        "table",
+        children=(
+            StructureElement(
+                "TR", "table_row", children=(figure_cell, text_cell)
+            ),
+        ),
+    )
+    body = StructureElement(
+        "P",
+        "paragraph",
+        children=(styled("Following body", "SamsungOne-400", 3),),
+    )
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+    document = TaggedDocument(
+        source,
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "Sect",
+                "section",
+                children=(
+                    StructureElement("P", "paragraph", children=(table,)),
+                    body,
+                ),
+            ),
+        ),
+    )
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            return document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            return "Candidate title (Qualifier) Following body"
+
+    extracted, report, artifacts = ExtractDocument(
+        Reader(), Baseline(), QualityEvaluator(), OutputBundleWriter()
+    ).run(source, tmp_path / "bundle")
+
+    assert extracted.subtitle_hints == ()
+    assert [entry["classification"] for entry in report.heading_hierarchy] == [
+        "source_role_candidate"
+    ]
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    assert semantic.find(".//*[@display-role='subtitle']") is None
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert markdown.count("## Candidate title") == 1
+    assert "**Candidate title**" not in markdown
 
 
 def test_extract_document_detects_subtitles_after_heading_promotion(

@@ -209,10 +209,10 @@ class MarkdownDocumentWriter:
             return cls._render_mixed_content(element, promoted)
         if element.tag in atomic_tags - {"figure"}:
             text = cls._element_text(element)
-            return [cls._escape_line_prefix(text)] if text else []
+            return [cls._escape_physical_lines(text)] if text else []
         if element.tag == "text":
             text = cls._text_value(element)
-            return [cls._escape_line_prefix(text)] if text else []
+            return [cls._escape_physical_lines(text)] if text else []
         if element.tag == "list":
             lines = cls._render_list(element, promoted, indent="")
             return ["\n".join(lines)] if lines else []
@@ -220,7 +220,7 @@ class MarkdownDocumentWriter:
             return [cls._render_table(element, promoted)]
         if element.tag == "figure":
             text = cls._element_text(element)
-            return [cls._escape_line_prefix(text) if text else "[그림: 텍스트 없음]"]
+            return [cls._escape_physical_lines(text) if text else "[그림: 텍스트 없음]"]
         return cls._render_children(element, promoted)
 
     @staticmethod
@@ -241,12 +241,15 @@ class MarkdownDocumentWriter:
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
             if text:
-                lines.append(f"{indent}{cls._escape_line_prefix(text)}")
+                lines.extend(
+                    f"{indent}{line}"
+                    for line in cls._escape_physical_lines(text).splitlines()
+                )
             text_parts.clear()
 
         for kind, value in cls._list_events(element, promoted):
             if kind == "text":
-                text_parts.append(cls._visible_text(value))
+                text_parts.append(cls._event_text_part(value))
             elif kind == "list_item":
                 flush_text()
                 lines.extend(cls._render_list_item(value, promoted, indent=indent))
@@ -287,11 +290,17 @@ class MarkdownDocumentWriter:
             nonlocal has_content, marker_emitted
             text = cls._join_text_parts(text_parts)
             if text:
-                escaped = cls._escape_line_prefix(text)
+                escaped_lines = cls._escape_physical_lines(text).splitlines()
                 if marker_emitted:
-                    lines.append(f"{content_indent}{escaped}")
+                    lines.extend(
+                        f"{content_indent}{line}" for line in escaped_lines
+                    )
                 else:
-                    lines.append(f"{indent}{marker} {escaped}")
+                    lines.append(f"{indent}{marker} {escaped_lines[0]}")
+                    lines.extend(
+                        f"{content_indent}{line}"
+                        for line in escaped_lines[1:]
+                    )
                     marker_emitted = True
                 has_content = True
             text_parts.clear()
@@ -307,7 +316,7 @@ class MarkdownDocumentWriter:
             item, promoted, excluded=frozenset(direct_labels)
         ):
             if kind == "text":
-                text_parts.append(cls._visible_text(value))
+                text_parts.append(cls._event_text_part(value))
             else:
                 flush_text()
                 ensure_marker()
@@ -339,7 +348,7 @@ class MarkdownDocumentWriter:
                 yield "list_item", child
             elif child.tag in {"heading", "list", "table", "figure"}:
                 yield "block", child
-            elif child.tag == "text":
+            elif child.tag == "text" or cls._is_preserved_line_break(child):
                 yield "text", child
             else:
                 yield from cls._list_events(child, promoted, excluded=excluded)
@@ -572,7 +581,7 @@ class MarkdownDocumentWriter:
         for child in cls._structural_children(element):
             if child in promoted or child.tag in {"list", "table", "figure"}:
                 yield "block", child
-            elif child.tag == "text":
+            elif child.tag == "text" or cls._is_preserved_line_break(child):
                 yield "text", child
             else:
                 yield from cls._mixed_content_events(child, promoted)
@@ -604,7 +613,7 @@ class MarkdownDocumentWriter:
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
             if text:
-                blocks.append(cls._escape_line_prefix(text))
+                blocks.append(cls._escape_physical_lines(text))
             text_parts.clear()
 
         def flush_deferred_figures() -> None:
@@ -616,7 +625,7 @@ class MarkdownDocumentWriter:
 
         for kind, value in cls._mixed_content_events(element, promoted):
             if kind == "text":
-                text_parts.append(cls._visible_text(value))
+                text_parts.append(cls._event_text_part(value))
                 continue
             if value.tag == "figure" and cls._is_explicit_empty_text_figure(value):
                 deferred_empty_figures += 1
@@ -650,15 +659,20 @@ class MarkdownDocumentWriter:
             text = cls._join_text_parts(text_parts)
             if text:
                 if heading_emitted:
-                    blocks.append(cls._escape_line_prefix(text))
+                    blocks.append(cls._escape_physical_lines(text))
                 else:
-                    blocks.append(f"{'#' * level} {text}")
+                    escaped_lines = cls._escape_physical_lines(text).splitlines()
+                    blocks.append(
+                        "\n".join(
+                            (f"{'#' * level} {escaped_lines[0]}", *escaped_lines[1:])
+                        )
+                    )
                     heading_emitted = True
             text_parts.clear()
 
         for kind, value in cls._mixed_content_events(element, promoted):
             if kind == "text":
-                text_parts.append(cls._visible_text(value))
+                text_parts.append(cls._event_text_part(value))
                 continue
             flush_text()
             blocks.extend(cls._render_element(value, promoted))
@@ -688,7 +702,7 @@ class MarkdownDocumentWriter:
         for child in cls._structural_children(element):
             if child in promoted or child.tag in {"list", "table", "figure"}:
                 yield "block", child
-            elif child.tag == "text":
+            elif child.tag == "text" or cls._is_preserved_line_break(child):
                 yield "title_text" if title_text else "text", child
             else:
                 yield from cls._numbered_heading_events(
@@ -709,7 +723,7 @@ class MarkdownDocumentWriter:
             cls._numbered_heading_events(element, promoted, title_containers)
         )
         title = cls._join_text_parts(
-            cls._visible_text(value)
+            cls._event_text_part(value)
             for kind, value in events
             if kind == "title_text"
         )
@@ -720,14 +734,14 @@ class MarkdownDocumentWriter:
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
             if text:
-                blocks.append(cls._escape_line_prefix(text))
+                blocks.append(cls._escape_physical_lines(text))
             text_parts.clear()
 
         for kind, value in events:
             if kind == "title_text":
                 continue
             if kind == "text":
-                text_parts.append(cls._visible_text(value))
+                text_parts.append(cls._event_text_part(value))
                 continue
             flush_text()
             blocks.extend(cls._render_element(value, promoted))
@@ -751,11 +765,7 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _element_text_parts(cls, element: ET.Element) -> Iterable[str]:
-        if (
-            element.tag in {"span", "link"}
-            and element.get("display-role") == "preserved-line-break"
-            and element.get("actual-text") == "\n"
-        ):
+        if cls._is_preserved_line_break(element):
             yield _PRESERVED_LINE_BREAK
             return
         if element.tag == "text":
@@ -820,6 +830,20 @@ class MarkdownDocumentWriter:
         return cls._normalize_whitespace(cls._visible_text(element))
 
     @classmethod
+    def _event_text_part(cls, element: ET.Element) -> str:
+        if cls._is_preserved_line_break(element):
+            return _PRESERVED_LINE_BREAK
+        return cls._visible_text(element)
+
+    @staticmethod
+    def _is_preserved_line_break(element: ET.Element) -> bool:
+        return (
+            element.tag in {"span", "link"}
+            and element.get("display-role") == "preserved-line-break"
+            and element.get("actual-text") == "\n"
+        )
+
+    @classmethod
     def _visible_text(cls, element: ET.Element) -> str:
         decoded = decode_data_element(element)
         return "".join(
@@ -860,6 +884,12 @@ class MarkdownDocumentWriter:
         ):
             return f"\\{value}"
         return value
+
+    @classmethod
+    def _escape_physical_lines(cls, value: str) -> str:
+        return "\n".join(
+            cls._escape_line_prefix(line) for line in value.split("\n")
+        )
 
     @staticmethod
     def _starts_reference_definition(value: str) -> bool:

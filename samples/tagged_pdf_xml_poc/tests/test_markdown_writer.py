@@ -137,6 +137,75 @@ def test_preserves_only_approved_inline_actual_text_newline_in_complex_table(
         assert markdown.count(text) == 1
 
 
+def test_preserves_line_break_in_mixed_paragraph_before_figure(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph>
+          <text>First,</text>
+          <span actual-text="&#10;" display-role="preserved-line-break" />
+          <text>- second</text>
+          <figure><text /></figure>
+        </paragraph>
+        """,
+    )
+
+    assert "First,\n\\- second" in markdown
+    assert markdown.count("[그림: 텍스트 없음]") == 1
+    assert markdown.index("\\- second") < markdown.index("[그림: 텍스트 없음]")
+
+
+def test_preserves_line_break_and_outer_marker_in_list_body_paragraph(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <list><list_item><list_body><paragraph>
+          <text>First,</text>
+          <span actual-text="&#10;" display-role="preserved-line-break" />
+          <text>- second</text>
+        </paragraph></list_body></list_item></list>
+        """,
+    )
+
+    assert "- First,\n  \\- second" in markdown
+    assert markdown.count("First,") == 1
+    assert markdown.count("second") == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "escaped"),
+    [
+        ("- second", r"\- second"),
+        ("# second", r"\# second"),
+        ("> second", r"\> second"),
+        ("1. second", r"1\. second"),
+        ("1) second", r"1\) second"),
+    ],
+)
+def test_escapes_markdown_prefix_on_each_preserved_physical_line(
+    tmp_path: Path,
+    source: str,
+    escaped: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<table><table_row><table_cell><paragraph>"
+        "<text>First,</text>"
+        '<span actual-text="&#10;" display-role="preserved-line-break" />'
+        f"<text>{source.replace('>', '&gt;')}</text>"
+        "</paragraph></table_cell></table_row></table>",
+    )
+
+    lines = [line.strip() for line in markdown.splitlines()]
+    assert "First," in lines
+    assert escaped in lines
+    assert lines.index("First,") < lines.index(escaped)
+
+
 def test_unknown_display_role_is_rendered_as_existing_plain_text(
     tmp_path: Path,
 ) -> None:

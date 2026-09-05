@@ -216,13 +216,17 @@ Notes
 
 ### Tagged PDF XML/Markdown Review Follow-ups
 
-- Preserve complex table structure in `samples/tagged_pdf_xml_poc` Markdown output instead of flattening nested paragraphs and lists into a single `- 행 N:` line.
-- Add typography-backed subtitle display hints. Do not hardcode `Correct Disposal...` wording; use verified structure plus relative PDF font weight and keep uncertain cases as separate plain paragraphs.
+- [x] Preserve complex table structure in `samples/tagged_pdf_xml_poc` Markdown output instead of flattening nested paragraphs and lists into a single `- 행 N:` line.
+- [x] Add typography-backed subtitle display hints. Do not hardcode `Correct Disposal...` wording; use verified structure plus relative PDF font weight and keep uncertain cases as separate plain paragraphs.
 - Add a conservative verified-icon catalog for recurring icon-only figures. Name only verified matches, retain evidence, and leave unknown icons for human review.
-- After the Markdown structure work is verified, analyze and implement the detailed hierarchy under `Declaration of Conformity`, including grouped EMC, Safety, and Radio content. Do not promote these items to headings until PDF structure and typography evidence justify it.
+- [x] Preserve source-authored comma-following RF line breaks for the verified `ZG XN ZT_L05 + BOOK` profile, with ZC/ZA/XY/KR negative regression controls.
+- [x] Implement the detailed hierarchy under `Declaration of Conformity` using a complete structure-and-relative-typography cluster: title as a level-2 heading, verified labels in bold, and detail paragraphs kept separate. Runtime detection contains no title or translation dictionary.
 - Later, install and integrate local Tesseract OCR for targeted risky regions rather than whole-page OCR. First target: extract the PDF-visible manual code such as `BN68-25100B-00`, retain crop/confidence evidence, and compare it with the filename manual code and version. A filename-derived value must never be reported as PDF-observed OCR text.
 
-Design reference: `docs/superpowers/specs/2026-09-05-semantic-markdown-icon-review-design.md`.
+Design references:
+
+- `docs/superpowers/specs/2026-09-05-semantic-markdown-icon-review-design.md`
+- `docs/superpowers/specs/2026-09-05-zg-rf-doc-markdown-formatting-design.md`
 
 ### 1. Build Localized Heading Rule Mapping
 

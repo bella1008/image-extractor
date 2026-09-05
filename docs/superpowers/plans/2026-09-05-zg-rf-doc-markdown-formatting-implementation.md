@@ -34,7 +34,7 @@
 - Test: `samples/tagged_pdf_xml_poc/tests/test_typography.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_subtitle_detection.py`
 
-- [ ] **Step 1: Write failing source-token dispatch tests**
+- [x] **Step 1: Write failing source-token dispatch tests**
 
 Cover standard ZG, ZC, ZA, XY, and KR filenames, malformed names, mixed filename casing, and paths containing misleading parent-folder names. The parser must use only the filename segment between `_ALL_` and the trailing `_<YYMMDD>.<revision>.pdf` token.
 
@@ -48,13 +48,13 @@ def test_only_verified_zg_book_source_token_enables_formatting() -> None:
     ).enabled
 ```
 
-- [ ] **Step 2: Run the profile tests and verify RED**
+- [x] **Step 2: Run the profile tests and verify RED**
 
 Run: `.\.venv\Scripts\python -m pytest tests/test_profile_scope.py -q`
 
 Expected: collection/import failure because `profile_scope.py` does not exist.
 
-- [ ] **Step 3: Implement the local profile policy**
+- [x] **Step 3: Implement the local profile policy**
 
 Use a strict anchored regular expression and an immutable result:
 
@@ -74,11 +74,11 @@ def review_formatting_scope(source_path: Path) -> ProfileScope:
 
 The ZG source token is dispatch metadata, not content matching. Do not import the root application or metadata repository.
 
-- [ ] **Step 4: Write failing shared typography tests**
+- [x] **Step 4: Write failing shared typography tests**
 
 Test weighted median font weight and size, visible-character weighting, line-count evidence, missing styles, unknown font names, and strict font-token boundaries. Preserve `normalize_font_weight` as an importable name from `subtitle_detection.py` for compatibility.
 
-- [ ] **Step 5: Implement `TypographyEvidence` and refactor subtitle detection**
+- [x] **Step 5: Implement `TypographyEvidence` and refactor subtitle detection**
 
 ```python
 @dataclass(frozen=True)
@@ -93,7 +93,7 @@ def typography_evidence(element: StructureElement) -> TypographyEvidence | None:
 
 Move only reusable evidence code. Do not change existing Correct Disposal subtitle decisions.
 
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 
 Run:
 
@@ -113,7 +113,7 @@ Commit: `Add profile scope and shared typography evidence`
 - Create: `samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/review_formatting.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_review_formatting.py`
 
-- [ ] **Step 1: Add a failing immutable hint-model test**
+- [x] **Step 1: Add a failing immutable hint-model test**
 
 ```python
 hint = LineBreakHint(
@@ -125,7 +125,7 @@ assert hint.child_path == (0, 1, 0, 2)
 
 Add `line_break_hints` to `TaggedDocument` with an empty tuple default so all existing constructors remain compatible.
 
-- [ ] **Step 2: Add failing detector tests**
+- [x] **Step 2: Add failing detector tests**
 
 Build synthetic structures proving all four required conditions:
 
@@ -136,13 +136,13 @@ Build synthetic structures proving all four required conditions:
 
 Also prove rejection for an ordinary comma with no newline element, a newline outside a table cell, a non-comma newline, empty adjacent content, malformed paths, ZC/ZA/XY/KR filenames, and parent folders containing `ZG` while the filename is XY.
 
-- [ ] **Step 3: Run detector tests and verify RED**
+- [x] **Step 3: Run detector tests and verify RED**
 
 Run: `.\.venv\Scripts\python -m pytest tests/test_review_formatting.py -q`
 
 Expected: failures for missing models/detector.
 
-- [ ] **Step 4: Implement minimal path-aware detection**
+- [x] **Step 4: Implement minimal path-aware detection**
 
 ```python
 def apply_profile_review_formatting(document: TaggedDocument) -> TaggedDocument:
@@ -158,7 +158,7 @@ def apply_profile_review_formatting(document: TaggedDocument) -> TaggedDocument:
 
 Traversal must use structural child indices exactly as XML serialization does. Detection must inspect source `actual_text`; it must never search for RF wording, model patterns, units, or frequency syntax.
 
-- [ ] **Step 5: Run focused tests and commit**
+- [x] **Step 5: Run focused tests and commit**
 
 Run: `.\.venv\Scripts\python -m pytest tests/test_review_formatting.py tests/test_subtitle_detection.py -q`
 
@@ -173,7 +173,7 @@ Commit: `Detect ZG source-authored RF line breaks`
 - Modify: `samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/review_formatting.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_review_formatting.py`
 
-- [ ] **Step 1: Add failing text-display hint tests**
+- [x] **Step 1: Add failing text-display hint tests**
 
 Use one immutable hint type with explicit roles:
 
@@ -191,7 +191,7 @@ class TextDisplayHint:
 
 Test duplicate paths, overlap with numbered headings/subtitles, and invalid roles at serialization boundaries.
 
-- [ ] **Step 2: Add a complete synthetic cluster RED test**
+- [x] **Step 2: Add a complete synthetic cluster RED test**
 
 The fixture must include one structural section with:
 
@@ -202,17 +202,17 @@ The fixture must include one structural section with:
 
 Assert one `section_heading` hint for the opening paragraph and `strong_label` hints for direct and table-cell labels.
 
-- [ ] **Step 3: Add conservative rejection tests**
+- [x] **Step 3: Add conservative rejection tests**
 
 Independently remove or corrupt each required signal: unique strongest tier, three label/body groups, relative weight order, relative size order, table evidence, weaker following detail, short-text bound, style evidence, source-role heading conflict, numbered promotion conflict, subtitle conflict, and ZG profile scope. Each fixture must produce no new hints.
 
-- [ ] **Step 4: Implement cluster-level validation before label decisions**
+- [x] **Step 4: Implement cluster-level validation before label decisions**
 
 The detector must first validate the complete section. It must compare tiers relatively and use typography evidence weighted by visible characters. Only after cluster acceptance may it emit label hints. Table-cell labels require a weaker following paragraph in the same cell; direct labels require weaker following detail before the next accepted label/block boundary.
 
 Do not include `Declaration`, `Manufacturer`, `EMC`, `Safety`, `Radio`, translations, language codes, or model values in runtime matching.
 
-- [ ] **Step 5: Run focused tests and commit**
+- [x] **Step 5: Run focused tests and commit**
 
 Run:
 
@@ -236,7 +236,7 @@ Commit: `Detect ZG form headings and strong labels`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_output_bundle.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_quality_evaluator.py`
 
-- [ ] **Step 1: Add semantic/raw XML RED tests**
+- [x] **Step 1: Add semantic/raw XML RED tests**
 
 Assert semantic XML attributes such as:
 
@@ -248,15 +248,15 @@ Assert semantic XML attributes such as:
 
 Raw XML must contain none of these display attributes and must retain original text/`actual-text` values.
 
-- [ ] **Step 2: Add validation RED tests**
+- [x] **Step 2: Add validation RED tests**
 
 Reject unresolved, duplicate, non-structural, mistyped, negative-index, and overlapping paths. Reject a form heading/label that overlaps a numbered heading, source-role heading, subtitle, or line-break target of the wrong element type. Prove failed validation leaves all existing bundle outputs untouched.
 
-- [ ] **Step 3: Implement semantic-only serialization and pipeline wiring**
+- [x] **Step 3: Implement semantic-only serialization and pipeline wiring**
 
 Invoke `apply_profile_review_formatting` after numbered promotion and existing subtitle detection. Centralize hint target validation so automatic and manually supplied hints obey identical invariants.
 
-- [ ] **Step 4: Add Markdown RED tests**
+- [x] **Step 4: Add Markdown RED tests**
 
 Assert:
 
@@ -268,11 +268,11 @@ Assert:
 - candidate headings and display headings do not duplicate text;
 - `render_text` and written output are byte-identical.
 
-- [ ] **Step 5: Implement evidence-only Markdown rendering**
+- [x] **Step 5: Implement evidence-only Markdown rendering**
 
 The writer must not parse filenames, fonts, buyer tokens, titles, or commas. It renders only semantic XML display attributes. Preserve current punctuation joining everywhere without an approved boundary.
 
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 
 Run:
 
@@ -292,11 +292,11 @@ Commit: `Render ZG RF and form display evidence`
 - Modify: `samples/tagged_pdf_xml_poc/tests/test_layout_regression.py`
 - Modify: `samples/tagged_pdf_xml_poc/tests/test_zc_integration.py`
 
-- [ ] **Step 1: Register required XY and KR sample overrides**
+- [x] **Step 1: Register required XY and KR sample overrides**
 
 Add `TAGGED_PDF_XY_SAMPLE` and `TAGGED_PDF_KR_SAMPLE` resolution using the exact user-provided worktree paths as available fallbacks. Required-sample mode must fail rather than silently skip when an explicitly required sample is missing.
 
-- [ ] **Step 2: Add ZG real-sample assertions**
+- [x] **Step 2: Add ZG real-sample assertions**
 
 Verify without Markdown line-number dependencies:
 
@@ -306,11 +306,11 @@ Verify without Markdown line-number dependencies:
 - no runtime assertion depends on English/localized DoC titles for detection, while expected rendered text may be used as regression output evidence;
 - numbered headings and Correct Disposal output are unchanged.
 
-- [ ] **Step 3: Add ZC/ZA/XY/KR negative controls**
+- [x] **Step 3: Add ZC/ZA/XY/KR negative controls**
 
 Extract all four PDFs and assert zero ZG profile line-break hints, zero form-cluster heading hints, and zero form-cluster strong-label hints. Retain their existing heading and text-quality assertions. For XY and KR, also assert output bundle creation and non-empty Markdown.
 
-- [ ] **Step 4: Run all five required sample regressions**
+- [x] **Step 4: Run all five required sample regressions**
 
 Set:
 
@@ -327,7 +327,7 @@ Run: `.\.venv\Scripts\python -m pytest tests/test_zc_integration.py tests/test_l
 
 Expected: all five samples pass with no skips.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit: `Gate ZG formatting against XY and KR`
 
@@ -338,7 +338,7 @@ Commit: `Gate ZG formatting against XY and KR`
 - Verify: `samples/tagged_pdf_xml_poc/tests/`
 - Generate ignored artifacts under: `samples/tagged_pdf_xml_poc/outputs/`
 
-- [ ] **Step 1: Run the complete required-sample suite**
+- [x] **Step 1: Run the complete required-sample suite**
 
 With all five environment variables from Task 5, run:
 
@@ -348,7 +348,7 @@ With all five environment variables from Task 5, run:
 
 Expected: zero failures and no sample skips; only the documented Windows symlink skip may remain.
 
-- [ ] **Step 2: Run compile and no-hardcoding audits**
+- [x] **Step 2: Run compile and no-hardcoding audits**
 
 ```powershell
 .\.venv\Scripts\python -m compileall src tests
@@ -358,7 +358,7 @@ rg -n "Declaration of Conformity|Manufacturer|Product Details|applicable standar
 
 Expected: both compile commands exit zero; the source audit finds no content-title/model matching in runtime code.
 
-- [ ] **Step 3: Regenerate review bundles**
+- [x] **Step 3: Regenerate review bundles**
 
 Generate fresh ignored outputs:
 
@@ -368,10 +368,10 @@ Generate fresh ignored outputs:
 
 Each must contain `semantic_document.md`, `semantic_document.xml`, `raw_structure.xml`, and `extraction_report.json`.
 
-- [ ] **Step 4: Inspect representative Markdown and semantic evidence**
+- [x] **Step 4: Inspect representative Markdown and semantic evidence**
 
 Confirm ZG RF lines, all DoC headings/labels, nested table indentation, and Correct Disposal text. Confirm XY/KR have no ZG-only display attributes. Confirm generated outputs remain Git-ignored.
 
-- [ ] **Step 5: Final independent review and branch handoff**
+- [x] **Step 5: Final independent review and branch handoff**
 
 Review the complete implementation diff against the design, fix all Critical/Important findings, rerun affected tests, and report exact output paths and verification counts.

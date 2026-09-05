@@ -12,6 +12,9 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
     TextDisplayHint,
 )
+from tagged_pdf_extractor.domain.paragraph_eligibility import (
+    is_nonempty_inline_paragraph,
+)
 from tagged_pdf_extractor.domain.review_formatting import detect_rf_line_break_hints
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 
@@ -94,7 +97,7 @@ def validate_review_formatting_hints(
             raise ValueError(f"invalid text display role at {path}")
         if target.semantic_role != "paragraph":
             raise ValueError(f"text display hint must target a paragraph at {path}")
-        if not _is_nonempty_leaf_paragraph(target):
+        if not is_nonempty_inline_paragraph(target):
             raise ValueError(
                 "text display hint must target a nonempty paragraph; target must "
                 "be a nonempty leaf paragraph without block descendants "
@@ -182,22 +185,6 @@ def _resolved_structure_element(
     if not isinstance(target, StructureElement):
         raise ValueError(f"{name} must target a StructureElement at {path}")
     return target
-
-
-def _is_nonempty_leaf_paragraph(element: StructureElement) -> bool:
-    text_parts: list[str] = []
-    stack = list(element.children)
-    while stack:
-        child = stack.pop()
-        if isinstance(child, ContentFragment):
-            text_parts.extend(child.text_parts)
-            continue
-        if child.semantic_role not in _INLINE_ROLES:
-            return False
-        if child.actual_text is not None:
-            text_parts.append(child.actual_text)
-        stack.extend(child.children)
-    return bool("".join(text_parts).strip())
 
 
 def _valid_typography(hint: TextDisplayHint) -> bool:

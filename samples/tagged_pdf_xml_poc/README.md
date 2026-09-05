@@ -75,6 +75,7 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 
 ```powershell
 Set-Location .\samples\tagged_pdf_xml_poc
+# Required mode uses all five regression samples: ZC, ZA, ZG, XY, and KR.
 $env:TAGGED_PDF_REQUIRE_SAMPLES = "1"
 $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
   "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
@@ -84,6 +85,12 @@ $env:TAGGED_PDF_ZA_SAMPLE = (Resolve-Path `
 ).Path
 $env:TAGGED_PDF_ZG_SAMPLE = (Resolve-Path `
   "..\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf" `
+).Path
+$env:TAGGED_PDF_XY_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\TV_XY\BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf" `
+).Path
+$env:TAGGED_PDF_KR_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\TV_KR\BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf" `
 ).Path
 .\.venv\Scripts\python -m pytest tests -v
 ```

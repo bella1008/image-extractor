@@ -10,6 +10,9 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
     TextDisplayHint,
 )
+from tagged_pdf_extractor.domain.paragraph_eligibility import (
+    is_nonempty_inline_paragraph,
+)
 from tagged_pdf_extractor.domain.profile_scope import review_formatting_scope
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 from tagged_pdf_extractor.domain.typography import (
@@ -19,7 +22,6 @@ from tagged_pdf_extractor.domain.typography import (
 
 
 _INLINE_ROLES = frozenset({"span", "link"})
-_BLOCK_ROLES = frozenset({"list", "table", "section"})
 _MAX_SHORT_TEXT_LENGTH = 160
 _MAX_SHORT_LINE_COUNT = 2
 
@@ -189,7 +191,7 @@ def _first_direct_text_child(
         text = _normalized_text(child)
         if not text:
             continue
-        if not _is_leaf_paragraph(child):
+        if not is_nonempty_inline_paragraph(child):
             return None
         evidence = typography_evidence(child)
         if evidence is None:
@@ -214,7 +216,7 @@ def _leaf_paragraph_records(
             path = (*parent_path, index)
             if child.semantic_role == "section" and child is not section:
                 continue
-            if _is_leaf_paragraph(child):
+            if is_nonempty_inline_paragraph(child):
                 text = _normalized_text(child)
                 if text:
                     evidence = typography_evidence(child)
@@ -246,7 +248,10 @@ def _direct_label_groups(
             following_record = direct_records.get(following_index)
             if following_record is not None and _tier(following_record.evidence) == tier:
                 break
-            if not isinstance(following, StructureElement) or not _is_leaf_paragraph(following):
+            if (
+                not isinstance(following, StructureElement)
+                or not is_nonempty_inline_paragraph(following)
+            ):
                 break
             if following_record is None or not _weaker(following_record.evidence, tier):
                 linked = []
@@ -296,7 +301,10 @@ def _direct_nonempty_paragraphs(
 ) -> list[_ParagraphRecord]:
     records: list[_ParagraphRecord] = []
     for index, child in enumerate(parent.children):
-        if not isinstance(child, StructureElement) or not _is_leaf_paragraph(child):
+        if (
+            not isinstance(child, StructureElement)
+            or not is_nonempty_inline_paragraph(child)
+        ):
             continue
         text = _normalized_text(child)
         if not text:
@@ -347,20 +355,6 @@ def _display_hint(
         comparison_body_font_size=body_size,
         reason=reason,
     )
-
-
-def _is_leaf_paragraph(element: StructureElement) -> bool:
-    if element.semantic_role != "paragraph":
-        return False
-    stack = list(element.children)
-    while stack:
-        child = stack.pop()
-        if not isinstance(child, StructureElement):
-            continue
-        if child.semantic_role in _BLOCK_ROLES:
-            return False
-        stack.extend(child.children)
-    return True
 
 
 def _is_short(record: _ParagraphRecord) -> bool:

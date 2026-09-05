@@ -15,6 +15,9 @@ from tagged_pdf_extractor.domain.models import (
     TextStyle,
 )
 from tagged_pdf_extractor.domain import review_formatting
+from tagged_pdf_extractor.domain.display_hint_validation import (
+    validate_review_formatting_hints,
+)
 from tagged_pdf_extractor.domain.review_formatting import (
     detect_form_cluster_hints,
     detect_rf_line_break_hints,
@@ -197,6 +200,33 @@ def _promotion(path: tuple[int, ...]) -> HeadingPromotion:
     )
 
 
+def _wrap_paragraph_contents(
+    document: TaggedDocument,
+    path: tuple[int, ...],
+    wrapper_role: str,
+) -> TaggedDocument:
+    def replace_at_path(
+        children: tuple[StructureElement | ContentFragment, ...],
+        remaining: tuple[int, ...],
+    ) -> tuple[StructureElement | ContentFragment, ...]:
+        index, *tail = remaining
+        target = children[index]
+        assert isinstance(target, StructureElement)
+        if tail:
+            replacement = replace(
+                target,
+                children=replace_at_path(target.children, tuple(tail)),
+            )
+        else:
+            replacement = replace(
+                target,
+                children=(_element(wrapper_role, *target.children),),
+            )
+        return (*children[:index], replacement, *children[index + 1 :])
+
+    return replace(document, children=replace_at_path(document.children, path))
+
+
 def test_text_display_hint_is_frozen_and_document_default_is_compatible() -> None:
     hint = TextDisplayHint(
         child_path=(0, 1),
@@ -241,6 +271,29 @@ def test_complete_form_cluster_emits_one_heading_and_direct_and_table_labels() -
         for left in hints
         for right in hints
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "wrapper_role"),
+    [
+        ((0, 0), "figure"),
+        ((0, 1), "caption"),
+        ((0, 7, 0, 0, 0, 0), "division"),
+    ],
+    ids=["title-figure", "direct-label-caption", "table-label-division"],
+)
+def test_form_cluster_with_non_inline_paragraph_descendant_stays_plain(
+    path: tuple[int, ...],
+    wrapper_role: str,
+) -> None:
+    document = _wrap_paragraph_contents(_form_document(), path, wrapper_role)
+
+    assert detect_form_cluster_hints(document) == ()
+
+    formatted = review_formatting.apply_profile_review_formatting(document)
+    assert formatted.text_display_hints == ()
+    validated = validate_review_formatting_hints(formatted)
+    assert dict(validated.text_display_by_path) == {}
 
 
 def test_long_direct_detail_remains_valid_body_evidence() -> None:

@@ -92,6 +92,17 @@ class LineBreakHint:
 
 
 @dataclass(frozen=True)
+class TextDisplayHint:
+    child_path: tuple[int, ...]
+    display_role: Literal["section_heading", "strong_label"]
+    font_weight: int
+    font_size: float
+    comparison_body_font_weight: int
+    comparison_body_font_size: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -104,6 +115,7 @@ class TaggedDocument:
     numbered_heading_series_consistent: bool | None = None
     subtitle_hints: tuple[SubtitleHint, ...] = ()
     line_break_hints: tuple[LineBreakHint, ...] = ()
+    text_display_hints: tuple[TextDisplayHint, ...] = ()
 
 
 @dataclass(frozen=True)

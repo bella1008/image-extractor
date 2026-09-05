@@ -5,12 +5,19 @@ import pytest
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    HeadingPromotion,
     LineBreakHint,
     StructureElement,
+    SubtitleHint,
     TaggedDocument,
+    TextDisplayHint,
+    TextStyle,
 )
 from tagged_pdf_extractor.domain import review_formatting
-from tagged_pdf_extractor.domain.review_formatting import detect_rf_line_break_hints
+from tagged_pdf_extractor.domain.review_formatting import (
+    detect_form_cluster_hints,
+    detect_rf_line_break_hints,
+)
 from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 
 from .acceptance_support import require_sample
@@ -20,17 +27,32 @@ ZG_NAME = "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
 ZG_SAMPLE = Path(__file__).parents[2] / "SUG_RAW" / "TV_ZG" / ZG_NAME
 
 
-def _fragment(text: str) -> ContentFragment:
-    return ContentFragment(page_index=0, mcid=1, text_parts=(text,))
+def _fragment(
+    text: str,
+    *,
+    weight: int | None = None,
+    size: float | None = None,
+    mcid: int = 1,
+) -> ContentFragment:
+    styles = ()
+    if weight is not None:
+        styles = (TextStyle(f"Synthetic-{weight}", size),)
+    return ContentFragment(
+        page_index=0,
+        mcid=mcid,
+        text_parts=(text,),
+        text_styles=styles,
+    )
 
 
 def _element(
     role: str,
     *children: StructureElement | ContentFragment,
     actual_text: str | None = None,
+    source_role: str | None = None,
 ) -> StructureElement:
     return StructureElement(
-        source_role=role,
+        source_role=source_role or role,
         semantic_role=role,
         actual_text=actual_text,
         children=children,
@@ -58,6 +80,313 @@ def _document(
 
 def _newline(actual_text: str = "\n") -> StructureElement:
     return _element("span", actual_text=actual_text)
+
+
+def _styled_paragraph(
+    text: str,
+    weight: int,
+    size: float | None,
+    *,
+    source_role: str = "P",
+    line_count: int = 1,
+) -> StructureElement:
+    return _element(
+        "paragraph",
+        *(
+            _fragment(
+                text if index == 0 else " continued",
+                weight=weight,
+                size=size,
+                mcid=index + 1,
+            )
+            for index in range(line_count)
+        ),
+        source_role=source_role,
+    )
+
+
+def _form_document(
+    *,
+    filename: str = ZG_NAME,
+    title_weight: int = 800,
+    title_size: float | None = 8.0,
+    title_text: str = "Top form title",
+    title_source_role: str = "Heading_B",
+    title_line_count: int = 1,
+    direct_label_count: int = 3,
+    direct_label_weight: int = 600,
+    direct_label_size: float | None = 7.0,
+    direct_label_line_count: int = 1,
+    direct_detail_weight: int = 400,
+    direct_detail_size: float | None = 6.5,
+    direct_detail_text: str | None = None,
+    table_cell_count: int = 2,
+    table_detail_weight: int = 400,
+    table_detail_size: float | None = 6.5,
+    include_table: bool = True,
+    extra_title: bool = False,
+) -> TaggedDocument:
+    children: list[StructureElement] = [
+        _styled_paragraph(
+            title_text,
+            title_weight,
+            title_size,
+            source_role=title_source_role,
+            line_count=title_line_count,
+        )
+    ]
+    if extra_title:
+        children.append(_styled_paragraph("Second top title", 800, 8.0))
+    for index in range(direct_label_count):
+        children.extend(
+            (
+                _styled_paragraph(
+                    f"Direct label {index}",
+                    direct_label_weight,
+                    direct_label_size,
+                    line_count=direct_label_line_count,
+                ),
+                _styled_paragraph(
+                    direct_detail_text or f"Direct detail {index}",
+                    direct_detail_weight,
+                    direct_detail_size,
+                ),
+            )
+        )
+    if include_table:
+        cells = tuple(
+            _element(
+                "table_cell",
+                _styled_paragraph(f"Cell label {index}", 600, 7.0),
+                _styled_paragraph(
+                    f"Cell detail {index}",
+                    table_detail_weight,
+                    table_detail_size,
+                ),
+            )
+            for index in range(table_cell_count)
+        )
+        children.append(
+            _element(
+                "paragraph",
+                _element("table", _element("table_row", *cells)),
+                source_role="Table-Wrapper",
+            )
+        )
+    return TaggedDocument(
+        Path(filename),
+        True,
+        "en",
+        (),
+        (_element("section", *children, source_role="Story"),),
+    )
+
+
+def _promotion(path: tuple[int, ...]) -> HeadingPromotion:
+    return HeadingPromotion(
+        child_path=path,
+        level=2,
+        label="01",
+        title="Promoted",
+        series_index=0,
+        heading_font_size=12.0,
+        body_font_size=7.0,
+        font_size_ratio=12.0 / 7.0,
+        promotion_reason="test",
+    )
+
+
+def test_text_display_hint_is_frozen_and_document_default_is_compatible() -> None:
+    hint = TextDisplayHint(
+        child_path=(0, 1),
+        display_role="strong_label",
+        font_weight=600,
+        font_size=7.0,
+        comparison_body_font_weight=400,
+        comparison_body_font_size=6.5,
+        reason="form_cluster_middle_tier_with_weaker_detail",
+    )
+
+    assert hint.display_role == "strong_label"
+    assert TaggedDocument(Path("manual.pdf"), True, None, (), ()).text_display_hints == ()
+    with pytest.raises(FrozenInstanceError):
+        hint.display_role = "section_heading"  # type: ignore[misc]
+
+
+def test_complete_form_cluster_emits_one_heading_and_direct_and_table_labels() -> None:
+    document = _form_document()
+
+    hints = detect_form_cluster_hints(document)
+
+    assert [(hint.child_path, hint.display_role) for hint in hints] == [
+        ((0, 0), "section_heading"),
+        ((0, 1), "strong_label"),
+        ((0, 3), "strong_label"),
+        ((0, 5), "strong_label"),
+        ((0, 7, 0, 0, 0, 0), "strong_label"),
+        ((0, 7, 0, 0, 1, 0), "strong_label"),
+    ]
+    assert hints[0].font_weight == 800
+    assert hints[0].font_size == 8.0
+    assert hints[0].comparison_body_font_weight == 400
+    assert hints[0].comparison_body_font_size == 6.5
+    assert len({hint.child_path for hint in hints}) == len(hints)
+    assert not any(
+        left.child_path != right.child_path
+        and (
+            left.child_path[: len(right.child_path)] == right.child_path
+            or right.child_path[: len(left.child_path)] == left.child_path
+        )
+        for left in hints
+        for right in hints
+    )
+
+
+def test_long_direct_detail_remains_valid_body_evidence() -> None:
+    document = _form_document(direct_detail_text="body " * 50)
+
+    hints = detect_form_cluster_hints(document)
+
+    assert sum(hint.display_role == "strong_label" for hint in hints) == 5
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        _form_document(extra_title=True),
+        _form_document(direct_label_count=2),
+        _form_document(title_weight=600),
+        _form_document(title_size=7.0),
+        _form_document(include_table=False),
+        _form_document(direct_detail_weight=600),
+        _form_document(direct_detail_size=7.0),
+        _form_document(table_cell_count=1),
+        _form_document(table_detail_weight=600),
+        _form_document(table_detail_size=7.0),
+        _form_document(title_text="x" * 161),
+        _form_document(title_line_count=3),
+        _form_document(direct_label_line_count=3),
+        _form_document(title_size=None),
+        _form_document(direct_label_size=None),
+        _form_document(direct_label_weight=500),
+        _form_document(title_source_role="Heading1"),
+    ],
+    ids=[
+        "nonunique-title",
+        "too-few-direct-label-groups",
+        "title-weight-not-stronger",
+        "title-size-not-larger",
+        "missing-table",
+        "direct-detail-weight-not-weaker",
+        "direct-detail-size-not-smaller",
+        "too-few-table-cells",
+        "table-detail-weight-not-weaker",
+        "table-detail-size-not-smaller",
+        "title-over-short-bound",
+        "title-over-line-bound",
+        "label-over-line-bound",
+        "missing-style-size",
+        "missing-label-size",
+        "label-tier-mismatch-with-table",
+        "source-heading-conflict",
+    ],
+)
+def test_incomplete_or_ambiguous_form_cluster_is_rejected(
+    document: TaggedDocument,
+) -> None:
+    assert detect_form_cluster_hints(document) == ()
+
+
+@pytest.mark.parametrize(
+    ("conflict_field", "conflict_value"),
+    [
+        ("heading_promotions", (_promotion((0,)),)),
+        ("heading_promotions", (_promotion((0, 0, 0)),)),
+        (
+            "subtitle_hints",
+            (
+                SubtitleHint(
+                    child_path=(0, 1),
+                    font_weight=600,
+                    comparison_body_font_weight=400,
+                    observed_line_count=1,
+                ),
+            ),
+        ),
+        (
+            "subtitle_hints",
+            (
+                SubtitleHint(
+                    child_path=(0, 1, 0),
+                    font_weight=600,
+                    comparison_body_font_weight=400,
+                    observed_line_count=1,
+                ),
+            ),
+        ),
+    ],
+)
+def test_form_cluster_rejects_existing_path_or_descendant_conflicts(
+    conflict_field: str,
+    conflict_value: tuple[HeadingPromotion, ...] | tuple[SubtitleHint, ...],
+) -> None:
+    document = replace(_form_document(), **{conflict_field: conflict_value})
+
+    assert detect_form_cluster_hints(document) == ()
+
+
+def test_enabled_profile_sets_both_review_hint_sets_from_source_truth() -> None:
+    document = replace(
+        _form_document(),
+        line_break_hints=(LineBreakHint((9,), "manual"),),
+        text_display_hints=(
+            TextDisplayHint((8,), "strong_label", 1, 1.0, 1, 1.0, "manual"),
+        ),
+    )
+
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    assert formatted.line_break_hints == ()
+    assert formatted.text_display_hints == detect_form_cluster_hints(document)
+    assert len(formatted.text_display_hints) == 6
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf",
+        "BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf",
+        "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
+        "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
+        "malformed_ZG XN ZT_L05.pdf",
+    ],
+)
+def test_disabled_profiles_preserve_manual_text_display_hints(filename: str) -> None:
+    document = replace(
+        _form_document(filename=filename),
+        text_display_hints=(
+            TextDisplayHint((8,), "strong_label", 1, 1.0, 1, 1.0, "manual"),
+        ),
+    )
+
+    assert review_formatting.apply_profile_review_formatting(document) is document
+
+
+def test_zg_sample_contains_ten_form_headings_and_retains_90_line_breaks() -> None:
+    sample = require_sample(ZG_SAMPLE if ZG_SAMPLE.is_file() else None, "ZG")
+    document = review_formatting.apply_profile_review_formatting(
+        TaggedPdfReader().read(sample)
+    )
+
+    assert len(document.line_break_hints) == 90
+    assert sum(
+        hint.display_role == "section_heading"
+        for hint in document.text_display_hints
+    ) == 10
+    assert sum(
+        hint.display_role == "strong_label"
+        for hint in document.text_display_hints
+    ) == 70
 
 
 def test_line_break_hint_is_frozen_and_document_default_is_compatible() -> None:

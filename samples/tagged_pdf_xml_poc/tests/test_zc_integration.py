@@ -68,7 +68,8 @@ _TEXT_TOKEN = re.compile(r"\[CONTROL U\+[0-9A-F]{4,6}\]|\w+|[^\w\s]")
 _ZC_NONORDERED_LABEL_GLYPHS = frozenset({"\u2022", "\u2013"})
 _HEADING_PREFIX = re.compile(r"^#{2,6}\s+")
 _TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
-_FALLBACK_TABLE_ROW = re.compile(r"^-\s+행\s+\d+:\s*")
+_COMPLEX_TABLE_MARKER = re.compile(r"^-\s+(?:행|열)\s+\d+:\s*$")
+_EMPTY_TABLE_CELL_MARKER = "[빈 셀]"
 _ESCAPED_DECIMAL_PREFIX = re.compile(r"^([0-9]{1,9})\\([.)])(?=\s)")
 _BLOCK_PREFIX = re.compile(r"^(?:#{1,6}\s|>|[-+*]\s)")
 _FENCE_PREFIX = re.compile(r"^(?:`{3,}|~{3,})")
@@ -128,12 +129,15 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
         value = line.lstrip()
         if not value or value == "[그림: 텍스트 없음]":
             continue
+        if _COMPLEX_TABLE_MARKER.fullmatch(value):
+            continue
+        if value == _EMPTY_TABLE_CELL_MARKER:
+            continue
         if _TABLE_SEPARATOR.fullmatch(value):
             continue
         if value.startswith("|") and value.endswith("|"):
             value = re.sub(r"(?<!\\)\|", " ", value[1:-1])
         value = value.replace(r"\|", "|").strip()
-        value = _FALLBACK_TABLE_ROW.sub("", value)
         if value.startswith("- "):
             value = value[2:]
         value = _HEADING_PREFIX.sub("", value)
@@ -199,6 +203,53 @@ def test_markdown_token_oracle_reverses_only_writer_prefix_escapes() -> None:
         "*",
         "source",
         "asterisk",
+    ]
+
+
+def test_markdown_token_oracle_excludes_only_complex_table_structure_markers() -> None:
+    markdown = (
+        "# Header\n\n- metadata\n\n"
+        "- 행 1:\n"
+        "  - 열 1:\n"
+        "    Source cell text\n"
+        "  - 열 2:\n"
+        "    [빈 셀]\n"
+    )
+
+    assert _markdown_text_tokens(markdown) == ["Source", "cell", "text"]
+
+
+def test_markdown_token_oracle_preserves_source_text_similar_to_table_markers() -> None:
+    markdown = (
+        "# Header\n\n- metadata\n\n"
+        "열 1: is source text\n"
+        "행 2: is also source text\n"
+        "[빈 셀] is a literal source phrase\n"
+    )
+
+    assert _markdown_text_tokens(markdown) == [
+        "열",
+        "1",
+        ":",
+        "is",
+        "source",
+        "text",
+        "행",
+        "2",
+        ":",
+        "is",
+        "also",
+        "source",
+        "text",
+        "[",
+        "빈",
+        "셀",
+        "]",
+        "is",
+        "a",
+        "literal",
+        "source",
+        "phrase",
     ]
 
 
@@ -562,6 +613,58 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert markdown.index("Before Reading This Simple User Guide") < markdown.index(
         "Dépannage"
     )
+
+    package_start = markdown.index("## 01 Package Content")
+    package_end = markdown.index("## 02 Initial Setup", package_start)
+    package = markdown[package_start:package_end]
+    package_items = (
+        "Simple User Guide",
+        "Warranty Card / Regulatory Guide (Not available in some locations)",
+        "*Samsung Smart Remote",
+        "*Remote Control",
+        "*Standard Remote Control",
+        "*Batteries",
+        "*TV Power Cord",
+        "*Wall Mount Adapter x 2",
+        "*Slim Power Cord",
+        "*Power Box",
+        "*Power Box Cable x 2",
+        "*C-type Power Adapter",
+        "*C to C Cable",
+        "*Wireless One Connect Box",
+    )
+    package_lines = [line.strip() for line in package.splitlines()]
+    for item in package_items:
+        assert f"- {item}" in package_lines
+    assert [package.index(item) for item in package_items] == sorted(
+        package.index(item) for item in package_items
+    )
+
+    microphone_body = (
+        "You can turn on or off the microphone by using the switch at the bottom "
+        "or rear bottom of the TV. If microphone is turned off, All voice and sound "
+        "features using microphone are not available."
+    )
+    microphone_items = (
+        "This function is supported only in R9*H/R8*H/QN1EH/ QN7*H/QN8*H/"
+        "QN9**H/S8*H/S9*H/M9*H/M8*H/ U9***H/LS03H*.",
+        "The position and shape of the microphone switch may differ depending "
+        "on the model.",
+        "During analysis using data from the microphone, the data is not saved.",
+    )
+    microphone_start = markdown.index(microphone_body)
+    microphone_end = markdown.index(
+        "## 03 Troubleshooting and Maintenance", microphone_start
+    )
+    microphone = markdown[microphone_start:microphone_end]
+    microphone_lines = [line.strip() for line in microphone.splitlines()]
+    assert microphone_lines[0] == microphone_body
+    for item in microphone_items:
+        assert f"- {item}" in microphone_lines
+    assert [microphone.index(item) for item in microphone_items] == sorted(
+        microphone.index(item) for item in microphone_items
+    )
+
     assert (
         "CAUTION: TO REDUCE THE RISK OF ELECTRIC SHOCK, DO NOT REMOVE COVER "
         "(OR BACK)."

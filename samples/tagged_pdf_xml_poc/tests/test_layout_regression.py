@@ -197,6 +197,20 @@ def _assert_common_layout_quality(document, report, expected_pages: set[str]) ->
     )
 
 
+def _assert_separate_markdown_lines(
+    markdown: str, values: tuple[str, ...]
+) -> None:
+    lines = [line.strip() for line in markdown.splitlines()]
+    positions: list[int] = []
+    for value in values:
+        matching_lines = [
+            index for index, line in enumerate(lines) if line.endswith(value)
+        ]
+        assert matching_lines, value
+        positions.append(matching_lines[0])
+    assert positions == sorted(positions)
+
+
 def test_page_quality_rejects_a_missing_expected_page() -> None:
     page_quality = {
         "0": {
@@ -286,4 +300,46 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(tmp_path: Path) -
         [("01", "02", "03", "04", "05")] * 5,
         heading_size=12.0,
         body_size=6.5,
+    )
+
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert (
+        "**Correct Disposal of This Product "
+        "(Waste Electrical & Electronic Equipment)**"
+    ) in markdown
+    assert "**Correct disposal of batteries in this product**" in markdown
+    assert markdown.count(
+        "(Applicable in countries with separate collection systems)"
+    ) == 2
+    assert "## Correct Disposal" not in markdown
+
+    class_one_lines = (
+        "CLASS 1 LASER PRODUCT (The Frame (LS03HA) only)",
+        "Caution - Invisible laser radiation when open. Do not stare into beam.",
+        "Do not bend the One Connect Cable excessively. Do not cut the cable.",
+        "Do not place heavy objects on the cable.",
+        "Do not disassemble either of the cable connectors.",
+        "Caution - Use of controls, adjustments, or the performance of procedures "
+        "other than those specified herein may result in hazardous radiation exposure.",
+    )
+    _assert_separate_markdown_lines(markdown, class_one_lines)
+
+    declaration_start = markdown.index("Declaration and applicable standards")
+    declaration_end = markdown.index(
+        "Signed for and on behalf of : Samsung", declaration_start
+    )
+    declaration = markdown[declaration_start:declaration_end]
+    _assert_separate_markdown_lines(
+        declaration,
+        (
+            "EMC",
+            "EN 301 489-1 V2.2.3",
+            "EN 301 489-17 V3.3.1",
+            "Safety",
+            "EN IEC 62368- 1:2020+A11:2020",
+            "EN IEC 62368-3 :2020",
+            "EN 62479:2010",
+            "Radio",
+            "EN 300 328 V2.2.2",
+        ),
     )

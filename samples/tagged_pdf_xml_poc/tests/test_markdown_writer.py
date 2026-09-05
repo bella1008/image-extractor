@@ -951,6 +951,67 @@ def test_unsafe_rectangular_tables_fall_back_to_labeled_rows_without_text_loss(
     )
 
 
+def test_complex_single_cell_preserves_paragraphs_and_nested_lists(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <table><table_row><table_cell>
+          <paragraph><text>Intro paragraph</text></paragraph>
+          <list><list_item><text>Parent item</text>
+            <list><list_item><text>Nested item</text></list_item></list>
+          </list_item></list>
+          <paragraph><text>Tail paragraph</text></paragraph>
+        </table_cell></table_row></table>
+        """,
+    )
+
+    assert "- 행 1:" in markdown
+    assert "  Intro paragraph" in markdown
+    assert "  - Parent item" in markdown
+    assert "    - Nested item" in markdown
+    assert "  Tail paragraph" in markdown
+    assert "Intro paragraph Parent item Nested item Tail paragraph" not in markdown
+    for text in ("Intro paragraph", "Parent item", "Nested item", "Tail paragraph"):
+        assert markdown.count(text) == 1
+    assert [
+        markdown.index(text)
+        for text in ("Intro paragraph", "Parent item", "Nested item", "Tail paragraph")
+    ] == sorted(
+        markdown.index(text)
+        for text in ("Intro paragraph", "Parent item", "Nested item", "Tail paragraph")
+    )
+
+
+def test_complex_multi_cell_keeps_cell_boundaries_and_empty_cells(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <table><table_row>
+          <table_cell><paragraph><text>Left</text></paragraph></table_cell>
+          <table_cell />
+          <table_cell><list><list_item><text>Right item</text></list_item></list></table_cell>
+        </table_row></table>
+        """,
+    )
+
+    assert "- 행 1:" in markdown
+    assert "  - 열 1:" in markdown
+    assert "    Left" in markdown
+    assert "  - 열 2:" in markdown
+    assert "    [빈 셀]" in markdown
+    assert "  - 열 3:" in markdown
+    assert "    - Right item" in markdown
+    for text in ("Left", "[빈 셀]", "Right item"):
+        assert markdown.count(text) == 1
+    assert markdown.index("Left") < markdown.index("[빈 셀]") < markdown.index(
+        "Right item"
+    )
+
+
 def test_promotes_heading_candidate_inside_table_without_duplicate_or_lost_text(
     tmp_path: Path,
 ) -> None:

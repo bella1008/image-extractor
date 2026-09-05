@@ -419,21 +419,88 @@ class MarkdownDocumentWriter:
             separator = "| " + " | ".join("---" for _ in cells[0]) + " |"
             return "\n".join((rendered_rows[0], separator, *rendered_rows[1:]))
 
+        return cls._render_complex_table(table_children, promoted)
+
+    @classmethod
+    def _render_complex_table(
+        cls,
+        table_children: list[ET.Element],
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> str:
         lines: list[str] = []
         row_index = 0
         for child in table_children:
-            text = cls._element_text(child)
-            if not text:
+            if child.tag != "table_row":
+                blocks = cls._render_element(child, promoted)
+                if child in promoted:
+                    cls._append_indented_blocks(lines, blocks, indent="")
+                else:
+                    cls._append_indented_blocks(lines, blocks, indent="- ")
                 continue
-            if child.tag == "table_row":
-                row_index += 1
-                lines.append(f"- 행 {row_index}: {text}")
-            else:
-                lines.append(f"- {text}")
+
+            row_index += 1
+            lines.append(f"- 행 {row_index}:")
+            row_children = cls._structural_children(child)
+            cells = [value for value in row_children if value.tag in _CELL_TAGS]
+            if len(cells) <= 1:
+                for value in row_children:
+                    if value.tag in _CELL_TAGS:
+                        cls._append_table_cell(
+                            lines, value, promoted, indent="  "
+                        )
+                    else:
+                        cls._append_indented_blocks(
+                            lines,
+                            cls._render_element(value, promoted),
+                            indent="  ",
+                        )
+                continue
+
+            cell_index = 0
+            for value in row_children:
+                if value.tag in _CELL_TAGS:
+                    cell_index += 1
+                    lines.append(f"  - 열 {cell_index}:")
+                    cls._append_table_cell(
+                        lines, value, promoted, indent="    "
+                    )
+                else:
+                    cls._append_indented_blocks(
+                        lines,
+                        cls._render_element(value, promoted),
+                        indent="  ",
+                    )
         if not lines:
-            text = cls._element_text(table)
-            lines.append(f"- 행 1: {text}".rstrip())
+            lines.append("- 행 1:")
         return "\n".join(lines)
+
+    @classmethod
+    def _append_table_cell(
+        cls,
+        lines: list[str],
+        cell: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+        *,
+        indent: str,
+    ) -> None:
+        blocks = cls._render_children(cell, promoted)
+        if not blocks:
+            lines.append(f"{indent}[빈 셀]")
+            return
+        cls._append_indented_blocks(lines, blocks, indent=indent)
+
+    @staticmethod
+    def _append_indented_blocks(
+        lines: list[str],
+        blocks: list[str],
+        *,
+        indent: str,
+    ) -> None:
+        for block_index, block in enumerate(blocks):
+            if block_index and lines and lines[-1] != "":
+                lines.append("")
+            block_lines = block.splitlines() or [""]
+            lines.extend(f"{indent}{line}" if line else "" for line in block_lines)
 
     @classmethod
     def _is_simple_table_cell(cls, cell: ET.Element) -> bool:
@@ -462,53 +529,7 @@ class MarkdownDocumentWriter:
         table: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> str:
-        lines: list[str] = []
-        row_index = 0
-        for child in cls._structural_children(table):
-            if child in promoted:
-                lines.extend(
-                    line
-                    for block in cls._render_element(child, promoted)
-                    for line in block.splitlines()
-                )
-                continue
-            if child.tag == "table_row":
-                row_index += 1
-                prefix = f"- 행 {row_index}: "
-            else:
-                prefix = "- "
-            lines.extend(cls._render_table_sequence(child, promoted, prefix=prefix))
-        return "\n".join(lines)
-
-    @classmethod
-    def _render_table_sequence(
-        cls,
-        element: ET.Element,
-        promoted: dict[ET.Element, dict[str, object]],
-        *,
-        prefix: str,
-    ) -> list[str]:
-        lines: list[str] = []
-        text_parts: list[str] = []
-
-        def flush_text() -> None:
-            text = cls._join_text_parts(text_parts)
-            if text:
-                lines.append(f"{prefix}{text}")
-            text_parts.clear()
-
-        for kind, value in cls._mixed_content_events(element, promoted):
-            if kind == "text":
-                text_parts.append(cls._visible_text(value))
-                continue
-            flush_text()
-            lines.extend(
-                line
-                for block in cls._render_element(value, promoted)
-                for line in block.splitlines()
-            )
-        flush_text()
-        return lines
+        return cls._render_complex_table(cls._structural_children(table), promoted)
 
     @classmethod
     def _mixed_content_events(

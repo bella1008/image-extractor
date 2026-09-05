@@ -91,6 +91,8 @@ def _table_hints(
     hints: list[SubtitleHint] = []
 
     def visit(element: StructureElement, path: tuple[int, ...]) -> None:
+        if element.semantic_role == "table":
+            return
         if element.semantic_role == "table_row":
             hint = _row_hint(element, path, body)
             if hint is not None:
@@ -100,7 +102,9 @@ def _table_hints(
             if isinstance(child, StructureElement):
                 visit(child, (*path, index))
 
-    visit(table, table_path)
+    for index, child in enumerate(table.children):
+        if isinstance(child, StructureElement):
+            visit(child, (*table_path, index))
     return tuple(hints)
 
 
@@ -162,10 +166,7 @@ def _is_figure_only_cell(cell: StructureElement) -> bool:
             else:
                 if child.semantic_role == "figure":
                     found_figure = True
-                if any(
-                    value and value.strip()
-                    for value in (child.title, child.alternate_text, child.actual_text)
-                ):
+                if child.actual_text and child.actual_text.strip():
                     found_text = True
                 visit(child.children)
 

@@ -72,6 +72,24 @@ def _valid_children(
     return (section,)
 
 
+def _qualifying_row(title_text: str, mcid: int) -> StructureElement:
+    return _element(
+        "table_row",
+        _element("table_cell", _element("figure")),
+        _element(
+            "table_cell",
+            _element(
+                "paragraph",
+                _fragment(title_text, "SamsungOne-600", mcid=mcid),
+            ),
+            _element(
+                "paragraph",
+                _fragment("qualifier", "SamsungOne-600", mcid=mcid + 1),
+            ),
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("font_name", "expected"),
     [
@@ -160,6 +178,36 @@ def test_rejects_title_longer_than_160_normalized_characters() -> None:
     assert detect_subtitle_hints(_valid_children(title=title)) == ()
 
 
+def test_rejects_empty_normalized_title() -> None:
+    title = _element(
+        "paragraph", _fragment(" \t\n ", "SamsungOne-600", mcid=21)
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == ()
+
+
+def test_accepts_title_with_exactly_160_normalized_characters() -> None:
+    title = _element(
+        "paragraph", _fragment("x" * 160, "SamsungOne-600", mcid=21)
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
+def test_accepts_title_observed_on_exactly_two_distinct_lines() -> None:
+    title = _element(
+        "paragraph",
+        _fragment("first", "SamsungOne-600", mcid=21),
+        _fragment("second", "SamsungOne-600", mcid=22),
+    )
+
+    assert detect_subtitle_hints(_valid_children(title=title)) == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 2),
+    )
+
+
 def test_rejects_title_observed_on_more_than_two_distinct_lines() -> None:
     title = _element(
         "paragraph",
@@ -208,6 +256,33 @@ def test_rejects_figure_cell_that_contains_visible_text() -> None:
         _element("figure"),
         _fragment("visible caption", "SamsungOne-400", mcid=9),
     )
+
+    assert detect_subtitle_hints(_valid_children(figure_cell=figure_cell)) == ()
+
+
+@pytest.mark.parametrize("metadata_field", ["title", "alternate_text"])
+def test_figure_description_metadata_does_not_disqualify_figure_only_cell(
+    metadata_field: str,
+) -> None:
+    figure = StructureElement(
+        "Figure",
+        "figure",
+        **{metadata_field: "descriptive metadata"},
+    )
+    figure_cell = _element("table_cell", figure)
+
+    assert detect_subtitle_hints(_valid_children(figure_cell=figure_cell)) == (
+        SubtitleHint((0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
+def test_figure_actual_text_disqualifies_figure_only_cell() -> None:
+    figure = StructureElement(
+        "Figure",
+        "figure",
+        actual_text="substitutive visible text",
+    )
+    figure_cell = _element("table_cell", figure)
 
     assert detect_subtitle_hints(_valid_children(figure_cell=figure_cell)) == ()
 
@@ -300,6 +375,31 @@ def test_requires_wrapper_to_contain_exactly_one_table() -> None:
     )
 
 
+def test_rejects_candidate_row_belonging_only_to_a_nested_table() -> None:
+    nested_table = _element("table", _qualifying_row("nested title", 51))
+    outer_row_group = _element("table_body", nested_table)
+    outer_table = _element("table", outer_row_group)
+    wrapper = _element("paragraph", outer_table)
+    body = _element(
+        "paragraph", _fragment("outer body", "SamsungOne-400", mcid=60)
+    )
+
+    assert detect_subtitle_hints((_element("section", wrapper, body),)) == ()
+
+
+def test_allows_current_table_rows_inside_structural_row_group_wrappers() -> None:
+    row_group = _element("table_body", _qualifying_row("grouped title", 51))
+    table = _element("table", row_group)
+    wrapper = _element("paragraph", table)
+    body = _element(
+        "paragraph", _fragment("following body", "SamsungOne-400", mcid=60)
+    )
+
+    assert detect_subtitle_hints((_element("section", wrapper, body),)) == (
+        SubtitleHint((0, 0, 0, 0, 0, 1, 0), 600, 400, 1),
+    )
+
+
 def test_character_weighted_median_controls_title_and_body_comparison() -> None:
     title = _element(
         "paragraph",
@@ -325,12 +425,39 @@ def test_character_weighted_median_controls_title_and_body_comparison() -> None:
     )
 
 
-def test_exact_title_paths_are_deduplicated() -> None:
-    children = _valid_children()
+def test_detects_multiple_qualifying_rows_with_globally_unique_paths() -> None:
+    table = _element(
+        "table",
+        _qualifying_row("first title", 51),
+        _qualifying_row("second title", 61),
+    )
+    wrapper = _element("paragraph", table)
+    body = _element(
+        "paragraph", _fragment("following body", "SamsungOne-400", mcid=70)
+    )
 
-    hints = detect_subtitle_hints(children)
+    hints = detect_subtitle_hints((_element("section", wrapper, body),))
 
-    assert len(hints) == len({hint.child_path for hint in hints}) == 1
+    assert tuple(hint.child_path for hint in hints) == (
+        (0, 0, 0, 0, 1, 0),
+        (0, 0, 0, 1, 1, 0),
+    )
+    assert len(hints) == len({hint.child_path for hint in hints})
+
+
+def test_returns_at_most_one_hint_for_multiple_candidate_cell_pairs_in_row() -> None:
+    first = _qualifying_row("first title", 51)
+    second = _qualifying_row("second title", 61)
+    row = replace(first, children=(*first.children, *second.children))
+    table = _element("table", row)
+    wrapper = _element("paragraph", table)
+    body = _element(
+        "paragraph", _fragment("following body", "SamsungOne-400", mcid=70)
+    )
+
+    hints = detect_subtitle_hints((_element("section", wrapper, body),))
+
+    assert tuple(hint.child_path for hint in hints) == ((0, 0, 0, 0, 1, 0),)
 
 
 def test_detection_has_no_language_buyer_or_title_dictionary_dependency() -> None:

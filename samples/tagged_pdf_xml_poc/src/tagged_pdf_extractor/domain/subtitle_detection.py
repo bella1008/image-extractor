@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import re
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
@@ -10,34 +9,13 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
-
-
-_TRAILING_WEIGHT = re.compile(r"(?:^|[-_\s])([1-9]00)$")
-_KEYWORD_WEIGHTS = (
-    ("black", 900),
-    ("extrabold", 800),
-    ("semibold", 600),
-    ("demibold", 600),
-    ("bold", 700),
-    ("medium", 500),
-    ("regular", 400),
-    ("normal", 400),
-    ("light", 300),
+from tagged_pdf_extractor.domain.typography import (
+    normalize_font_weight,
+    typography_evidence,
 )
+
+
 _SUBTITLE_INLINE_ROLES = frozenset({"span", "link"})
-
-
-def normalize_font_weight(font_name: str | None) -> int | None:
-    if not font_name:
-        return None
-    normalized = font_name.rsplit("+", 1)[-1].strip().lower()
-    numeric = _TRAILING_WEIGHT.search(normalized)
-    if numeric:
-        return int(numeric.group(1))
-    for keyword, weight in _KEYWORD_WEIGHTS:
-        if re.search(rf"(?:^|[-_\s]){re.escape(keyword)}$", normalized):
-            return weight
-    return None
 
 
 def detect_subtitle_hints(
@@ -177,20 +155,21 @@ def _row_hint(
         title_text = _normalized_text(title)
         if not 1 <= len(title_text) <= 160:
             continue
-        title_evidence = _typography_evidence(title)
-        body_evidence = _typography_evidence(body)
+        title_evidence = typography_evidence(title)
+        body_evidence = typography_evidence(body)
         if title_evidence is None or body_evidence is None:
             continue
-        title_weight, title_lines = title_evidence
-        body_weight, _ = body_evidence
-        if len(title_lines) > 2 or title_weight < body_weight + 100:
+        if (
+            len(title_evidence.observed_lines) > 2
+            or title_evidence.font_weight < body_evidence.font_weight + 100
+        ):
             continue
 
         return SubtitleHint(
             child_path=(*row_path, index + 1, 0),
-            font_weight=title_weight,
-            comparison_body_font_weight=body_weight,
-            observed_line_count=len(title_lines),
+            font_weight=title_evidence.font_weight,
+            comparison_body_font_weight=body_evidence.font_weight,
+            observed_line_count=len(title_evidence.observed_lines),
         )
     return None
 
@@ -228,53 +207,3 @@ def _normalized_text(element: StructureElement) -> str:
 
     visit(element.children)
     return " ".join("".join(parts).split())
-
-
-def _typography_evidence(
-    element: StructureElement,
-) -> tuple[int, set[tuple[int, int]]] | None:
-    samples: list[tuple[int, int]] = []
-    line_keys: set[tuple[int, int]] = set()
-    valid = True
-
-    def visit(children: tuple[StructureElement | ContentFragment, ...]) -> None:
-        nonlocal valid
-        for child in children:
-            if isinstance(child, StructureElement):
-                visit(child.children)
-                continue
-            for part_index, text in enumerate(child.text_parts):
-                visible_count = sum(not character.isspace() for character in text)
-                if visible_count == 0:
-                    continue
-                if (
-                    child.page_index < 0
-                    or child.mcid is None
-                    or not child.text_styles
-                    or part_index >= len(child.text_styles)
-                ):
-                    valid = False
-                    continue
-                weight = normalize_font_weight(child.text_styles[part_index].font_name)
-                if weight is None:
-                    valid = False
-                    continue
-                samples.append((weight, visible_count))
-                line_keys.add((child.page_index, child.mcid))
-
-    visit(element.children)
-    if not valid or not samples or not line_keys:
-        return None
-    return _weighted_median(samples), line_keys
-
-
-def _weighted_median(samples: list[tuple[int, int]]) -> int:
-    ordered = sorted(samples)
-    total = sum(count for _, count in ordered)
-    threshold = (total + 1) // 2
-    cumulative = 0
-    for weight, count in ordered:
-        cumulative += count
-        if cumulative >= threshold:
-            return weight
-    raise AssertionError("weighted median requires at least one sample")

@@ -18,6 +18,9 @@ from tagged_pdf_extractor.domain.subtitle_detection import (
     detect_table_subtitles,
     normalize_font_weight,
 )
+from tagged_pdf_extractor.domain.typography import (
+    normalize_font_weight as shared_normalize_font_weight,
+)
 
 
 def _fragment(
@@ -121,6 +124,10 @@ def test_normalize_font_weight_uses_only_verified_numeric_or_keyword_evidence(
     font_name: str | None, expected: int | None
 ) -> None:
     assert normalize_font_weight(font_name) == expected
+
+
+def test_normalize_font_weight_compatibility_import_uses_shared_helper() -> None:
+    assert normalize_font_weight is shared_normalize_font_weight
 
 
 def test_detects_language_independent_table_subtitle_from_following_body_weight() -> None:

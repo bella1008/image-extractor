@@ -66,31 +66,41 @@ def _paragraph_hints(
     paragraph: StructureElement,
     paragraph_path: tuple[int, ...],
 ) -> tuple[LineBreakHint, ...]:
-    segments: list[tuple[tuple[int, ...], str, bool]] = []
+    segments: list[tuple[tuple[int, ...], str, bool, int]] = []
+    run_index = 0
 
     def collect_inline(
         siblings: tuple[StructureElement | ContentFragment, ...],
         parent_path: tuple[int, ...],
     ) -> None:
+        nonlocal run_index
         for index, child in enumerate(siblings):
             child_path = (*parent_path, index)
             if isinstance(child, ContentFragment):
-                segments.append((child_path, child.text, False))
+                segments.append((child_path, child.text, False, run_index))
             elif child.semantic_role in _INLINE_ROLES:
                 if child.actual_text is not None:
-                    segments.append((child_path, child.actual_text, True))
+                    segments.append(
+                        (child_path, child.actual_text, True, run_index)
+                    )
                 else:
                     collect_inline(child.children, child_path)
+            else:
+                run_index += 1
 
     collect_inline(paragraph.children, paragraph_path)
     hints: list[LineBreakHint] = []
-    for index, (child_path, text, is_actual_text) in enumerate(segments):
+    for index, (child_path, text, is_actual_text, segment_run) in enumerate(segments):
         if not is_actual_text or text != "\n":
             continue
         if index == 0 or index == len(segments) - 1:
             continue
-        previous_text = segments[index - 1][1]
-        following_text = segments[index + 1][1]
+        previous = segments[index - 1]
+        following = segments[index + 1]
+        if previous[3] != segment_run or following[3] != segment_run:
+            continue
+        previous_text = previous[1]
+        following_text = following[1]
         if not previous_text.strip() or not following_text.strip():
             continue
         if not previous_text.rstrip().endswith(","):

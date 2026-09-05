@@ -157,6 +157,38 @@ def test_does_not_descend_through_a_block_inside_a_paragraph() -> None:
     assert detect_rf_line_break_hints(document.children) == ()
 
 
+@pytest.mark.parametrize("block_role", ["list", "table"])
+def test_block_between_comma_and_newline_interrupts_inline_adjacency(
+    block_role: str,
+) -> None:
+    document = _document(
+        (
+            _fragment("first,"),
+            _element(block_role),
+            _newline(),
+            _fragment("second"),
+        )
+    )
+
+    assert detect_rf_line_break_hints(document.children) == ()
+
+
+@pytest.mark.parametrize("block_role", ["list", "table"])
+def test_block_between_newline_and_following_text_interrupts_inline_adjacency(
+    block_role: str,
+) -> None:
+    document = _document(
+        (
+            _fragment("first,"),
+            _newline(),
+            _element(block_role),
+            _fragment("second"),
+        )
+    )
+
+    assert detect_rf_line_break_hints(document.children) == ()
+
+
 def test_detects_inner_paragraph_inside_outer_paragraph_table_wrapper() -> None:
     inner_paragraph = _element(
         "paragraph",

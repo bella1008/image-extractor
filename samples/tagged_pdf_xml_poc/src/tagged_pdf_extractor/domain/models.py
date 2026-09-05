@@ -86,6 +86,12 @@ class SubtitleHint:
 
 
 @dataclass(frozen=True)
+class LineBreakHint:
+    child_path: tuple[int, ...]
+    reason: str = "source_actual_text_newline_after_comma_in_table_cell"
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -97,6 +103,7 @@ class TaggedDocument:
     numbered_heading_series: tuple[NumberedHeadingSeriesAudit, ...] = ()
     numbered_heading_series_consistent: bool | None = None
     subtitle_hints: tuple[SubtitleHint, ...] = ()
+    line_break_hints: tuple[LineBreakHint, ...] = ()
 
 
 @dataclass(frozen=True)

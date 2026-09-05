@@ -1,5 +1,6 @@
 import os
 import re
+from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -31,6 +32,20 @@ _SAMPLES = {
         / "SUG_RAW"
         / "1_TV_ZG"
         / "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf",
+    ),
+    "XY": (
+        "TAGGED_PDF_XY_SAMPLE",
+        Path("samples")
+        / "SUG_RAW"
+        / "TV_XY"
+        / "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
+    ),
+    "KR": (
+        "TAGGED_PDF_KR_SAMPLE",
+        Path("samples")
+        / "SUG_RAW"
+        / "TV_KR"
+        / "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
     ),
 }
 _README = Path(__file__).parents[1] / "README.md"
@@ -65,6 +80,72 @@ _ZG_NUMBERED_HEADINGS = (
     ("03", "Eerste instelling"),
     ("04", "Problemen oplossen en onderhoud"),
     ("05", "Technische gegevens en overige informatie"),
+)
+_XY_NUMBERED_HEADINGS = (
+    ("01", "What's in the Box?"),
+    ("02", "Initial Setup"),
+    ("03", "Troubleshooting and Maintenance"),
+    ("04", "Specifications and Other Information"),
+)
+_KR_NUMBERED_HEADINGS = (
+    ("01", "구성품 확인하기"),
+    ("02", "초기 설정하기"),
+    ("03", "문제해결 및 관리하기"),
+    ("04", "사양 및 정보"),
+)
+_ZG_FORM_HEADINGS = (
+    "Declaration of Conformity",
+    "Konformitätserklärung",
+    "Déclaration de conformité",
+    "Dichiarazione di Conformità",
+    "Verklaring van overeenstemming",
+)
+_ZG_FORM_LABEL_GROUPS = (
+    (
+        "Manufacturer",
+        "Product Details",
+        "Declaration and applicable standards",
+        "EMC",
+        "Safety",
+        "Radio",
+        "Signed for and on behalf of : Samsung",
+    ),
+    (
+        "Hersteller",
+        "Produktdetails",
+        "Erklärung und gültige Normen",
+        "EMV",
+        "Sicherheit",
+        "Funk",
+        "Unterzeichnet für und im Namen von: Samsung",
+    ),
+    (
+        "Fabricant",
+        "Détails du produit",
+        "Déclaration et normes applicables",
+        "CEM",
+        "Sécurité",
+        "Radio",
+        "Signé en nom et pour le compte de: Samsung",
+    ),
+    (
+        "Produttore",
+        "Dettagli prodotto",
+        "Dichiarazione e Standard applicabili",
+        "EMC",
+        "Sicurezza",
+        "Radio",
+        "Firmato a nome e per conto di: Samsung",
+    ),
+    (
+        "Fabrikant",
+        "Productgegevens",
+        "Verklaring en toepasselijke normen",
+        "EMC",
+        "VEILIGHEID",
+        "Radio",
+        "Ondertekend voor en namens: Samsung",
+    ),
 )
 
 
@@ -104,6 +185,30 @@ def _extract_report(path: Path, output: Path):
         QualityEvaluator(),
         OutputBundleWriter(),
     ).run(path, output)
+
+
+@pytest.fixture(scope="module")
+def za_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("ZA"), "ZA")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-za") / "bundle")
+
+
+@pytest.fixture(scope="module")
+def zg_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("ZG"), "ZG")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-zg") / "bundle")
+
+
+@pytest.fixture(scope="module")
+def xy_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("XY"), "XY")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-xy") / "bundle")
+
+
+@pytest.fixture(scope="module")
+def kr_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("KR"), "KR")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-kr") / "bundle")
 
 
 def _series_labels(report) -> list[tuple[str, ...]]:
@@ -211,6 +316,112 @@ def _assert_separate_markdown_lines(
     assert positions == sorted(positions)
 
 
+def _assert_no_zg_display_evidence(document, semantic_xml: Path) -> None:
+    assert document.line_break_hints == ()
+    assert document.text_display_hints == ()
+    root = ET.parse(semantic_xml).getroot()
+    for role in ("section-heading", "strong-label", "preserved-line-break"):
+        assert root.find(f".//*[@display-role='{role}']") is None
+
+
+def _preserved_line_break_pairs(root: ET.Element) -> list[tuple[str, str]]:
+    parent_by_child = {
+        child: parent for parent in root.iter() for child in parent
+    }
+    pairs: list[tuple[str, str]] = []
+    for boundary in root.findall(".//*[@display-role='preserved-line-break']"):
+        paragraph = parent_by_child.get(boundary)
+        while paragraph is not None and paragraph.tag != "paragraph":
+            paragraph = parent_by_child.get(paragraph)
+        assert paragraph is not None
+        descendants = list(paragraph.iter())
+        boundary_index = descendants.index(boundary)
+        before = [
+            _element_text(item)
+            for item in descendants[:boundary_index]
+            if item.tag == "text" and _element_text(item)
+        ]
+        after = [
+            _element_text(item)
+            for item in descendants[boundary_index + 1 :]
+            if item.tag == "text" and _element_text(item)
+        ]
+        assert before and after
+        pairs.append((before[-1], after[0]))
+    return pairs
+
+
+def _assert_preserved_breaks_are_physical_markdown_lines(
+    root: ET.Element, markdown: str
+) -> None:
+    pairs = _preserved_line_break_pairs(root)
+    assert len(pairs) == 90
+    lines = [re.sub(r"\s+", " ", line.strip()) for line in markdown.splitlines()]
+    cursor = 0
+    observed_before: list[str] = []
+    for before, after in pairs:
+        matching_index = next(
+            (
+                index
+                for index in range(cursor, len(lines))
+                if lines[index] == before
+            ),
+            None,
+        )
+        assert matching_index is not None, before
+        next_nonempty = next(
+            (
+                line
+                for line in lines[matching_index + 1 :]
+                if line
+            ),
+            None,
+        )
+        assert next_nonempty == after
+        observed_before.append(lines[matching_index])
+        cursor = matching_index + 1
+
+    assert observed_before == [before for before, _ in pairs]
+    assert all(before.endswith(",") for before in observed_before)
+
+
+def _assert_form_labels_and_details_remain_separate(
+    root: ET.Element, markdown: str
+) -> None:
+    elements = list(root.iter())
+    element_index = {element: index for index, element in enumerate(elements)}
+    pairs: list[tuple[str, str]] = []
+    for label in root.findall(".//*[@display-role='strong-label']"):
+        following_paragraph = next(
+            (
+                candidate
+                for candidate in elements[element_index[label] + 1 :]
+                if candidate.tag == "paragraph"
+                and _element_text(candidate)
+            ),
+            None,
+        )
+        assert following_paragraph is not None
+        assert following_paragraph.get("display-role") is None
+        pairs.append((_element_text(label), _element_text(following_paragraph)))
+
+    lines = [line.strip() for line in markdown.splitlines()]
+    cursor = 0
+    for label, detail in pairs:
+        label_index = next(
+            index
+            for index in range(cursor, len(lines))
+            if lines[index] == f"**{label}**"
+        )
+        detail_index = next(
+            index
+            for index in range(label_index + 1, len(lines))
+            if re.sub(r"\s+", "", lines[index]) == re.sub(r"\s+", "", detail)
+        )
+        assert detail_index > label_index
+        cursor = detail_index + 1
+
+
 def test_page_quality_rejects_a_missing_expected_page() -> None:
     page_quality = {
         "0": {
@@ -269,10 +480,91 @@ def test_available_sample_is_returned_in_required_sample_mode(tmp_path: Path) ->
     assert require_sample(sample, "ZC", required=True) == sample
 
 
-def test_za_retains_complete_structure_and_clean_page_text(tmp_path: Path) -> None:
-    path = require_sample(_resolve_sample("ZA"), "ZA")
+@pytest.mark.parametrize(
+    ("sample", "environment_name", "relative_path"),
+    (
+        (
+            "XY",
+            "TAGGED_PDF_XY_SAMPLE",
+            Path("samples")
+            / "SUG_RAW"
+            / "TV_XY"
+            / "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
+        ),
+        (
+            "KR",
+            "TAGGED_PDF_KR_SAMPLE",
+            Path("samples")
+            / "SUG_RAW"
+            / "TV_KR"
+            / "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
+        ),
+    ),
+)
+def test_xy_and_kr_sample_resolver_searches_repository_and_environment(
+    sample: str,
+    environment_name: str,
+    relative_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(environment_name, raising=False)
+    repository = tmp_path / "repository"
+    repository_sample = repository / relative_path
+    repository_sample.parent.mkdir(parents=True)
+    repository_sample.touch()
 
-    document, report, artifacts = _extract_report(path, tmp_path / "za")
+    assert _resolve_sample(
+        sample,
+        anchor=repository / "samples/tagged_pdf_xml_poc/tests/test.py",
+        home=tmp_path / "empty-home",
+    ) == repository_sample
+
+    environment_sample = tmp_path / "external" / f"{sample}.pdf"
+    environment_sample.parent.mkdir()
+    environment_sample.touch()
+    monkeypatch.setenv(environment_name, str(environment_sample))
+
+    assert _resolve_sample(
+        sample,
+        anchor=repository / "samples/tagged_pdf_xml_poc/tests/test.py",
+        home=tmp_path / "empty-home",
+    ) == environment_sample
+
+    monkeypatch.delenv(environment_name)
+    home = tmp_path / "home"
+    home_sample = home / "image-extractor" / relative_path
+    home_sample.parent.mkdir(parents=True)
+    home_sample.touch()
+    assert _resolve_sample(
+        sample,
+        anchor=tmp_path / "elsewhere/tests/test.py",
+        home=home,
+    ) == home_sample
+
+
+@pytest.mark.parametrize("sample", ("XY", "KR"))
+def test_xy_and_kr_missing_samples_fail_in_required_mode(
+    sample: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAGGED_PDF_REQUIRE_SAMPLES", "1")
+    monkeypatch.delenv(f"TAGGED_PDF_{sample}_SAMPLE", raising=False)
+
+    with pytest.raises(pytest.fail.Exception, match=rf"{sample} tagged PDF"):
+        require_sample(
+            _resolve_sample(
+                sample,
+                anchor=tmp_path / "repository/tests/test.py",
+                home=tmp_path / "empty-home",
+            ),
+            sample,
+        )
+
+
+def test_za_retains_complete_structure_and_clean_page_text(za_bundle) -> None:
+    document, report, artifacts = za_bundle
     _assert_common_layout_quality(document, report, {"0", "1"})
     _assert_numbered_headings(
         report,
@@ -283,12 +575,11 @@ def test_za_retains_complete_structure_and_clean_page_text(tmp_path: Path) -> No
         heading_size=16.0,
         body_size=7.0,
     )
+    _assert_no_zg_display_evidence(document, artifacts.semantic_xml)
 
 
-def test_zg_retains_all_pages_without_false_image_xobject_loss(tmp_path: Path) -> None:
-    path = require_sample(_resolve_sample("ZG"), "ZG")
-
-    document, report, artifacts = _extract_report(path, tmp_path / "zg")
+def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> None:
+    document, report, artifacts = zg_bundle
     _assert_common_layout_quality(
         document, report, {str(page_index) for page_index in range(52)}
     )
@@ -302,7 +593,61 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(tmp_path: Path) -
         body_size=6.5,
     )
 
+    assert len(document.line_break_hints) == 90
+    assert Counter(
+        hint.display_role for hint in document.text_display_hints
+    ) == {"section_heading": 10, "strong_label": 70}
+    semantic_root = ET.parse(artifacts.semantic_xml).getroot()
+    assert len(
+        semantic_root.findall(".//*[@display-role='preserved-line-break']")
+    ) == 90
+    assert len(semantic_root.findall(".//*[@display-role='section-heading']")) == 10
+    assert len(semantic_root.findall(".//*[@display-role='strong-label']")) == 70
+
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    _assert_preserved_breaks_are_physical_markdown_lines(semantic_root, markdown)
+
+    expected_form_headings = Counter(
+        heading for heading in _ZG_FORM_HEADINGS for _ in range(2)
+    )
+    semantic_form_headings = Counter(
+        _element_text(element)
+        for element in semantic_root.findall(
+            ".//*[@display-role='section-heading']"
+        )
+    )
+    markdown_form_headings = Counter(
+        line.removeprefix("## ")
+        for line in markdown.splitlines()
+        if line.startswith("## ") and line.removeprefix("## ") in _ZG_FORM_HEADINGS
+    )
+    assert semantic_form_headings == expected_form_headings
+    assert markdown_form_headings == expected_form_headings
+
+    expected_form_labels = Counter(
+        label
+        for labels in _ZG_FORM_LABEL_GROUPS
+        for label in labels
+        for _ in range(2)
+    )
+    semantic_form_labels = Counter(
+        _element_text(element)
+        for element in semantic_root.findall(".//*[@display-role='strong-label']")
+    )
+    markdown_strong_only_lines = Counter(
+        line.strip()[2:-2]
+        for line in markdown.splitlines()
+        if line.strip().startswith("**") and line.strip().endswith("**")
+    )
+    assert semantic_form_labels == expected_form_labels
+    assert Counter(
+        {
+            label: markdown_strong_only_lines[label]
+            for label in expected_form_labels
+        }
+    ) == expected_form_labels
+    _assert_form_labels_and_details_remain_separate(semantic_root, markdown)
+
     assert (
         "**Correct Disposal of This Product "
         "(Waste Electrical & Electronic Equipment)**"
@@ -343,3 +688,56 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(tmp_path: Path) -
             "EN 300 328 V2.2.2",
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "sample", "expected_headings"),
+    (
+        ("xy_bundle", "XY", _XY_NUMBERED_HEADINGS),
+        ("kr_bundle", "KR", _KR_NUMBERED_HEADINGS),
+    ),
+)
+def test_xy_and_kr_retain_structure_without_zg_display_rules(
+    fixture_name: str,
+    sample: str,
+    expected_headings: tuple[tuple[str, str], ...],
+    request: pytest.FixtureRequest,
+) -> None:
+    document, report, artifacts = request.getfixturevalue(fixture_name)
+    _assert_common_layout_quality(document, report, {"0", "1"})
+    _assert_numbered_headings(
+        report,
+        artifacts.semantic_xml,
+        artifacts.semantic_markdown,
+        expected_headings,
+        [("01", "02", "03", "04")],
+        heading_size=16.0,
+        body_size=7.0,
+    )
+    _assert_no_zg_display_evidence(document, artifacts.semantic_xml)
+    assert report.status == "pass"
+    assert artifacts.raw_xml.is_file()
+    assert artifacts.semantic_xml.is_file()
+    assert artifacts.report_json.is_file()
+    assert artifacts.semantic_markdown.is_file()
+    assert artifacts.semantic_markdown.read_text(encoding="utf-8").strip()
+
+
+def test_form_detection_runtime_has_no_title_or_model_dictionary() -> None:
+    domain = (
+        Path(__file__).parents[1]
+        / "src"
+        / "tagged_pdf_extractor"
+        / "domain"
+    )
+    runtime = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(domain.glob("*.py"))
+    )
+
+    forbidden_literals = (
+        *_ZG_FORM_HEADINGS,
+        *(label for labels in _ZG_FORM_LABEL_GROUPS for label in labels),
+        "QN990H",
+        "LS03HA",
+    )
+    assert not [literal for literal in forbidden_literals if literal in runtime]

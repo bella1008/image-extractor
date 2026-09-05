@@ -404,6 +404,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert {role_map[name] for name in expected_custom_headings} == {"P"}
 
     validation = OutputBundleWriter().validate(document)
+    assert document.line_break_hints == ()
+    assert document.text_display_hints == ()
     assert report.metrics["numbered_heading_promotion_count"] == 8
     assert [item["labels"] for item in report.metrics["numbered_heading_series"]] == [
         ["01", "02", "03", "04"],
@@ -418,6 +420,14 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
 
     raw_root = ET.parse(artifacts.raw_xml).getroot()
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
+    for display_role in (
+        "section-heading",
+        "strong-label",
+        "preserved-line-break",
+    ):
+        assert semantic_root.find(
+            f".//*[@display-role='{display_role}']"
+        ) is None
     report_data = json.loads(artifacts.report_json.read_text(encoding="utf-8"))
     assert artifacts.semantic_markdown.is_file()
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")

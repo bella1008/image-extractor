@@ -187,6 +187,16 @@ This symbol indicates that high voltage is present inside. It is dangerous to ma
 
 프랑스어 복합 글꼴도 `Produit de catégorie II`, `Communiquez avec un centre de service homologué`, `Pour les modèles de 82 po, vous devrez être quatre`, `Le fait de tirer, de pousser ou de monter sur le téléviseur`, `Ne jamais placer un téléviseur dans une position instable`, `Wireless One Connect uniquement`으로 제어문자 없이 복원됩니다.
 
+## Semantic Markdown 가독성 표시 계약
+
+Semantic Markdown의 `<br>`는 같은 원본 구조 단위 안의 표시용 문장 경계입니다. 하나의 source list item, paragraph 또는 table cell을 여러 구조 단위로 나눈다는 뜻이 아니며, Raw XML의 원문과 구조는 바꾸지 않습니다.
+
+`[아이콘]`은 아이콘의 이름을 판별한 결과가 아닙니다. 주변 문장, 페이지, BBox, 상대 크기 근거로 확인된 이름 없는 작은 inline figure를 원래 문장 위치에 표시한 것입니다. `[그림: 텍스트 없음]`은 standalone, 큰 그림 또는 판별이 불확실한 figure에 사용하는 보수적인 fallback입니다.
+
+`※`는 PDF에 실제로 존재하는 의미 있는 source label이므로 설명문 앞에 그대로 보존합니다. 반면 `Ł`, `Œ`는 손상된 불릿 glyph로 판별된 표식이며 Markdown 본문에 표시하지 않습니다.
+
+대괄호로 둘러싸인 모델명이 Markdown 편집기에서 다른 색으로 보이는 것은 편집기의 구문 강조 색상일 뿐, PDF 원본의 글자색이나 스타일을 뜻하지 않습니다. 추출기는 이를 별도 색상이나 강조 표식으로 변환하지 않고 원문 텍스트로 유지합니다.
+
 ### ZA
 
 ZA 결과는 `status=pass`이며 번호형 장 제목은 3개입니다. `01`부터 `03`까지의 유효한 series가 한 번 확인됩니다. 구조 요소 810개, 텍스트 조각 891개, body 608개이며, 2개 페이지 모두 제어문자 0개입니다. unresolved MCID와 알려진 텍스트 손실 진단은 0개이고 특수문자 보존 게이트도 통과합니다. ZA 전용 제목이나 장 개수 보정 규칙은 추가하지 않았습니다.

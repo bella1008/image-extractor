@@ -8,6 +8,9 @@ import pytest
 
 from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.application.extract_document import ExtractDocument
+from tagged_pdf_extractor.domain.readability_formatting import (
+    verified_subtitle_linked_body_paths,
+)
 from tagged_pdf_extractor.infrastructure.output_bundle import OutputBundleWriter
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
     PyMuPdfBaselineReader,
@@ -160,6 +163,32 @@ _ZG_SUBTITLE_COUNTS = Counter(
         "Correcte behandeling van een gebruikte accu uit dit product": 1,
     }
 )
+_READABILITY_DISPLAY_ATTRIBUTES = {
+    "display-role",
+    "sentence-break-offsets",
+    "sentence-break-reason",
+    "icon-reason",
+    "reference-font-size",
+    "width-font-ratio",
+    "height-font-ratio",
+}
+_FRA_POWER_SENTENCES = (
+    "Veillez à brancher correctement et complètement le cordon d'alimentation.",
+    "Lorsque vous débranchez le cordon d'alimentation d'une prise murale, "
+    "tirez toujours sur la fiche du cordon d'alimentation.",
+    "Ne le débranchez jamais en tirant sur le cordon d'alimentation.",
+    "Ne touchez pas le cordon d'alimentation si vous avez les mains mouillées.",
+)
+_DEU_BATTERY_SENTENCES = (
+    "Diese Kennzeichnung auf der Batterie, dem Handbuch oder der Verpackung "
+    "bedeutet, dass die Batterien am Ende ihrer Lebensdauer nicht im normalen "
+    "Hausmüll entsorgt werden dürfen.",
+    "Die Kennzeichnung mit den chemischen Symbolen „Hg“, „Cd“ oder „Pb“ "
+    "bedeutet, dass die Batterie Quecksilber, Cadmium oder Blei in Mengen "
+    "enthält, die die Grenzwerte der EU-Direktive 2006/66 übersteigen.",
+    "Wenn Batterien nicht ordnungsgemäß entsorgt werden, können diese "
+    "Substanzen die Gesundheit von Menschen oder die Umwelt gefährden.",
+)
 
 
 def _resolve_sample(
@@ -234,6 +263,128 @@ def _element_text(element: ET.Element) -> str:
         " ",
         "".join(decode_data_element(text) for text in element.iter("text")),
     ).strip()
+
+
+def _elements_starting_with(
+    root: ET.Element, tag: str, prefix: str
+) -> list[ET.Element]:
+    return [
+        element
+        for element in root.iter(tag)
+        if _element_text(element).startswith(prefix)
+    ]
+
+
+def _normalized_markdown_line(line: str) -> str:
+    return re.sub(r"\s+", " ", line.strip().removesuffix("<br>")).strip()
+
+
+def _flow_text_with_inline_icons(element: ET.Element) -> str:
+    parts: list[str] = []
+
+    def visit(node: ET.Element) -> None:
+        if node.tag == "figure" and node.get("display-role") == "inline-icon":
+            parts.append("[아이콘]")
+            return
+        if node.tag == "text":
+            parts.append(decode_data_element(node))
+            return
+        for child in node:
+            visit(child)
+
+    visit(element)
+    return re.sub(r"\s+", " ", " ".join(parts)).strip()
+
+
+def _assert_raw_has_no_readability_display_attributes(raw_xml: Path) -> None:
+    root = ET.parse(raw_xml).getroot()
+    for element in root.iter():
+        assert _READABILITY_DISPLAY_ATTRIBUTES.isdisjoint(element.attrib)
+
+
+def _document_semantic_role_counts(document) -> Counter[str]:
+    counts: Counter[str] = Counter()
+
+    def visit(children) -> None:
+        for child in children:
+            semantic_role = getattr(child, "semantic_role", None)
+            if semantic_role is None:
+                continue
+            counts[semantic_role] += 1
+            visit(child.children)
+
+    visit(document.children)
+    return counts
+
+
+def _assert_sentence_breaks_do_not_create_source_units(
+    document, report, semantic_root: ET.Element
+) -> None:
+    source_counts = _document_semantic_role_counts(document)
+    promotion_count = report.metrics["numbered_heading_promotion_count"]
+    assert len(list(semantic_root.iter("paragraph"))) == source_counts["paragraph"]
+    assert len(list(semantic_root.iter("table_row"))) == source_counts["table_row"]
+    assert len(list(semantic_root.iter("table_cell"))) == source_counts["table_cell"]
+    assert (
+        len(list(semantic_root.iter("list_item"))) + promotion_count
+        == source_counts["list_item"]
+    )
+    for text in semantic_root.findall(
+        ".//text[@display-role='sentence-break-source']"
+    ):
+        assert list(text) == []
+
+
+def _assert_inline_icon_evidence_matches_detector(
+    document, semantic_root: ET.Element, markdown: str
+) -> None:
+    evidence = semantic_root.findall(".//figure[@display-role='inline-icon']")
+    assert len(evidence) == len(document.inline_icon_hints)
+    assert markdown.count("[아이콘]") == len(document.inline_icon_hints)
+
+    observed = sorted(
+        (
+            int(element.attrib["page-index"]),
+            tuple(
+                float(value)
+                for value in next(
+                    attribute.attrib["value"]
+                    for attribute in element.findall("./attributes/attribute")
+                    if attribute.attrib["name"] in {"BBox", "/BBox"}
+                ).strip("[]").split(",")
+            ),
+            element.attrib["icon-reason"],
+            float(element.attrib["reference-font-size"]),
+            float(element.attrib["width-font-ratio"]),
+            float(element.attrib["height-font-ratio"]),
+        )
+        for element in evidence
+    )
+    expected = sorted(
+        (
+            hint.page_index,
+            hint.bbox,
+            hint.reason,
+            hint.reference_font_size,
+            hint.width_ratio,
+            hint.height_ratio,
+        )
+        for hint in document.inline_icon_hints
+    )
+    assert len(observed) == len(expected)
+    for actual, wanted in zip(observed, expected, strict=True):
+        assert actual[0] == wanted[0]
+        assert actual[1] == pytest.approx(wanted[1])
+        assert actual[2] == wanted[2]
+        assert actual[3:] == pytest.approx(wanted[3:], rel=1e-5, abs=1e-6)
+
+    generic_figures = [
+        figure
+        for figure in semantic_root.iter("figure")
+        if figure.get("display-role") is None
+    ]
+    assert generic_figures
+    assert "[그림: 텍스트 없음]" in markdown
 
 
 def _assert_numbered_headings(
@@ -318,7 +469,7 @@ def _assert_common_layout_quality(document, report, expected_pages: set[str]) ->
 def _assert_separate_markdown_lines(
     markdown: str, values: tuple[str, ...]
 ) -> None:
-    lines = [line.strip() for line in markdown.splitlines()]
+    lines = [_normalized_markdown_line(line) for line in markdown.splitlines()]
     positions: list[int] = []
     for value in values:
         matching_lines = [
@@ -329,12 +480,149 @@ def _assert_separate_markdown_lines(
     assert positions == sorted(positions)
 
 
-def _assert_no_zg_display_evidence(document, semantic_xml: Path) -> None:
+def _assert_no_zg_profile_display_evidence(document, semantic_xml: Path) -> None:
     assert document.line_break_hints == ()
     assert document.text_display_hints == ()
     root = ET.parse(semantic_xml).getroot()
     for role in ("section-heading", "strong-label", "preserved-line-break"):
         assert root.find(f".//*[@display-role='{role}']") is None
+
+
+def _assert_zg_sentence_readability(
+    root: ET.Element, markdown: str
+) -> None:
+    fra_bodies = _elements_starting_with(
+        root, "list_body", _FRA_POWER_SENTENCES[0]
+    )
+    assert len(fra_bodies) == 1
+    parent_by_child = {
+        child: parent for parent in root.iter() for child in parent
+    }
+    assert parent_by_child[fra_bodies[0]].tag == "list_item"
+    fra_breaks = fra_bodies[0].findall(
+        ".//text[@display-role='sentence-break-source']"
+    )
+    assert sum(
+        len(text.attrib["sentence-break-offsets"].split(","))
+        for text in fra_breaks
+    ) == 3
+
+    markdown_lines = markdown.splitlines()
+    fra_start = next(
+        index
+        for index, line in enumerate(markdown_lines)
+        if _normalized_markdown_line(line).startswith("- " + _FRA_POWER_SENTENCES[0])
+    )
+    fra_visual_lines = [
+        _normalized_markdown_line(line).removeprefix("- ")
+        for line in markdown_lines[fra_start : fra_start + 4]
+    ]
+    assert tuple(fra_visual_lines) == _FRA_POWER_SENTENCES
+
+    deu_paragraphs = _elements_starting_with(
+        root, "paragraph", _DEU_BATTERY_SENTENCES[0]
+    )
+    assert len(deu_paragraphs) == 1
+    deu_breaks = deu_paragraphs[0].findall(
+        ".//text[@display-role='sentence-break-source']"
+    )
+    assert sum(
+        len(text.attrib["sentence-break-offsets"].split(","))
+        for text in deu_breaks
+    ) == 2
+    deu_start = next(
+        index
+        for index, line in enumerate(markdown_lines)
+        if _normalized_markdown_line(line).startswith(
+            _DEU_BATTERY_SENTENCES[0]
+        )
+    )
+    deu_lines = markdown_lines[deu_start : deu_start + 3]
+    assert deu_lines[0].endswith("<br>")
+    assert deu_lines[1].endswith("<br>")
+    deu_visual_lines = tuple(_normalized_markdown_line(line) for line in deu_lines)
+    assert deu_visual_lines == _DEU_BATTERY_SENTENCES
+
+
+def _assert_zg_inline_osd_icons(root: ET.Element, markdown: str) -> None:
+    osd_flows = [
+        element
+        for element in root.iter("paragraph")
+        if _element_text(element).startswith(">")
+        and _element_text(element).count(">") == 6
+        and len(
+            element.findall(".//figure[@display-role='inline-icon']")
+        ) == 2
+    ]
+    assert len(osd_flows) == 5
+    assert sum(
+        len(flow.findall(".//figure[@display-role='inline-icon']"))
+        for flow in osd_flows
+    ) == 10
+
+    normalized_markdown = re.sub(r"\s+", " ", markdown)
+    for flow in osd_flows:
+        expected = _flow_text_with_inline_icons(flow)
+        assert expected.count("[아이콘]") == 2
+        assert expected in normalized_markdown
+
+
+def _assert_zg_note_markers_and_plain_model_labels(
+    root: ET.Element, markdown: str
+) -> None:
+    fra_note_items = _elements_starting_with(
+        root, "list_item", "※ Cette adresse"
+    )
+    assert len(fra_note_items) == 2
+    for item in fra_note_items:
+        direct_labels = [child for child in item if child.tag == "label"]
+        direct_bodies = [child for child in item if child.tag == "list_body"]
+        assert len(direct_labels) == len(direct_bodies) == 1
+        assert _element_text(direct_labels[0]) == "※"
+        assert _element_text(direct_bodies[0]).startswith("Cette adresse")
+    fra_note_lines = [
+        line.strip()
+        for line in markdown.splitlines()
+        if line.strip().startswith("※ Cette adresse")
+    ]
+    assert len(fra_note_lines) == len(fra_note_items)
+    assert all(line.count("※") == 1 for line in fra_note_lines)
+    assert "- ※ Cette adresse" not in markdown
+    assert "UK ※ 2025-10-31" in re.sub(r"\s+", " ", markdown)
+
+    bracketed_model_labels = (
+        "[QN990H]",
+        "[R9*H/R8*H/S9*H/S8*H/QN8*H]",
+        "[QN7*H/QN1EH/M9*H/M8*H/M7*H/M1EH/U9***H/U8***H/ U7***H]",
+        "[The Frame (LS03HA, LS03HE)]",
+        "[The Frame (LS03HW)]",
+    )
+    semantic_text = _element_text(root)
+    markdown_lines = [line.strip() for line in markdown.splitlines()]
+    for label in bracketed_model_labels:
+        assert label in semantic_text
+        assert label in markdown_lines
+        assert f"\\{label[0]}{label[1:-1]}\\{label[-1]}" not in markdown
+        assert f"**{label}**" not in markdown
+
+
+def _assert_profile_readability_controls(
+    document, report, artifacts
+) -> None:
+    assert verified_subtitle_linked_body_paths(document) == ()
+    _assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
+    semantic_root = ET.parse(artifacts.semantic_xml).getroot()
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert len(
+        semantic_root.findall(".//text[@display-role='sentence-break-source']")
+    ) == len(document.sentence_break_hints)
+    _assert_sentence_breaks_do_not_create_source_units(
+        document, report, semantic_root
+    )
+    _assert_inline_icon_evidence_matches_detector(
+        document, semantic_root, markdown
+    )
+    assert all(character in markdown for character in (">", "/", "[", "]", "(", ")"))
 
 
 def _assert_zg_subtitles(root: ET.Element, markdown: str) -> None:
@@ -514,6 +802,19 @@ def test_readme_documents_sample_overrides_and_independent_skips() -> None:
     assert "Set-Location C:\\Users\\bella" not in readme
 
 
+def test_readme_documents_semantic_markdown_readability_contract() -> None:
+    readme = _README.read_text(encoding="utf-8")
+
+    assert "같은 원본 구조 단위 안의 표시용 문장 경계" in readme
+    assert "이름을 판별한 결과가 아닙니다" in readme
+    assert "주변 문장, 페이지, BBox, 상대 크기" in readme
+    assert "standalone, 큰 그림 또는 판별이 불확실한 figure" in readme
+    assert "`※`는 PDF에 실제로 존재하는 의미 있는 source label" in readme
+    assert "`Ł`, `Œ`" in readme
+    assert "편집기의 구문 강조 색상" in readme
+    assert "PDF 원본의 글자색이나 스타일을 뜻하지 않습니다" in readme
+
+
 def test_missing_sample_skips_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TAGGED_PDF_REQUIRE_SAMPLES", raising=False)
 
@@ -632,7 +933,7 @@ def test_za_retains_complete_structure_and_clean_page_text(za_bundle) -> None:
         heading_size=16.0,
         body_size=7.0,
     )
-    _assert_no_zg_display_evidence(document, artifacts.semantic_xml)
+    _assert_no_zg_profile_display_evidence(document, artifacts.semantic_xml)
 
 
 def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> None:
@@ -654,6 +955,16 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
     assert Counter(
         hint.display_role for hint in document.text_display_hints
     ) == {"section_heading": 10, "strong_label": 70}
+    subtitle_body_paths = verified_subtitle_linked_body_paths(document)
+    assert len(subtitle_body_paths) == 7
+    assert sum(
+        len(hint.offsets)
+        for hint in document.sentence_break_hints
+        if any(
+            hint.child_path[: len(body_path)] == body_path
+            for body_path in subtitle_body_paths
+        )
+    ) == 11
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
     assert len(
         semantic_root.findall(".//*[@display-role='preserved-line-break']")
@@ -662,6 +973,16 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
     assert len(semantic_root.findall(".//*[@display-role='strong-label']")) == 70
 
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    _assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
+    _assert_sentence_breaks_do_not_create_source_units(
+        document, report, semantic_root
+    )
+    _assert_inline_icon_evidence_matches_detector(
+        document, semantic_root, markdown
+    )
+    _assert_zg_sentence_readability(semantic_root, markdown)
+    _assert_zg_inline_osd_icons(semantic_root, markdown)
+    _assert_zg_note_markers_and_plain_model_labels(semantic_root, markdown)
     _assert_preserved_breaks_are_physical_markdown_lines(semantic_root, markdown)
     _assert_zg_subtitles(semantic_root, markdown)
 
@@ -713,8 +1034,10 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
 
     class_one_lines = (
         "CLASS 1 LASER PRODUCT (The Frame (LS03HA) only)",
-        "Caution - Invisible laser radiation when open. Do not stare into beam.",
-        "Do not bend the One Connect Cable excessively. Do not cut the cable.",
+        "Caution - Invisible laser radiation when open.",
+        "Do not stare into beam.",
+        "Do not bend the One Connect Cable excessively.",
+        "Do not cut the cable.",
         "Do not place heavy objects on the cable.",
         "Do not disassemble either of the cable connectors.",
         "Caution - Use of controls, adjustments, or the performance of procedures "
@@ -743,20 +1066,11 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
     )
 
 
-@pytest.mark.parametrize(
-    ("fixture_name", "sample", "expected_headings"),
-    (
-        ("xy_bundle", "XY", _XY_NUMBERED_HEADINGS),
-        ("kr_bundle", "KR", _KR_NUMBERED_HEADINGS),
-    ),
-)
-def test_xy_and_kr_retain_structure_without_zg_display_rules(
-    fixture_name: str,
-    sample: str,
+def _assert_non_zg_profile_bundle(
+    bundle,
     expected_headings: tuple[tuple[str, str], ...],
-    request: pytest.FixtureRequest,
 ) -> None:
-    document, report, artifacts = request.getfixturevalue(fixture_name)
+    document, report, artifacts = bundle
     _assert_common_layout_quality(document, report, {"0", "1"})
     _assert_numbered_headings(
         report,
@@ -767,13 +1081,23 @@ def test_xy_and_kr_retain_structure_without_zg_display_rules(
         heading_size=16.0,
         body_size=7.0,
     )
-    _assert_no_zg_display_evidence(document, artifacts.semantic_xml)
+    _assert_no_zg_profile_display_evidence(document, artifacts.semantic_xml)
     assert report.status == "pass"
     assert artifacts.raw_xml.is_file()
     assert artifacts.semantic_xml.is_file()
     assert artifacts.report_json.is_file()
     assert artifacts.semantic_markdown.is_file()
     assert artifacts.semantic_markdown.read_text(encoding="utf-8").strip()
+
+
+def test_xy_retains_structure_without_zg_display_rules(xy_bundle) -> None:
+    _assert_non_zg_profile_bundle(xy_bundle, _XY_NUMBERED_HEADINGS)
+
+
+def test_kr_retains_structure_without_zg_display_rules(kr_bundle) -> None:
+    _assert_non_zg_profile_bundle(kr_bundle, _KR_NUMBERED_HEADINGS)
+    document, report, artifacts = kr_bundle
+    _assert_profile_readability_controls(document, report, artifacts)
 
 
 def test_form_detection_runtime_has_no_title_or_model_dictionary() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -1684,6 +1685,149 @@ def _sentence_text(value: str, *starts: str) -> str:
         'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
         f"{value}</text>"
     )
+
+
+def _subtitle_linked_body_xml(
+    body_text: str,
+    *,
+    wrapper_extra: str = "",
+    between: str = "",
+    body_attributes: str = "",
+    subtitle_display_role: str = "subtitle",
+) -> str:
+    return (
+        "<section><paragraph>"
+        "<table><table_row>"
+        "<table_cell><figure><text /></figure></table_cell>"
+        "<table_cell>"
+        f'<paragraph display-role="{subtitle_display_role}">'
+        "<text>Verified subtitle</text></paragraph>"
+        "<paragraph><text>(Qualifier)</text></paragraph>"
+        "</table_cell></table_row></table>"
+        f"{wrapper_extra}</paragraph>{between}"
+        f"<paragraph{body_attributes}>{body_text}</paragraph></section>"
+    )
+
+
+def test_sentence_breaks_render_in_subtitle_linked_body_paragraph(
+    tmp_path: Path,
+) -> None:
+    value = "First sentence. Second sentence. Third sentence."
+    markdown = _render(
+        tmp_path,
+        _subtitle_linked_body_xml(
+            _sentence_text(value, "Second", "Third")
+        ),
+    )
+
+    assert "First sentence.<br>\nSecond sentence.<br>\nThird sentence." in markdown
+    assert markdown.count("First sentence.") == 1
+    assert markdown.count("Second sentence.") == 1
+    assert markdown.count("Third sentence.") == 1
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            _subtitle_linked_body_xml(
+                _sentence_text("First sentence. Second sentence.", "Second"),
+                subtitle_display_role="ordinary",
+            ),
+            "ineligible sentence-break-source structure",
+        ),
+        (
+            _subtitle_linked_body_xml(
+                _sentence_text("First sentence. Second sentence.", "Second"),
+                wrapper_extra="<span><text>Unexpected content</text></span>",
+            ),
+            "ineligible sentence-break-source structure",
+        ),
+        (
+            _subtitle_linked_body_xml(
+                _sentence_text("First sentence. Second sentence.", "Second"),
+                between="<paragraph><text>Immediate body.</text></paragraph>",
+            ),
+            "ineligible sentence-break-source structure",
+        ),
+        (
+            _subtitle_linked_body_xml(
+                _sentence_text("First sentence. Second sentence.", "Second")
+                + "<list><list_item><text>Nested</text></list_item></list>",
+            ),
+            "ineligible sentence-break-source structure",
+        ),
+    ],
+    ids=(
+        "unverified-table-title",
+        "multi-child-wrapper",
+        "non-adjacent-body",
+        "non-leaf-body",
+    ),
+)
+def test_subtitle_linked_sentence_evidence_rejects_malformed_structure(
+    tmp_path: Path,
+    body: str,
+    message: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, body)
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+def test_arbitrary_section_paragraph_sentence_evidence_is_rejected(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<section><paragraph>"
+        f'{_sentence_text("First sentence. Second sentence.", "Second")}'
+        "</paragraph></section>",
+    )
+
+    with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+def test_subtitle_linked_body_sentence_evidence_rejects_display_role_conflict(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        _subtitle_linked_body_xml(
+            _sentence_text("First sentence. Second sentence.", "Second"),
+            body_attributes=' display-role="strong-label"',
+        ),
+    )
+
+    with pytest.raises(ValueError, match="strong-label display role"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+def test_whitespace_only_subtitle_linked_markdown_body_is_not_eligible() -> None:
+    root = ET.fromstring(
+        "<document>"
+        + _subtitle_linked_body_xml("<text> \n </text>")
+        + "</document>"
+    )
+
+    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == set()
 
 
 def test_sentence_breaks_keep_four_sentences_in_one_list_item(

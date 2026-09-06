@@ -138,6 +138,11 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
         if value.startswith("|") and value.endswith("|"):
             value = re.sub(r"(?<!\\)\|", " ", value[1:-1])
         value = value.replace(r"\|", "|").strip()
+        value = (
+            value.replace("<br>", " ")
+            .replace(r"\[아이콘]", " ")
+            .replace("[아이콘]", " ")
+        )
         if value.startswith("- "):
             value = value[2:]
         value = _HEADING_PREFIX.sub("", value)
@@ -203,6 +208,28 @@ def test_markdown_token_oracle_reverses_only_writer_prefix_escapes() -> None:
         "*",
         "source",
         "asterisk",
+    ]
+
+
+def test_markdown_token_oracle_ignores_only_display_break_and_icon_tokens() -> None:
+    markdown = (
+        "# Header\n\n- metadata\n\n"
+        "First sentence.<br>\n"
+        "Second \\[아이콘]: sentence.\n"
+        "※ Source note\n"
+    )
+
+    assert _markdown_text_tokens(markdown) == [
+        "First",
+        "sentence",
+        ".",
+        "Second",
+        ":",
+        "sentence",
+        ".",
+        "※",
+        "Source",
+        "note",
     ]
 
 

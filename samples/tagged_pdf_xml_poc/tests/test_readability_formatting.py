@@ -11,6 +11,7 @@ from tagged_pdf_extractor.domain.models import (
     LineBreakHint,
     SentenceBreakHint,
     StructureElement,
+    SubtitleHint,
     TaggedDocument,
     TextStyle,
 )
@@ -18,6 +19,7 @@ from tagged_pdf_extractor.domain.readability_formatting import (
     apply_readability_formatting,
     detect_inline_icon_hints,
     detect_sentence_break_hints,
+    verified_subtitle_linked_body_paths,
 )
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
@@ -48,6 +50,7 @@ def _element(
 def _document(
     *children: StructureElement | ContentFragment,
     line_break_hints: tuple[LineBreakHint, ...] = (),
+    subtitle_hints: tuple[SubtitleHint, ...] = (),
 ) -> TaggedDocument:
     return TaggedDocument(
         source_path=Path("manual.pdf"),
@@ -56,6 +59,7 @@ def _document(
         role_map=(),
         children=children,
         line_break_hints=line_break_hints,
+        subtitle_hints=subtitle_hints,
     )
 
 
@@ -465,6 +469,171 @@ def test_explicit_closing_quotes_and_brackets_are_skipped(
 def test_general_body_paragraph_outside_approved_context_does_not_split() -> None:
     document = _document(
         _element("paragraph", _fragment("First sentence. Next sentence."))
+    )
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def _verified_subtitle_table() -> tuple[StructureElement, tuple[int, ...]]:
+    table = _element(
+        "table",
+        _element(
+            "table_row",
+            _element("table_cell", _element("figure")),
+            _element(
+                "table_cell",
+                _element("paragraph", _fragment("Verified subtitle", mcid=201)),
+                _element("paragraph", _fragment("(Qualifier)", mcid=202)),
+            ),
+        ),
+    )
+    return table, (0, 0, 0, 0, 1, 0)
+
+
+def _subtitle_linked_document(
+    *section_children: StructureElement | ContentFragment,
+    subtitle_path: tuple[int, ...],
+    duplicate_hint: bool = False,
+) -> TaggedDocument:
+    hint = SubtitleHint(
+        child_path=subtitle_path,
+        font_weight=600,
+        comparison_body_font_weight=400,
+        observed_line_count=1,
+    )
+    hints = (hint, hint) if duplicate_hint else (hint,)
+    return _document(
+        _element("section", *section_children),
+        subtitle_hints=hints,
+    )
+
+
+def test_verified_table_subtitle_links_only_immediately_following_leaf_body() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    text = "First sentence. Second sentence. Third sentence."
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element("paragraph", _fragment(text, mcid=203)),
+        subtitle_path=subtitle_path,
+    )
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint(
+            (0, 1, 0),
+            (text.index("Second"), text.index("Third")),
+        ),
+    )
+
+
+def test_verified_table_subtitle_allows_whitespace_only_wrapper_sibling() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    text = "First sentence. Second sentence."
+    document = _subtitle_linked_document(
+        _element("paragraph", _fragment(" \n ", mcid=204), table),
+        _element("paragraph", _fragment(text, mcid=205)),
+        subtitle_path=(0, 0, 1, 0, 1, 0),
+    )
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 1, 0), (text.index("Second"),)),
+    )
+
+
+def test_subtitle_outside_wrapper_table_does_not_link_body() -> None:
+    text = "First sentence. Second sentence."
+    document = _subtitle_linked_document(
+        _element(
+            "paragraph",
+            _element("span", _fragment("Verified subtitle", mcid=206)),
+        ),
+        _element("paragraph", _fragment(text, mcid=207)),
+        subtitle_path=(0, 0, 0),
+    )
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_non_adjacent_paragraph_after_verified_subtitle_wrapper_is_rejected() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    text = "First sentence. Second sentence."
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element("paragraph", _fragment("Immediate single sentence.", mcid=208)),
+        _element("paragraph", _fragment(text, mcid=209)),
+        subtitle_path=subtitle_path,
+    )
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_multi_meaningful_child_subtitle_wrapper_is_rejected() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    text = "First sentence. Second sentence."
+    document = _subtitle_linked_document(
+        _element(
+            "paragraph",
+            table,
+            _element("span", _fragment("Unexpected content", mcid=210)),
+        ),
+        _element("paragraph", _fragment(text, mcid=211)),
+        subtitle_path=subtitle_path,
+    )
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_subtitle_linked_body_must_be_nonempty_inline_leaf_paragraph() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element(
+            "paragraph",
+            _fragment("First sentence. Second sentence.", mcid=212),
+            _element("list", _element("list_item")),
+        ),
+        subtitle_path=subtitle_path,
+    )
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_whitespace_only_subtitle_linked_body_is_not_an_eligible_path() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element("paragraph", _fragment(" \n ", mcid=215)),
+        subtitle_path=subtitle_path,
+    )
+
+    assert verified_subtitle_linked_body_paths(document) == ()
+
+
+def test_duplicate_subtitle_hints_add_body_sentence_offsets_once() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    text = "First sentence. Second sentence."
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element("paragraph", _fragment(text, mcid=213)),
+        subtitle_path=subtitle_path,
+        duplicate_hint=True,
+    )
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 1, 0), (text.index("Second"),)),
+    )
+
+
+def test_unverified_table_title_does_not_link_following_body() -> None:
+    table, _ = _verified_subtitle_table()
+    document = _document(
+        _element(
+            "section",
+            _element("paragraph", table),
+            _element(
+                "paragraph",
+                _fragment("First sentence. Second sentence.", mcid=214),
+            ),
+        )
     )
 
     assert detect_sentence_break_hints(document) == ()

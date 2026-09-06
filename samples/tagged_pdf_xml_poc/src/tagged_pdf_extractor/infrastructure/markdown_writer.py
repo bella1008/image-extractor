@@ -12,6 +12,7 @@ from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import QualityReport
 from tagged_pdf_extractor.domain.readability_formatting import (
+    is_verified_subtitle_table_wrapper_pair,
     sentence_start_offsets,
 )
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
@@ -1143,6 +1144,7 @@ class MarkdownDocumentWriter:
         root: ET.Element,
     ) -> dict[ET.Element, frozenset[int]]:
         flows: list[tuple[_SemanticTextFragment, ...]] = []
+        subtitle_linked_bodies = cls._subtitle_linked_sentence_bodies(root)
 
         def visit(parent: ET.Element, ancestors: tuple[str, ...]) -> None:
             for child in cls._structural_children(parent):
@@ -1150,7 +1152,10 @@ class MarkdownDocumentWriter:
                     flows.extend(cls._direct_sentence_flows(child))
                 if (
                     child.tag == "paragraph"
-                    and cls._eligible_sentence_paragraph_context(ancestors)
+                    and (
+                        cls._eligible_sentence_paragraph_context(ancestors)
+                        or child in subtitle_linked_bodies
+                    )
                 ):
                     flows.extend(cls._leaf_sentence_paragraph_flows(child))
                 visit(child, (*ancestors, child.tag))
@@ -1171,6 +1176,63 @@ class MarkdownDocumentWriter:
             element: frozenset(values)
             for element, values in offsets.items()
         }
+
+    @classmethod
+    def _subtitle_linked_sentence_bodies(
+        cls,
+        root: ET.Element,
+    ) -> set[ET.Element]:
+        bodies: set[ET.Element] = set()
+        for parent in root.iter():
+            siblings = cls._structural_children(parent)
+            for index in range(len(siblings) - 1):
+                wrapper = siblings[index]
+                following = siblings[index + 1]
+                meaningful = tuple(
+                    child
+                    for child in cls._structural_children(wrapper)
+                    if cls._is_meaningful_sentence_wrapper_child(child)
+                )
+                child_roles = tuple(child.tag for child in meaningful)
+                table_has_subtitle = (
+                    child_roles == ("table",)
+                    and any(
+                        descendant.tag == "paragraph"
+                        and descendant.get("display-role") == "subtitle"
+                        for descendant in meaningful[0].iter()
+                    )
+                )
+                following_is_leaf = bool(
+                    following.tag == "paragraph"
+                    and any(
+                        fragment.text.strip()
+                        for flow in cls._leaf_sentence_paragraph_flows(following)
+                        for fragment in flow
+                    )
+                )
+                if is_verified_subtitle_table_wrapper_pair(
+                    wrapper_role=wrapper.tag,
+                    meaningful_wrapper_child_roles=child_roles,
+                    following_role=following.tag,
+                    table_contains_verified_subtitle=table_has_subtitle,
+                    following_is_nonempty_inline_leaf=following_is_leaf,
+                ):
+                    bodies.add(following)
+        return bodies
+
+    @classmethod
+    def _is_meaningful_sentence_wrapper_child(
+        cls,
+        child: ET.Element,
+    ) -> bool:
+        if child.tag == "text":
+            return bool(decode_data_element(child).strip())
+        if child.tag in _SENTENCE_INLINE_TAGS:
+            return any(
+                cls._is_meaningful_sentence_wrapper_child(descendant)
+                for descendant in cls._structural_children(child)
+            )
+        return True
 
     @staticmethod
     def _eligible_sentence_paragraph_context(

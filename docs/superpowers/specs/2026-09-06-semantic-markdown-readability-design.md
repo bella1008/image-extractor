@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Improve human readability of `semantic_document.md` without changing the PDF-observed semantic hierarchy. Preserve sentence boundaries within one bullet or table cell, distinguish small inline icons from ordinary figures, and retain meaningful source list labels such as `※`.
+Improve human readability of `semantic_document.md` without changing the PDF-observed semantic hierarchy. Preserve sentence boundaries within one source unit, distinguish small inline icons from ordinary figures, and retain meaningful source list labels such as `※`.
 
 ## Scope
 
@@ -35,7 +35,9 @@ Improve human readability of `semantic_document.md` without changing the PDF-obs
 
 ### Sentence display
 
-The French safety item beginning `Veillez à brancher correctement...` is one tagged `list_item > list_body` containing four sentences. Raw fragments retain physical page-wrap lines, but those wraps do not coincide with sentence boundaries. The German battery-disposal example is one `table_cell > paragraph` containing three sentences with the same mismatch.
+The French safety item beginning `Veillez à brancher correctement...` is one tagged `list_item > list_body` containing four sentences. Raw fragments retain physical page-wrap lines, but those wraps do not coincide with sentence boundaries.
+
+The German battery-disposal body beginning `Diese Kennzeichnung auf der Batterie...` is not a table cell. It is one inline leaf `paragraph` at path `(0, 0, 12, 7)` under `Document > Article > Story`. Its immediately preceding sibling `(0, 0, 12, 6)` is a wrapper paragraph whose sole meaningful child is a table. That table contains the verified subtitle `Ordnungsgemäße Entsorgung der Batterien in diesem Gerät` at `(0, 0, 12, 6, 0, 0, 1, 0)`. The body paragraph contains three sentences with the same physical-wrap mismatch.
 
 Therefore, physical fragment boundaries are provenance evidence but are not sentence boundaries. Sentence display breaks must be inferred conservatively from joined visible text.
 
@@ -59,7 +61,17 @@ The five bracketed model labels use the same PDF typography: `SamsungOne-600`, s
 
 ### 1. Preserve containers and add display-only sentence boundaries
 
-Sentence formatting must never create a new `list_item`, `table_row`, `table_cell`, or semantic paragraph. The Markdown representation may place continuation text on new indented lines, but all continuation lines remain attached to the original list item or table cell.
+Sentence formatting must never create a new `list_item`, `table_row`, `table_cell`, or semantic paragraph. The Markdown representation may place continuation text on new lines, but all continuation lines remain attached to the original source unit.
+
+In addition to the established list-body and table-cell paragraph scopes, an ordinary section paragraph is eligible only through this narrow generic rule:
+
+1. start from a verified `document.subtitle_hints` target nested in a table;
+2. require that table to be the sole meaningful child of a wrapper paragraph;
+3. require the wrapper's immediately following sibling to be a non-empty inline leaf paragraph;
+4. emit hints only where the conservative sentence scanner finds real boundaries;
+5. deduplicate candidates by body path.
+
+The rule does not use buyer, language, title, or body text. It must not activate for arbitrary section paragraphs or for a malformed, non-adjacent, or multi-child wrapper. In the reviewed samples it adds exactly seven ZG body paragraphs and eleven break offsets, and adds none for ZC or KR.
 
 The sentence detector operates only on visible text from one eligible semantic text container. It emits boundaries after terminal punctuation when the following non-space text can begin another sentence. It must not split after a period that belongs to a protected token, including:
 

@@ -118,14 +118,16 @@ Commit: `Add semantic readability hint models`
 
 - [ ] **Step 1: Write RED tests for eligible structure and retained hierarchy**
 
-합성 구조로 다음 두 양성 사례를 만든다.
+합성 구조로 다음 양성 사례를 만든다.
 
 ```text
 list > list_item > list_body > paragraph > text fragments
 table > table_row > table_cell > paragraph > text fragments
+section > paragraph(wrapper) > table > verified subtitle
+section > paragraph(wrapper)의 바로 다음 형제 paragraph > text fragments
 ```
 
-첫 사례는 프랑스어 네 문장, 둘째는 독일어 세 문장을 사용한다. 문장 시작이 같은 `ContentFragment` 안에 있는 경우와 다음 fragment에서 시작하는 경우를 모두 포함한다. 탐지 결과는 문장이 시작되는 직렬화 `<text>`의 `child_path`와 해당 문자열 안의 삽입 `offset`으로 표현한다. 여러 경계가 같은 fragment에 있으면 하나의 힌트의 정렬된 `offsets`에 합친다.
+목록 사례는 프랑스어 네 문장을 사용한다. 일반 표 셀 사례는 합성 텍스트로 유지한다. 실제 ZG 독일어 사례는 표 셀이 아니라 검증된 표 소제목 wrapper의 바로 다음 형제인 leaf 문단 구조로 만든다. 문장 시작이 같은 `ContentFragment` 안에 있는 경우와 다음 fragment에서 시작하는 경우를 모두 포함한다. 탐지 결과는 문장이 시작되는 직렬화 `<text>`의 `child_path`와 해당 문자열 안의 삽입 `offset`으로 표현한다. 여러 경계가 같은 fragment에 있으면 하나의 힌트의 정렬된 `offsets`에 합친다.
 
 ```python
 def test_detects_sentence_starts_without_splitting_list_or_table_structure() -> None:
@@ -167,6 +169,9 @@ Expected: missing module/detector failures.
 
 - `list_body` 아래의 leaf `paragraph`, 또는 paragraph 없이 직접 이어진 inline text flow;
 - `table_cell` 아래의 leaf `paragraph`.
+- 표 안의 검증된 `document.subtitle_hints`에서 시작하여, 그 표가 wrapper 문단의 유일한 의미 있는 자식이고 wrapper 바로 다음 형제가 비어 있지 않은 inline leaf `paragraph`인 경우의 해당 형제 문단.
+
+마지막 규칙은 body path로 중복 제거하며, buyer/language/title/body text를 사용하지 않는다. 보수적 문장 판별 결과가 없으면 힌트를 만들지 않는다. 임의 section 문단, 비인접 문단, 여러 의미 있는 자식을 가진 wrapper, block descendant가 있는 본문은 거부한다. 진단된 실제 영향은 ZG 7개 본문/11개 offset, ZC 0개, KR 0개다.
 
 heading·caption·label·figure·중첩 list/table을 통과해 텍스트를 합치지 않는다. 각 `ContentFragment`는 `join_text_parts(fragment.text_parts)`로 Semantic XML과 동일한 텍스트를 만들고, 전체 흐름의 각 보이는 문자를 `(child_path, local_offset)`에 매핑한다. fragment 사이에서 삽입된 공백은 다음 보이는 문자의 위치로 경계를 귀속한다.
 
@@ -539,7 +544,7 @@ Commit: `Preserve semantic note markers in Markdown`
 실제 ZG bundle에서 다음을 path/semantic text로 찾아 line number에 의존하지 않고 검증한다.
 
 - FRA `Veillez à brancher correctement`로 시작하는 list item은 하나이며 네 visual sentence lines를 가짐;
-- DEU battery-disposal table cell은 하나이며 세 visual sentence lines를 가짐;
+- DEU battery-disposal 본문은 검증된 subtitle/table wrapper 바로 다음의 `paragraph` 하나이며 세 visual sentence lines를 가짐;
 - 검토된 OSD 문장 내 small figures는 Semantic XML에서 `inline-icon`이고 Markdown 원래 위치에서 `[아이콘]`으로 보임;
 - FRA `※` direct label 설명은 `※ Cette adresse`로 시작하며 한 번만 보임;
 - `UK ※ 2025-10-31` 간격이 보존됨;

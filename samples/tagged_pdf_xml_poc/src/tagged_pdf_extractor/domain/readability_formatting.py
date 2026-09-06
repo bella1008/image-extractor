@@ -13,6 +13,9 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.paragraph_eligibility import (
+    is_nonempty_inline_paragraph,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -72,9 +75,16 @@ def detect_sentence_break_hints(
     document: TaggedDocument,
 ) -> tuple[SentenceBreakHint, ...]:
     line_break_paths = {hint.child_path for hint in document.line_break_hints}
+    subtitle_linked_body_paths = set(
+        verified_subtitle_linked_body_paths(document)
+    )
     offsets_by_path: dict[tuple[int, ...], set[int]] = {}
 
-    for flow in _eligible_flows(document.children, line_break_paths):
+    for flow in _eligible_flows(
+        document.children,
+        line_break_paths,
+        subtitle_linked_body_paths,
+    ):
         text, locations = _join_flow(flow)
         for start in sentence_start_offsets(text):
             location = locations[start]
@@ -389,6 +399,7 @@ def _weighted_rank_value(
 def _eligible_flows(
     children: tuple[StructureElement | ContentFragment, ...],
     line_break_paths: set[tuple[int, ...]],
+    subtitle_linked_body_paths: set[tuple[int, ...]],
 ) -> tuple[tuple[_FragmentText, ...], ...]:
     flows: list[tuple[_FragmentText, ...]] = []
 
@@ -409,8 +420,9 @@ def _eligible_flows(
                         line_break_paths,
                     )
                 )
-            if child.semantic_role == "paragraph" and _eligible_paragraph_context(
-                ancestors
+            if child.semantic_role == "paragraph" and (
+                _eligible_paragraph_context(ancestors)
+                or child_path in subtitle_linked_body_paths
             ):
                 flows.extend(
                     _leaf_paragraph_flows(
@@ -427,6 +439,100 @@ def _eligible_flows(
 
     visit(children, (), ())
     return tuple(flows)
+
+
+def is_verified_subtitle_table_wrapper_pair(
+    *,
+    wrapper_role: str | None,
+    meaningful_wrapper_child_roles: tuple[str | None, ...],
+    following_role: str | None,
+    table_contains_verified_subtitle: bool,
+    following_is_nonempty_inline_leaf: bool,
+) -> bool:
+    """Return whether adjacent nodes match the approved subtitle/body topology."""
+    return (
+        wrapper_role == "paragraph"
+        and meaningful_wrapper_child_roles == ("table",)
+        and following_role == "paragraph"
+        and table_contains_verified_subtitle
+        and following_is_nonempty_inline_leaf
+    )
+
+
+def verified_subtitle_linked_body_paths(
+    document: TaggedDocument,
+) -> tuple[tuple[int, ...], ...]:
+    subtitle_paths = {hint.child_path for hint in document.subtitle_hints}
+    if not subtitle_paths:
+        return ()
+
+    body_paths: set[tuple[int, ...]] = set()
+
+    def visit(
+        siblings: tuple[StructureElement | ContentFragment, ...],
+        parent_path: tuple[int, ...],
+    ) -> None:
+        for index, wrapper in enumerate(siblings):
+            if not isinstance(wrapper, StructureElement):
+                continue
+            wrapper_path = (*parent_path, index)
+            if index + 1 < len(siblings):
+                following = siblings[index + 1]
+                meaningful = tuple(
+                    (child_index, child)
+                    for child_index, child in enumerate(wrapper.children)
+                    if _is_meaningful_wrapper_child(child)
+                )
+                child_roles = tuple(
+                    child.semantic_role
+                    if isinstance(child, StructureElement)
+                    else None
+                    for _, child in meaningful
+                )
+                table_path = (
+                    (*wrapper_path, meaningful[0][0])
+                    if child_roles == ("table",)
+                    else None
+                )
+                table_has_subtitle = table_path is not None and any(
+                    len(path) > len(table_path)
+                    and path[: len(table_path)] == table_path
+                    for path in subtitle_paths
+                )
+                following_path = (*parent_path, index + 1)
+                following_is_leaf = (
+                    isinstance(following, StructureElement)
+                    and is_nonempty_inline_paragraph(following)
+                )
+                if is_verified_subtitle_table_wrapper_pair(
+                    wrapper_role=wrapper.semantic_role,
+                    meaningful_wrapper_child_roles=child_roles,
+                    following_role=(
+                        following.semantic_role
+                        if isinstance(following, StructureElement)
+                        else None
+                    ),
+                    table_contains_verified_subtitle=table_has_subtitle,
+                    following_is_nonempty_inline_leaf=following_is_leaf,
+                ):
+                    body_paths.add(following_path)
+            visit(wrapper.children, wrapper_path)
+
+    visit(document.children, ())
+    return tuple(sorted(body_paths))
+
+
+def _is_meaningful_wrapper_child(
+    child: StructureElement | ContentFragment,
+) -> bool:
+    if isinstance(child, ContentFragment):
+        return bool(child.text.strip())
+    if child.semantic_role in _INLINE_ROLES:
+        return bool(child.actual_text and child.actual_text.strip()) or any(
+            _is_meaningful_wrapper_child(descendant)
+            for descendant in child.children
+        )
+    return True
 
 
 def _eligible_paragraph_context(ancestors: tuple[str, ...]) -> bool:

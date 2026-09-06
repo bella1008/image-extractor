@@ -229,7 +229,7 @@ def test_small_figure_with_same_page_adjacent_text_is_inline_icon() -> None:
 
 - figure가 문장 흐름의 유일한 내용인 경우;
 - 앞뒤 같은 흐름에 보이는 텍스트가 없는 경우;
-- `/Placement=/Block`인 경우;
+- figure가 paragraph/list-body text flow 밖의 독립 block인 경우. 실제 ZG 문장 내 9×9 figure도 source attribute가 `/Placement=/Block`이므로 이 속성만으로는 거부하지 않는다;
 - page index 또는 `/BBox`가 없거나 BBox가 유한하지 않은 경우;
 - 폭·높이가 0 이하인 경우;
 - 주변 글자 크기가 없거나 0/비유한인 경우;
@@ -248,7 +248,7 @@ Expected: icon tests fail because the detector still returns an empty tuple.
 
 - [ ] **Step 4: Implement strict BBox and relative-size classification**
 
-`/BBox`와 `BBox` 이름을 대소문자 구분 없이 받아 정확히 네 개의 유한 실수로 파싱한다. `/Placement=/Block`은 즉시 제외한다. 이름, buyer, language, alt text 번역, OCR, 이미지 유사도를 사용하지 않는다.
+`/BBox`와 `BBox` 이름을 대소문자 구분 없이 받아 정확히 네 개의 유한 실수로 파싱한다. `/Placement`는 감사 근거로 보존하지만 판별 조건으로 사용하지 않는다. 실제 ZG의 문장 내 9×9 아이콘도 `/Placement=/Block`이므로, source attribute보다 figure의 실제 부모 text flow, 앞뒤 text 순서, page, BBox, 상대 크기를 우선한다. 이름, buyer, language, alt text 번역, OCR, 이미지 유사도를 사용하지 않는다.
 
 고정 공용 임계값은 다음과 같다.
 

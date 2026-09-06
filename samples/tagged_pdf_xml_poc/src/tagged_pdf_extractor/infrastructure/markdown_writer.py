@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable
+import math
 import os
 import re
 import tempfile
@@ -39,6 +40,23 @@ _NESTED_TABLE_BLOCK_TAGS = frozenset(
 )
 _SPAN_ATTRIBUTE_NAMES = frozenset({"rowspan", "colspan"})
 _PRESERVED_LINE_BREAK = "\x00preserved-markdown-line-break\x00"
+_SENTENCE_BREAK = "\x00sentence-markdown-line-break\x00"
+_SENTENCE_BREAK_OFFSETS = re.compile(
+    r"(?:0|[1-9][0-9]*)(?:,(?:0|[1-9][0-9]*))*"
+)
+_SENTENCE_BREAK_ATTRIBUTE_NAMES = frozenset(
+    {"sentence-break-offsets", "sentence-break-reason"}
+)
+_SENTENCE_BREAK_REASON = "conservative_sentence_terminal_in_review_container"
+_INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
+    {
+        "icon-reason",
+        "reference-font-size",
+        "width-font-ratio",
+        "height-font-ratio",
+    }
+)
+_INLINE_ICON_TOKEN = "[아이콘]"
 
 
 class MarkdownDocumentWriter:
@@ -66,6 +84,7 @@ class MarkdownDocumentWriter:
         source_name: str,
     ) -> str:
         root = ET.parse(semantic_xml).getroot()
+        cls._validate_display_evidence(root)
         promoted = cls._resolve_heading_candidates(root, report)
 
         header = [
@@ -89,6 +108,7 @@ class MarkdownDocumentWriter:
         report: QualityReport,
     ) -> Counter[str]:
         root = ET.parse(semantic_xml).getroot()
+        cls._validate_display_evidence(root)
         promoted = cls._resolve_heading_candidates(root, report)
         rendered: Counter[str] = Counter()
         for element, entry in promoted.items():
@@ -219,6 +239,8 @@ class MarkdownDocumentWriter:
         if element.tag == "table":
             return [cls._render_table(element, promoted)]
         if element.tag == "figure":
+            if cls._is_inline_icon(element):
+                return [_INLINE_ICON_TOKEN]
             text = cls._element_text(element)
             return [cls._escape_physical_lines(text) if text else "[그림: 텍스트 없음]"]
         return cls._render_children(element, promoted)
@@ -342,7 +364,9 @@ class MarkdownDocumentWriter:
         for child in cls._structural_children(element):
             if child in excluded:
                 continue
-            if child in promoted:
+            if child.tag == "figure" and cls._is_inline_icon(child):
+                yield "text", child
+            elif child in promoted:
                 yield "block", child
             elif child.tag == "list_item":
                 yield "list_item", child
@@ -443,7 +467,9 @@ class MarkdownDocumentWriter:
             rendered_rows = [
                 "| "
                 + " | ".join(
-                    cls._element_text(cell).replace("|", r"\|")
+                    cls._element_text(cell)
+                    .replace(_SENTENCE_BREAK, "<br>")
+                    .replace("|", r"\|")
                     for cell in row_cells
                 )
                 + " |"
@@ -579,7 +605,9 @@ class MarkdownDocumentWriter:
         promoted: dict[ET.Element, dict[str, object]],
     ) -> Iterable[tuple[str, ET.Element]]:
         for child in cls._structural_children(element):
-            if child in promoted or child.tag in {"list", "table", "figure"}:
+            if child.tag == "figure" and cls._is_inline_icon(child):
+                yield "text", child
+            elif child in promoted or child.tag in {"list", "table", "figure"}:
                 yield "block", child
             elif child.tag == "text" or cls._is_preserved_line_break(child):
                 yield "text", child
@@ -768,8 +796,11 @@ class MarkdownDocumentWriter:
         if cls._is_preserved_line_break(element):
             yield _PRESERVED_LINE_BREAK
             return
+        if cls._is_inline_icon(element):
+            yield f" {_INLINE_ICON_TOKEN} "
+            return
         if element.tag == "text":
-            yield cls._visible_text(element)
+            yield cls._text_with_sentence_breaks(element)
             return
 
         direct_labels = (
@@ -794,12 +825,37 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _join_text_parts(cls, parts: Iterable[str]) -> str:
-        normalized = []
+        normalized: list[str] = []
         for part in parts:
             if part == _PRESERVED_LINE_BREAK:
                 normalized.append(part)
-            elif part and part.strip():
-                normalized.append(_WHITESPACE.sub(" ", part))
+                continue
+            chunks = part.split(_SENTENCE_BREAK)
+            for index, chunk in enumerate(chunks):
+                if chunk and chunk.strip():
+                    normalized.append(_WHITESPACE.sub(" ", chunk))
+                if index < len(chunks) - 1:
+                    normalized.append(_SENTENCE_BREAK)
+
+        source_break_normalized: list[str] = []
+        for part in normalized:
+            if part == _PRESERVED_LINE_BREAK:
+                if (
+                    source_break_normalized
+                    and source_break_normalized[-1] == _SENTENCE_BREAK
+                ):
+                    source_break_normalized.pop()
+                source_break_normalized.append(part)
+                continue
+            if (
+                part == _SENTENCE_BREAK
+                and source_break_normalized
+                and source_break_normalized[-1] == _PRESERVED_LINE_BREAK
+            ):
+                continue
+            source_break_normalized.append(part)
+        normalized = source_break_normalized
+
         if _PRESERVED_LINE_BREAK in normalized:
             segments: list[list[str]] = [[]]
             for part in normalized:
@@ -808,6 +864,16 @@ class MarkdownDocumentWriter:
                 else:
                     segments[-1].append(part)
             return "\n".join(
+                cls._join_text_parts(segment) for segment in segments
+            ).strip()
+        if _SENTENCE_BREAK in normalized:
+            segments = [[]]
+            for part in normalized:
+                if part == _SENTENCE_BREAK:
+                    segments.append([])
+                else:
+                    segments[-1].append(part)
+            return _SENTENCE_BREAK.join(
                 cls._join_text_parts(segment) for segment in segments
             ).strip()
         for index in range(1, len(normalized)):
@@ -827,13 +893,114 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _text_value(cls, element: ET.Element) -> str:
-        return cls._normalize_whitespace(cls._visible_text(element))
+        return cls._join_text_parts((cls._text_with_sentence_breaks(element),))
 
     @classmethod
     def _event_text_part(cls, element: ET.Element) -> str:
         if cls._is_preserved_line_break(element):
             return _PRESERVED_LINE_BREAK
+        if cls._is_inline_icon(element):
+            return f" {_INLINE_ICON_TOKEN} "
+        if element.tag == "text":
+            return cls._text_with_sentence_breaks(element)
         return cls._visible_text(element)
+
+    @staticmethod
+    def _is_inline_icon(element: ET.Element) -> bool:
+        return (
+            element.tag == "figure"
+            and element.get("display-role") == "inline-icon"
+        )
+
+    @classmethod
+    def _text_with_sentence_breaks(cls, element: ET.Element) -> str:
+        source = decode_data_element(element)
+        if element.get("display-role") != "sentence-break-source":
+            return cls._visible_source_text(source)
+        offsets = cls._sentence_break_offsets(element, source)
+        parts: list[str] = []
+        previous = 0
+        for offset in offsets:
+            parts.append(cls._visible_source_text(source[previous:offset]))
+            parts.append(_SENTENCE_BREAK)
+            previous = offset
+        parts.append(cls._visible_source_text(source[previous:]))
+        return "".join(parts)
+
+    @classmethod
+    def _sentence_break_offsets(
+        cls,
+        element: ET.Element,
+        source: str,
+    ) -> tuple[int, ...]:
+        value = element.get("sentence-break-offsets")
+        if value is None:
+            raise ValueError("missing sentence-break-offsets")
+        if _SENTENCE_BREAK_OFFSETS.fullmatch(value) is None:
+            raise ValueError("invalid sentence-break-offsets")
+        offsets = tuple(int(item) for item in value.split(","))
+        if offsets != tuple(sorted(set(offsets))):
+            raise ValueError("sentence-break-offsets must be sorted unique integers")
+        if any(offset >= len(source) for offset in offsets):
+            raise ValueError("sentence-break-offset out of bounds")
+        reason = element.get("sentence-break-reason")
+        if reason is None or not reason.strip():
+            raise ValueError("missing sentence-break-reason")
+        if reason != _SENTENCE_BREAK_REASON:
+            raise ValueError("invalid sentence-break-reason")
+        return offsets
+
+    @classmethod
+    def _validate_display_evidence(cls, root: ET.Element) -> None:
+        for element in root.iter():
+            display_role = element.get("display-role")
+            has_sentence_attributes = any(
+                name in element.attrib for name in _SENTENCE_BREAK_ATTRIBUTE_NAMES
+            )
+            if display_role == "sentence-break-source":
+                if element.tag != "text":
+                    raise ValueError("sentence-break-source must target text")
+                cls._sentence_break_offsets(element, decode_data_element(element))
+            elif has_sentence_attributes:
+                raise ValueError(
+                    "sentence-break attributes without sentence-break-source"
+                )
+
+            has_icon_attributes = any(
+                name in element.attrib for name in _INLINE_ICON_ATTRIBUTE_NAMES
+            )
+            if display_role == "inline-icon":
+                cls._validate_inline_icon_evidence(element)
+            elif has_icon_attributes:
+                raise ValueError(
+                    "inline-icon attributes without inline-icon display role"
+                )
+
+    @staticmethod
+    def _validate_inline_icon_evidence(element: ET.Element) -> None:
+        if element.tag != "figure":
+            raise ValueError("inline-icon must target figure")
+        page_index = element.get("page-index")
+        if (
+            page_index is None
+            or re.fullmatch(r"0|[1-9][0-9]*", page_index) is None
+        ):
+            raise ValueError("invalid inline-icon page-index")
+        reason = element.get("icon-reason")
+        if reason is None or not reason.strip():
+            raise ValueError("missing inline-icon icon-reason")
+        for name in (
+            "reference-font-size",
+            "width-font-ratio",
+            "height-font-ratio",
+        ):
+            value = element.get(name)
+            try:
+                number = float(value) if value is not None else math.nan
+            except ValueError as error:
+                raise ValueError(f"invalid inline-icon {name}") from error
+            if not math.isfinite(number) or number <= 0:
+                raise ValueError(f"invalid inline-icon {name}")
 
     @staticmethod
     def _is_preserved_line_break(element: ET.Element) -> bool:
@@ -845,7 +1012,10 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _visible_text(cls, element: ET.Element) -> str:
-        decoded = decode_data_element(element)
+        return cls._visible_source_text(decode_data_element(element))
+
+    @classmethod
+    def _visible_source_text(cls, decoded: str) -> str:
         return "".join(
             character
             if cls._is_xml_character(character)
@@ -887,6 +1057,7 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _escape_physical_lines(cls, value: str) -> str:
+        value = value.replace(_SENTENCE_BREAK, "<br>\n")
         return "\n".join(
             cls._escape_line_prefix(line) for line in value.split("\n")
         )

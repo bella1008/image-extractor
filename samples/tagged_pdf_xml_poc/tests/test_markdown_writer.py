@@ -1599,6 +1599,267 @@ def test_escapes_decimal_marker_punctuation_inside_list_item_body(
     assert f"- \\{source}" not in markdown
 
 
+def _sentence_text(value: str, *starts: str) -> str:
+    offsets = ",".join(str(value.index(start)) for start in starts)
+    return (
+        '<text display-role="sentence-break-source" '
+        f'sentence-break-offsets="{offsets}" '
+        'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
+        f"{value}</text>"
+    )
+
+
+def test_sentence_breaks_keep_four_sentences_in_one_list_item(
+    tmp_path: Path,
+) -> None:
+    sentences = (
+        "Veillez à brancher correctement et complètement le cordon d'alimentation.",
+        "Lorsque vous débranchez le cordon d'alimentation d'une prise murale, "
+        "tirez toujours sur la fiche du cordon d'alimentation.",
+        "Ne le débranchez jamais en tirant sur le cordon d'alimentation.",
+        "Ne touchez pas le cordon d'alimentation si vous avez les mains mouillées.",
+    )
+    value = " ".join(sentences)
+    text = _sentence_text(value, "Lorsque", "Ne le", "Ne touchez")
+
+    markdown = _render(
+        tmp_path,
+        "<list><list_item><list_body><paragraph>"
+        f"{text}"
+        "</paragraph></list_body></list_item></list>",
+    )
+
+    expected = "- " + "<br>\n  ".join(sentences)
+    body = markdown.split("\n\n", 2)[2].rstrip("\n")
+    assert body == expected
+    assert markdown.count("- Veillez") == 1
+    assert all(f"- {sentence}" not in markdown for sentence in sentences[1:])
+
+
+def test_sentence_breaks_keep_three_sentences_in_one_complex_table_cell(
+    tmp_path: Path,
+) -> None:
+    value = "Erster Satz. Zweiter Satz. Dritter Satz."
+    text = _sentence_text(value, "Zweiter", "Dritter")
+
+    markdown = _render(
+        tmp_path,
+        "<table><table_row><table_cell><paragraph>"
+        f"{text}"
+        "</paragraph></table_cell></table_row></table>",
+    )
+
+    assert (
+        "- 행 1:\n"
+        "  Erster Satz.<br>\n"
+        "  Zweiter Satz.<br>\n"
+        "  Dritter Satz."
+    ) in markdown
+    assert markdown.count("- 행 1:") == 1
+    assert markdown.count("Erster Satz.") == 1
+    assert markdown.count("Zweiter Satz.") == 1
+    assert markdown.count("Dritter Satz.") == 1
+
+
+def test_sentence_breaks_do_not_split_safe_pipe_table_rows(
+    tmp_path: Path,
+) -> None:
+    value = "First value. Second | value. Third value."
+    text = _sentence_text(value, "Second", "Third")
+
+    markdown = _render(
+        tmp_path,
+        "<table>"
+        "<table_row><table_header><text>Name</text></table_header>"
+        "<table_header><text>Details</text></table_header></table_row>"
+        "<table_row><table_cell><text>Menu</text></table_cell>"
+        f"<table_cell>{text}</table_cell></table_row>"
+        "</table>",
+    )
+
+    rows = [line for line in markdown.splitlines() if line.startswith("|")]
+    assert rows == [
+        "| Name | Details |",
+        "| --- | --- |",
+        "| Menu | First value.<br>Second \\| value.<br>Third value. |",
+    ]
+
+
+def test_sentence_breaks_escape_markdown_continuations_and_preserve_rf_lines(
+    tmp_path: Path,
+) -> None:
+    value = "First sentence. 1. Numbered-looking continuation."
+    text = _sentence_text(value, "1. Numbered")
+
+    markdown = _render(
+        tmp_path,
+        "<list><list_item><list_body><paragraph>"
+        f"{text}"
+        '<span actual-text="&#10;" display-role="preserved-line-break" />'
+        "<text>Source-authored line</text>"
+        "</paragraph></list_body></list_item></list>",
+    )
+
+    assert (
+        "- First sentence.<br>\n"
+        "  1\\. Numbered-looking continuation.\n"
+        "  Source-authored line"
+    ) in markdown
+    assert markdown.count("<br>") == 1
+    assert "continuation.<br>" not in markdown
+
+
+def test_inline_icons_render_in_child_order_and_generic_figures_keep_fallback(
+    tmp_path: Path,
+) -> None:
+    icon_attributes = (
+        'display-role="inline-icon" page-index="0" '
+        'icon-reason="small_inline_figure_with_adjacent_text" '
+        'reference-font-size="6.5" width-font-ratio="1.4" '
+        'height-font-ratio="1.4"'
+    )
+    markdown = _render(
+        tmp_path,
+        "<paragraph>"
+        "<text>menu (</text>"
+        f"<figure {icon_attributes}><text /></figure>"
+        "<text>&gt; left directional button &gt;</text>"
+        f"<figure {icon_attributes}><text /></figure>"
+        "<text>Settings)</text>"
+        "</paragraph>"
+        "<figure><text /></figure>"
+        "<figure><text>Figure caption text</text></figure>",
+    )
+
+    flow = "menu ( [아이콘] > left directional button > [아이콘] Settings)"
+    assert flow in markdown
+    assert markdown.count(flow) == 1
+    assert markdown.count("[아이콘]") == 2
+    assert markdown.count("[그림: 텍스트 없음]") == 1
+    assert markdown.count("Figure caption text") == 1
+    assert markdown.index(flow) < markdown.index("[그림: 텍스트 없음]")
+    assert markdown.index("[그림: 텍스트 없음]") < markdown.index(
+        "Figure caption text"
+    )
+
+
+def test_inline_icon_stays_inside_its_original_list_item(tmp_path: Path) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item><list_body><paragraph>"
+        "<text>Open menu (</text>"
+        '<figure display-role="inline-icon" page-index="0" '
+        'icon-reason="small_inline_figure_with_adjacent_text" '
+        'reference-font-size="6.5" width-font-ratio="1.4" '
+        'height-font-ratio="1.4"><text /></figure>'
+        "<text>&gt; Settings)</text>"
+        "</paragraph></list_body></list_item></list>",
+    )
+
+    body = markdown.split("\n\n", 2)[2].rstrip("\n")
+    assert body == "- Open menu ( [아이콘] > Settings)"
+    assert markdown.count("[아이콘]") == 1
+    assert "[그림: 텍스트 없음]" not in markdown
+
+
+@pytest.mark.parametrize(
+    ("text_xml", "message"),
+    [
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-reason="reason">First. Next.</text>',
+            "missing sentence-break-offsets",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="" sentence-break-reason="reason">'
+            "First. Next.</text>",
+            "invalid sentence-break-offsets",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="7,7" sentence-break-reason="reason">'
+            "First. Next.</text>",
+            "sorted unique",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="8,7" sentence-break-reason="reason">'
+            "First. Next. Again.</text>",
+            "sorted unique",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="-1" sentence-break-reason="reason">'
+            "First. Next.</text>",
+            "invalid sentence-break-offsets",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="12" sentence-break-reason="reason">'
+            "First. Next.</text>",
+            "out of bounds",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="7">First. Next.</text>',
+            "missing sentence-break-reason",
+        ),
+        (
+            '<text display-role="sentence-break-source" '
+            'sentence-break-offsets="7" sentence-break-reason="manual">'
+            "First. Next.</text>",
+            "invalid sentence-break-reason",
+        ),
+        (
+            '<text sentence-break-offsets="7" sentence-break-reason="reason">'
+            "First. Next.</text>",
+            "without sentence-break-source",
+        ),
+    ],
+)
+def test_malformed_sentence_break_evidence_is_rejected(
+    tmp_path: Path,
+    text_xml: str,
+    message: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, f"<paragraph>{text_xml}</paragraph>")
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    output = tmp_path / "semantic_document.md"
+    value = "First sentence. Next sentence."
+    text = _sentence_text(value, "Next")
+    _write_xml(
+        semantic,
+        "<paragraph>"
+        f"{text}"
+        '<figure display-role="inline-icon" page-index="0" '
+        'icon-reason="small_inline_figure_with_adjacent_text" '
+        'reference-font-size="6.5" width-font-ratio="1.4" '
+        'height-font-ratio="1.4"><text /></figure>'
+        "<text>Tail</text>"
+        "</paragraph>",
+    )
+    writer = MarkdownDocumentWriter()
+
+    rendered = writer.render_text(semantic, _report(), source_name="manual.pdf")
+    writer.write(semantic, _report(), output, source_name="manual.pdf")
+
+    assert rendered.encode("utf-8") == output.read_bytes()
+    assert rendered.count("Next sentence.") == 1
+    assert rendered.count("[아이콘]") == 1
+
+
 @pytest.mark.parametrize("source", ["\u0661. text", "\uff11. text"])
 def test_does_not_escape_unicode_decimal_prefix_as_markdown_marker(
     tmp_path: Path,

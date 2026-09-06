@@ -349,11 +349,15 @@ def _visible_font_size_weights(
             font_size is None
             or isinstance(font_size, bool)
             or not isinstance(font_size, (int, float))
-            or not math.isfinite(font_size)
-            or font_size <= 0
         ):
             return None
-        weights.append((float(font_size), visible_count))
+        try:
+            numeric_font_size = float(font_size)
+        except (OverflowError, TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric_font_size) or numeric_font_size <= 0:
+            return None
+        weights.append((numeric_font_size, visible_count))
     return tuple(weights) or None
 
 

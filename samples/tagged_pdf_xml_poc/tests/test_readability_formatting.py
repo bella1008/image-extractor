@@ -916,6 +916,22 @@ def test_inline_icon_rejects_unavailable_or_invalid_adjacent_font_size(
     assert detect_inline_icon_hints(document) == ()
 
 
+def test_inline_icon_rejects_font_size_that_overflows_float() -> None:
+    enormous_font_size = 10**400
+    document = _document(
+        _element(
+            "paragraph",
+            _figure(),
+            _styled_fragment(
+                "Visible",
+                font_sizes=(enormous_font_size,),
+            ),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
 def test_inline_icon_rejects_mismatched_text_style_evidence() -> None:
     mismatched = ContentFragment(3, 111, ("Visible", " text"))
     object.__setattr__(

@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -17,6 +18,7 @@ from tagged_pdf_extractor.domain.models import (
     HeadingPromotion,
     LineBreakHint,
     QualityReport,
+    SentenceBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
@@ -2297,30 +2299,58 @@ def test_extract_document_validates_source_and_wires_dependencies(tmp_path: Path
     assert [name for name, _ in calls] == ["reader", "baseline", "validate", "evaluator", "writer"]
 
 
-def test_extract_document_applies_profile_formatting_once_before_baseline_and_validation(
+def test_extract_document_applies_formatting_in_required_pipeline_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, object]] = []
     source_document = _document(tmp_path)
-    formatted_document = TaggedDocument(
-        source_path=source_document.source_path,
-        marked=source_document.marked,
-        language="formatted",
-        role_map=source_document.role_map,
-        children=source_document.children,
-        diagnostics=source_document.diagnostics,
-    )
-    report = _report(formatted_document)
+    numbered_document = replace(source_document, language="numbered")
+    subtitle_document = replace(source_document, language="subtitle")
+    profile_document = replace(source_document, language="profile")
+    readability_document = replace(source_document, language="readability")
+    report = _report(readability_document)
 
-    def apply_once(document: TaggedDocument) -> TaggedDocument:
-        calls.append(("format", document))
-        return formatted_document
+    def promote(document: TaggedDocument) -> TaggedDocument:
+        calls.append(("numbered promotion", document))
+        assert document is source_document
+        return numbered_document
+
+    def subtitles(document: TaggedDocument) -> TaggedDocument:
+        calls.append(("subtitle", document))
+        assert document is numbered_document
+        return subtitle_document
+
+    def profile_formatting(document: TaggedDocument) -> TaggedDocument:
+        calls.append(("profile review formatting", document))
+        assert document is subtitle_document
+        return profile_document
+
+    def readability_formatting(document: TaggedDocument) -> TaggedDocument:
+        calls.append(("generic readability", document))
+        assert document is profile_document
+        return readability_document
+
+    monkeypatch.setattr(
+        extract_document_module,
+        "promote_numbered_chapter_headings",
+        promote,
+    )
+    monkeypatch.setattr(
+        extract_document_module,
+        "detect_table_subtitles",
+        subtitles,
+    )
 
     monkeypatch.setattr(
         extract_document_module,
         "apply_profile_review_formatting",
-        apply_once,
+        profile_formatting,
+    )
+    monkeypatch.setattr(
+        extract_document_module,
+        "apply_readability_formatting",
+        readability_formatting,
         raising=False,
     )
 
@@ -2367,16 +2397,18 @@ def test_extract_document_applies_profile_formatting_once_before_baseline_and_va
 
     assert [name for name, _ in calls] == [
         "reader",
-        "format",
+        "numbered promotion",
+        "subtitle",
+        "profile review formatting",
+        "generic readability",
         "baseline",
         "validate",
         "evaluator",
         "writer",
     ]
-    assert sum(name == "format" for name, _ in calls) == 1
     for name, value in calls:
         if name in {"validate", "evaluator", "writer"}:
-            assert value is formatted_document
+            assert value is readability_document
 
 
 def _review_formatting_document(source: Path) -> TaggedDocument:
@@ -2516,6 +2548,77 @@ def test_extract_document_keeps_review_formatting_disabled_for_other_profiles(
     assert semantic.find(".//*[@display-role='preserved-line-break']") is None
     assert "## Arbitrary form title" not in markdown
     assert "**Direct label 0**" not in markdown
+
+
+def test_extract_document_rejects_tampered_readability_hint_before_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"pdf")
+    text = "First sentence. Next sentence."
+    fragment = ContentFragment(0, 1, (text,))
+    paragraph = StructureElement("P", "paragraph", children=(fragment,))
+    list_body = StructureElement("LBody", "list_body", children=(paragraph,))
+    list_item = StructureElement(
+        "LI",
+        "list_item",
+        children=(StructureElement("Lbl", "label"), list_body),
+    )
+    source_document = TaggedDocument(
+        source,
+        True,
+        "en",
+        (),
+        (StructureElement("L", "list", children=(list_item,)),),
+    )
+    tampered_document = replace(
+        source_document,
+        sentence_break_hints=(
+            SentenceBreakHint(
+                (0, 0, 1, 0, 0),
+                (text.index("Next"),),
+                reason="manual override",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        extract_document_module,
+        "apply_readability_formatting",
+        lambda document: tampered_document,
+        raising=False,
+    )
+
+    output = tmp_path / "bundle"
+    output.mkdir()
+    sentinels = {
+        name: b"existing\x00" + name.encode("ascii")
+        for name in output_bundle_module.REQUIRED_OUTPUT_NAMES
+    }
+    for name, value in sentinels.items():
+        (output / name).write_bytes(value)
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            return source_document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(self, *args: object, **kwargs: object) -> QualityReport:
+            raise AssertionError("validation must fail before evaluation")
+
+    with pytest.raises(ValueError, match=r"sentence break detector mismatch"):
+        ExtractDocument(
+            Reader(), Baseline(), Evaluator(), OutputBundleWriter()
+        ).run(source, output, overwrite=True)
+
+    assert {
+        name: (output / name).read_bytes() for name in sentinels
+    } == sentinels
+    assert _owned_temporary_paths(tmp_path, "bundle") == []
 
 
 def test_extract_document_validation_failure_prevents_evaluation_and_write(

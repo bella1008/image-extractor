@@ -19,6 +19,12 @@ from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 from .acceptance_support import require_sample
+from .readability_assertions import (
+    assert_inline_icon_evidence_matches_detector as _assert_inline_icon_evidence_matches_detector,
+    assert_profile_readability_controls as _assert_profile_readability_controls,
+    assert_raw_has_no_readability_display_attributes as _assert_raw_has_no_readability_display_attributes,
+    assert_sentence_breaks_do_not_create_source_units as _assert_sentence_breaks_do_not_create_source_units,
+)
 
 
 _SAMPLES = {
@@ -163,14 +169,14 @@ _ZG_SUBTITLE_COUNTS = Counter(
         "Correcte behandeling van een gebruikte accu uit dit product": 1,
     }
 )
-_READABILITY_DISPLAY_ATTRIBUTES = {
-    "display-role",
-    "sentence-break-offsets",
-    "sentence-break-reason",
-    "icon-reason",
-    "reference-font-size",
-    "width-font-ratio",
-    "height-font-ratio",
+_ZG_SUBTITLE_LINKED_BODY_PATHS = {
+    (0, 0, 6, 1),
+    (0, 0, 6, 5),
+    (0, 0, 12, 7),
+    (0, 0, 18, 5),
+    (0, 0, 24, 7),
+    (0, 0, 30, 1),
+    (0, 0, 30, 5),
 }
 _FRA_POWER_SENTENCES = (
     "Veillez à brancher correctement et complètement le cordon d'alimentation.",
@@ -294,97 +300,6 @@ def _flow_text_with_inline_icons(element: ET.Element) -> str:
 
     visit(element)
     return re.sub(r"\s+", " ", " ".join(parts)).strip()
-
-
-def _assert_raw_has_no_readability_display_attributes(raw_xml: Path) -> None:
-    root = ET.parse(raw_xml).getroot()
-    for element in root.iter():
-        assert _READABILITY_DISPLAY_ATTRIBUTES.isdisjoint(element.attrib)
-
-
-def _document_semantic_role_counts(document) -> Counter[str]:
-    counts: Counter[str] = Counter()
-
-    def visit(children) -> None:
-        for child in children:
-            semantic_role = getattr(child, "semantic_role", None)
-            if semantic_role is None:
-                continue
-            counts[semantic_role] += 1
-            visit(child.children)
-
-    visit(document.children)
-    return counts
-
-
-def _assert_sentence_breaks_do_not_create_source_units(
-    document, report, semantic_root: ET.Element
-) -> None:
-    source_counts = _document_semantic_role_counts(document)
-    promotion_count = report.metrics["numbered_heading_promotion_count"]
-    assert len(list(semantic_root.iter("paragraph"))) == source_counts["paragraph"]
-    assert len(list(semantic_root.iter("table_row"))) == source_counts["table_row"]
-    assert len(list(semantic_root.iter("table_cell"))) == source_counts["table_cell"]
-    assert (
-        len(list(semantic_root.iter("list_item"))) + promotion_count
-        == source_counts["list_item"]
-    )
-    for text in semantic_root.findall(
-        ".//text[@display-role='sentence-break-source']"
-    ):
-        assert list(text) == []
-
-
-def _assert_inline_icon_evidence_matches_detector(
-    document, semantic_root: ET.Element, markdown: str
-) -> None:
-    evidence = semantic_root.findall(".//figure[@display-role='inline-icon']")
-    assert len(evidence) == len(document.inline_icon_hints)
-    assert markdown.count("[아이콘]") == len(document.inline_icon_hints)
-
-    observed = sorted(
-        (
-            int(element.attrib["page-index"]),
-            tuple(
-                float(value)
-                for value in next(
-                    attribute.attrib["value"]
-                    for attribute in element.findall("./attributes/attribute")
-                    if attribute.attrib["name"] in {"BBox", "/BBox"}
-                ).strip("[]").split(",")
-            ),
-            element.attrib["icon-reason"],
-            float(element.attrib["reference-font-size"]),
-            float(element.attrib["width-font-ratio"]),
-            float(element.attrib["height-font-ratio"]),
-        )
-        for element in evidence
-    )
-    expected = sorted(
-        (
-            hint.page_index,
-            hint.bbox,
-            hint.reason,
-            hint.reference_font_size,
-            hint.width_ratio,
-            hint.height_ratio,
-        )
-        for hint in document.inline_icon_hints
-    )
-    assert len(observed) == len(expected)
-    for actual, wanted in zip(observed, expected, strict=True):
-        assert actual[0] == wanted[0]
-        assert actual[1] == pytest.approx(wanted[1])
-        assert actual[2] == wanted[2]
-        assert actual[3:] == pytest.approx(wanted[3:], rel=1e-5, abs=1e-6)
-
-    generic_figures = [
-        figure
-        for figure in semantic_root.iter("figure")
-        if figure.get("display-role") is None
-    ]
-    assert generic_figures
-    assert "[그림: 텍스트 없음]" in markdown
 
 
 def _assert_numbered_headings(
@@ -604,25 +519,6 @@ def _assert_zg_note_markers_and_plain_model_labels(
         assert label in markdown_lines
         assert f"\\{label[0]}{label[1:-1]}\\{label[-1]}" not in markdown
         assert f"**{label}**" not in markdown
-
-
-def _assert_profile_readability_controls(
-    document, report, artifacts
-) -> None:
-    assert verified_subtitle_linked_body_paths(document) == ()
-    _assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
-    semantic_root = ET.parse(artifacts.semantic_xml).getroot()
-    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
-    assert len(
-        semantic_root.findall(".//text[@display-role='sentence-break-source']")
-    ) == len(document.sentence_break_hints)
-    _assert_sentence_breaks_do_not_create_source_units(
-        document, report, semantic_root
-    )
-    _assert_inline_icon_evidence_matches_detector(
-        document, semantic_root, markdown
-    )
-    assert all(character in markdown for character in (">", "/", "[", "]", "(", ")"))
 
 
 def _assert_zg_subtitles(root: ET.Element, markdown: str) -> None:
@@ -956,14 +852,20 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         hint.display_role for hint in document.text_display_hints
     ) == {"section_heading": 10, "strong_label": 70}
     subtitle_body_paths = verified_subtitle_linked_body_paths(document)
-    assert len(subtitle_body_paths) == 7
+    assert set(subtitle_body_paths) == _ZG_SUBTITLE_LINKED_BODY_PATHS
+    subtitle_body_hints = {
+        body_path: tuple(
+            hint
+            for hint in document.sentence_break_hints
+            if hint.child_path[: len(body_path)] == body_path
+        )
+        for body_path in subtitle_body_paths
+    }
+    assert all(subtitle_body_hints.values())
     assert sum(
         len(hint.offsets)
-        for hint in document.sentence_break_hints
-        if any(
-            hint.child_path[: len(body_path)] == body_path
-            for body_path in subtitle_body_paths
-        )
+        for hints in subtitle_body_hints.values()
+        for hint in hints
     ) == 11
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
     assert len(

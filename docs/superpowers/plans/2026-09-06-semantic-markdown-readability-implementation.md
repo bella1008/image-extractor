@@ -583,7 +583,7 @@ Expected: ZC, ZG, KR 필수 sample이 skip 없이 실행되고 모든 구조·�
 
 README에 다음을 기록한다.
 
-- `<br>`는 같은 source list item/table cell 안의 표시용 문장 경계이지 구조 분리가 아님;
+- `<br>`는 같은 source list item, table cell 또는 검증된 subtitle/table wrapper 바로 다음 leaf paragraph 안의 표시용 문장 경계이지 구조 분리가 아님;
 - `[아이콘]`은 이름을 식별한 결과가 아니라 주변 문장·page·BBox·상대 크기로 확인된 small inline figure임;
 - `[그림: 텍스트 없음]`은 standalone/large/uncertain fallback임;
 - `※`는 PDF의 의미 있는 source label이며 `Ł`, `Œ`와 구분됨;
@@ -639,7 +639,7 @@ Expected: unit/behavior suite와 ZC/ZG/KR integration이 통과한다. ZA/XY rea
 - 각 bundle 네 파일 존재와 non-empty 여부;
 - Semantic XML의 `sentence-break-source`, `inline-icon`, 기존 ZG 표시 role 수;
 - Raw XML의 display attribute 수가 0인지;
-- ZG Markdown에서 네 문장 FRA bullet, 세 문장 DEU cell, `[아이콘]`, `※ Cette adresse` 시작 문장, `UK ※ 2025-10-31`의 1-based line numbers;
+- ZG Markdown에서 네 문장 FRA bullet, 검증된 subtitle/table wrapper 바로 다음 leaf paragraph의 세 문장 DEU 본문, `[아이콘]`, `※ Cette adresse` 시작 문장, `UK ※ 2025-10-31`의 1-based line numbers;
 - ZC/KR의 `[아이콘]`은 각각 대응 Semantic XML evidence와 개수가 같은지;
 - `Ł`, `Œ`, `[CONTROL U+0003]` 형태의 표시 재발 여부.
 

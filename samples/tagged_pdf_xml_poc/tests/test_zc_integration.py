@@ -16,6 +16,7 @@ from tagged_pdf_extractor.infrastructure.pypdf_reader import TaggedPdfReader
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 from .acceptance_support import require_sample
+from .readability_assertions import assert_profile_readability_controls
 
 
 _SAMPLE_RELATIVE_PATH = (
@@ -459,6 +460,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     assert artifacts.semantic_markdown.is_file()
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
     assert markdown.strip()
+    assert_profile_readability_controls(document, report, artifacts)
 
     raw_source_roles = {
         element.attrib["source-role"] for element in raw_root.iter("element")

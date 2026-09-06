@@ -1781,6 +1781,26 @@ def test_subtitle_linked_sentence_evidence_rejects_malformed_structure(
         )
 
 
+def test_subtitle_linked_sentence_evidence_rejects_wrapper_span_actual_text(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        _subtitle_linked_body_xml(
+            _sentence_text("First sentence. Second sentence.", "Second"),
+            wrapper_extra='<span actual-text="Meaningful wrapper text" />',
+        ),
+    )
+
+    with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
 def test_arbitrary_section_paragraph_sentence_evidence_is_rejected(
     tmp_path: Path,
 ) -> None:

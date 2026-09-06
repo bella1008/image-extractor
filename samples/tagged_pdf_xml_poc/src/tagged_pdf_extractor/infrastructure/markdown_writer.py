@@ -1228,7 +1228,7 @@ class MarkdownDocumentWriter:
         if child.tag == "text":
             return bool(decode_data_element(child).strip())
         if child.tag in _SENTENCE_INLINE_TAGS:
-            return any(
+            return bool((child.get("actual-text") or "").strip()) or any(
                 cls._is_meaningful_sentence_wrapper_child(descendant)
                 for descendant in cls._structural_children(child)
             )

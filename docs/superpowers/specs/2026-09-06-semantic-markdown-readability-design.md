@@ -140,7 +140,7 @@ Evidence records include the target structure path, display role/reason, source 
 ### Focused unit tests
 
 - Four sentences remain one French list item and render as four visual lines.
-- Three sentences remain one German table-cell paragraph and render as three visual lines.
+- Three German battery-disposal sentences remain one leaf paragraph immediately following the verified subtitle/table wrapper and render as three visual lines.
 - URLs, emails, decimals, standards, versions, abbreviations, and ellipses are not split incorrectly.
 - Existing source-authored RF breaks are neither removed nor duplicated.
 - A small figure between text fragments renders `[아이콘]`.
@@ -158,4 +158,4 @@ Evidence records include the target structure path, display role/reason, source 
 
 ## Completion Output
 
-Regenerate review bundles for ZG, ZC, and KR. Provide the three `semantic_document.md` paths and call out the exact ZG lines for the four-sentence bullet, multi-sentence table cell, inline icons, and `※` footnote so they can be inspected manually.
+Regenerate review bundles for ZG, ZC, and KR. Provide the three `semantic_document.md` paths and call out the exact ZG lines for the four-sentence bullet, the three-sentence subtitle/table-wrapper-adjacent leaf paragraph, inline icons, and `※` footnote so they can be inspected manually.

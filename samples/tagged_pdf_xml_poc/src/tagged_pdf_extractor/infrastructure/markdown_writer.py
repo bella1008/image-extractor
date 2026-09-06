@@ -61,6 +61,7 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
     }
 )
 _INLINE_ICON_TOKEN = "[아이콘]"
+_SEMANTIC_NOTE_MARKERS = frozenset({"※"})
 _SENTENCE_INLINE_TAGS = frozenset({"span", "link"})
 _SENTENCE_FLOW_CONTAINERS = frozenset({"list_body", "table_cell"})
 _SENTENCE_FLOW_BARRIERS = frozenset(
@@ -77,6 +78,13 @@ _SENTENCE_BLOCK_BOUNDARY = object()
 class _SemanticTextFragment:
     element: ET.Element
     text: str
+
+
+@dataclass(frozen=True)
+class _ListLabelAnalysis:
+    ordered_marker: str | None
+    note_marker: str | None
+    retained_content_labels: tuple[str, ...]
 
 
 class MarkdownDocumentWriter:
@@ -321,12 +329,13 @@ class MarkdownDocumentWriter:
             for child in cls._structural_children(item)
             if child.tag == "label"
         )
-        marker, source_labels = cls._analyze_list_labels(direct_labels)
-        content_labels = (
-            source_labels[1:]
-            if source_labels and marker == source_labels[0]
-            else source_labels
+        label_analysis = cls._analyze_list_labels(direct_labels)
+        marker = (
+            label_analysis.ordered_marker
+            or label_analysis.note_marker
+            or "-"
         )
+        content_labels = label_analysis.retained_content_labels
         text_parts = [f"{' '.join(content_labels)} "] if content_labels else []
         content_indent = f"{indent}{' ' * (len(marker) + 1)}"
 
@@ -418,18 +427,50 @@ class MarkdownDocumentWriter:
     @classmethod
     def _analyze_list_labels(
         cls, labels: Iterable[ET.Element]
-    ) -> tuple[str, tuple[str, ...]]:
-        source_labels = tuple(
-            marker
-            for label in labels
-            if (marker := cls._list_marker(cls._element_text(label))) != "-"
-        )
-        marker = (
+    ) -> _ListLabelAnalysis:
+        direct_labels = tuple(labels)
+        retained_source_labels: list[str] = []
+        has_note_marker = False
+        for label in direct_labels:
+            source_label = cls._normalize_whitespace(cls._element_text(label))
+            if source_label in _SEMANTIC_NOTE_MARKERS:
+                retained_source_labels.append(source_label)
+                has_note_marker = True
+                continue
+            ordered_label = cls._list_marker(source_label)
+            if ordered_label != "-":
+                retained_source_labels.append(ordered_label)
+
+        if (
+            len(direct_labels) == 1
+            and len(retained_source_labels) == 1
+            and retained_source_labels[0] in _SEMANTIC_NOTE_MARKERS
+        ):
+            return _ListLabelAnalysis(
+                ordered_marker=None,
+                note_marker=retained_source_labels[0],
+                retained_content_labels=(),
+            )
+
+        if has_note_marker:
+            return _ListLabelAnalysis(
+                ordered_marker=None,
+                note_marker=None,
+                retained_content_labels=tuple(retained_source_labels),
+            )
+
+        source_labels = tuple(retained_source_labels)
+        ordered_marker = (
             source_labels[0]
             if source_labels and _NATIVE_DECIMAL_MARKER.fullmatch(source_labels[0])
-            else "-"
+            else None
         )
-        return marker, source_labels
+        content_labels = source_labels[1:] if ordered_marker else source_labels
+        return _ListLabelAnalysis(
+            ordered_marker=ordered_marker,
+            note_marker=None,
+            retained_content_labels=content_labels,
+        )
 
     @classmethod
     def _render_list_block(
@@ -835,7 +876,16 @@ class MarkdownDocumentWriter:
             else ()
         )
         if direct_labels:
-            _, source_labels = cls._analyze_list_labels(direct_labels)
+            analysis = cls._analyze_list_labels(direct_labels)
+            source_labels = tuple(
+                label
+                for label in (
+                    analysis.ordered_marker,
+                    analysis.note_marker,
+                    *analysis.retained_content_labels,
+                )
+                if label is not None
+            )
             if source_labels:
                 yield f"{' '.join(source_labels)} "
 
@@ -847,10 +897,21 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _join_text_parts(cls, parts: Iterable[str]) -> str:
+        source_parts = tuple(parts)
         normalized: list[str] = []
-        for part in parts:
+        for source_index, part in enumerate(source_parts):
             if part == _PRESERVED_LINE_BREAK:
                 normalized.append(part)
+                continue
+            if (
+                part
+                and not part.strip()
+                and cls._whitespace_fragment_touches_note_marker(
+                    source_parts,
+                    source_index,
+                )
+            ):
+                normalized.append(" ")
                 continue
             chunks = part.split(_SENTENCE_BREAK)
             for index, chunk in enumerate(chunks):
@@ -912,6 +973,18 @@ class MarkdownDocumentWriter:
             )
         joined, _ = join_text_parts(tuple(normalized))
         return joined.strip()
+
+    @staticmethod
+    def _whitespace_fragment_touches_note_marker(
+        parts: tuple[str, ...],
+        index: int,
+    ) -> bool:
+        previous = parts[index - 1].rstrip() if index > 0 else ""
+        following = parts[index + 1].lstrip() if index + 1 < len(parts) else ""
+        return any(
+            previous.endswith(marker) or following.startswith(marker)
+            for marker in _SEMANTIC_NOTE_MARKERS
+        )
 
     @classmethod
     def _text_value(cls, element: ET.Element) -> str:

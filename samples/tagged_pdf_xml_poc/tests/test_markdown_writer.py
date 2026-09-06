@@ -679,6 +679,65 @@ def test_unordered_list_label_is_a_marker_role_not_body_text(tmp_path: Path) -> 
     assert semantic.read_bytes() == source_xml
 
 
+def test_semantic_note_label_renders_once_without_markdown_bullet(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>※</text></label>"
+        "<list_body><paragraph><text>Cette adresse n'est pas celle du Centre "
+        "de service Samsung.</text></paragraph></list_body>"
+        "</list_item></list>",
+    )
+
+    body = markdown.split("\n\n", 2)[2]
+    assert body == "※ Cette adresse n'est pas celle du Centre de service Samsung.\n"
+    assert body.count("※") == 1
+    assert "- ※" not in body
+
+
+def test_semantic_note_label_preserves_continuations_and_nested_lists(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>※</text></label>"
+        "<list_body><paragraph><text>First line</text>"
+        '<span actual-text="&#10;" display-role="preserved-line-break" />'
+        "<text>Second line</text></paragraph>"
+        "<list><list_item><list_body><text>Nested item</text></list_body>"
+        "</list_item></list>"
+        "</list_body></list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == (
+        "※ First line\n"
+        "  Second line\n"
+        "  - Nested item\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("parts", "expected"),
+    [
+        (("UK", " ", "※", " ", "2025-10-31"), "UK ※ 2025-10-31"),
+        (("UK ", "※", " 2025-10-31"), "UK ※ 2025-10-31"),
+        (("※", " ", "2025-10-31"), "※ 2025-10-31"),
+    ],
+)
+def test_inline_semantic_note_spacing_preserves_source_whitespace_fragments(
+    tmp_path: Path,
+    parts: tuple[str, ...],
+    expected: str,
+) -> None:
+    text = "".join(f"<text>{part}</text>" for part in parts)
+    markdown = _render(tmp_path, f"<paragraph>{text}</paragraph>")
+
+    assert markdown.split("\n\n", 2)[2] == f"{expected}\n"
+
+
 def test_nested_unordered_label_uses_indented_structural_bullet(
     tmp_path: Path,
 ) -> None:
@@ -852,7 +911,10 @@ def test_unicode_decimal_source_label_is_preserved_behind_bullet_marker(
     assert body.count(label) == 1
 
 
-@pytest.mark.parametrize("label", ["Step", "*", "\u0141", "\u0152"])
+@pytest.mark.parametrize(
+    "label",
+    ["Step", "*", "\u0141", "\u0152", "•", "–", "+", "★"],
+)
 def test_arbitrary_list_labels_use_structural_bullet(
     tmp_path: Path,
     label: str,
@@ -867,6 +929,21 @@ def test_arbitrary_list_labels_use_structural_bullet(
 
     body = markdown.split("\n\n", 2)[2]
     assert body == "- Keep this body\n"
+
+
+def test_semantic_note_mixed_with_another_label_uses_safe_fallback(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        "<list><list_item>"
+        "<label><text>※</text></label>"
+        "<label><text>2.</text></label>"
+        "<list_body><text>Body</text></list_body>"
+        "</list_item></list>",
+    )
+
+    assert markdown.split("\n\n", 2)[2] == "- ※ 2. Body\n"
 
 
 def test_unordered_label_glyphs_remain_visible_in_list_body_text(
@@ -2223,6 +2300,11 @@ def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> 
         'reference-font-size="6.5" width-font-ratio="1.4" '
         'height-font-ratio="1.4"><text /></figure>'
         "<text>Tail</text>"
+        "</paragraph></list_body></list_item>"
+        "<list_item><label><text>※</text></label><list_body><paragraph>"
+        "<text>Source line one</text>"
+        '<span actual-text="&#10;" display-role="preserved-line-break" />'
+        "<text>Source line two</text>"
         "</paragraph></list_body></list_item></list>",
     )
     writer = MarkdownDocumentWriter()
@@ -2233,6 +2315,8 @@ def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> 
     assert rendered.encode("utf-8") == output.read_bytes()
     assert rendered.count("Next sentence.") == 1
     assert rendered.count("[아이콘]") == 1
+    assert rendered.count("※") == 1
+    assert "※ Source line one\n  Source line two" in rendered
 
 
 @pytest.mark.parametrize("source", ["\u0661. text", "\uff11. text"])

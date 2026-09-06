@@ -238,6 +238,27 @@ def test_dotted_version_and_standard_points_do_not_split_sentences() -> None:
     )
 
 
+def test_one_period_uppercase_dotted_tokens_do_not_split_internally() -> None:
+    text = "Open README.PDF. Next use ABC.DEF. Final step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint(
+            (0, 0, 1, 0),
+            (text.index("Next"), text.index("Final")),
+        ),
+    )
+
+
+def test_one_period_titlecase_words_are_not_blanket_protected() -> None:
+    text = "First Sentence.Next sentence."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
 def test_compact_abbreviations_and_initials_do_not_split_sentences() -> None:
     text = (
         "Use e.g. Certified parts and i.e. Approved parts. "

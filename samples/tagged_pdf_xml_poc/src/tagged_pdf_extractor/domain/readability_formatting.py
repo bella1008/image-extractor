@@ -300,7 +300,16 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
 
     for match in _DOTTED_TOKEN_PATTERN.finditer(text):
         token = match.group()
-        if token.count(".") >= 2 or any(character.isdigit() for character in token):
+        components = token.split(".")
+        uppercase_pair = len(components) == 2 and all(
+            component.isalpha() and component.isupper()
+            for component in components
+        )
+        if (
+            token.count(".") >= 2
+            or any(character.isdigit() for character in token)
+            or uppercase_pair
+        ):
             _mark_terminators(text, protected, match.start(), match.end())
 
     for index in range(1, len(text) - 1):

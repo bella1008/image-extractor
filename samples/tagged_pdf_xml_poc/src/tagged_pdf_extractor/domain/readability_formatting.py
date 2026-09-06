@@ -217,16 +217,21 @@ def _inline_icon_hint(
         if fragment is not None
         and fragment.fragment.page_index == figure.page_index
     )
-    font_weights = tuple(
-        weights
-        for fragment in adjacent
-        if (weights := _visible_font_size_weights(fragment.fragment)) is not None
+    font_weights_by_fragment = tuple(
+        _visible_font_size_weights(fragment.fragment) for fragment in adjacent
     )
-    if not font_weights:
+    if not font_weights_by_fragment or any(
+        weights is None for weights in font_weights_by_fragment
+    ):
         return None
 
     reference_font_size = _weighted_median(
-        tuple(weight for weights in font_weights for weight in weights)
+        tuple(
+            weight
+            for weights in font_weights_by_fragment
+            if weights is not None
+            for weight in weights
+        )
     )
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
@@ -264,8 +269,13 @@ def _adjacent_visible_fragment(
     return None
 
 
-def _has_visible_figure_text(figure: StructureElement) -> bool:
-    for child in figure.children:
+def _has_visible_figure_text(element: StructureElement) -> bool:
+    if (
+        element.actual_text is not None
+        and _visible_character_count(element.actual_text) > 0
+    ):
+        return True
+    for child in element.children:
         if isinstance(child, ContentFragment):
             if _visible_character_count(child.text) > 0:
                 return True
@@ -281,7 +291,7 @@ def _figure_bbox(
         value
         for name, value in figure.attributes
         if isinstance(name, str)
-        and name.strip().lstrip("/").casefold() == "bbox"
+        and name.casefold() in {"bbox", "/bbox"}
     ]
     if not values:
         return None
@@ -310,7 +320,10 @@ def _parse_bbox(value: str) -> tuple[float, float, float, float] | None:
         for coordinate in parsed
     ):
         return None
-    bbox = tuple(float(coordinate) for coordinate in parsed)
+    try:
+        bbox = tuple(float(coordinate) for coordinate in parsed)
+    except (OverflowError, ValueError):
+        return None
     if (
         not all(math.isfinite(coordinate) for coordinate in bbox)
         or bbox[2] <= bbox[0]

@@ -121,12 +121,14 @@ def _figure(
     bbox_value: str = "[100.0, 200.0, 109.0, 209.0]",
     extra_attributes: tuple[tuple[str, str], ...] = (),
     alternate_text: str | None = "Smart Hub",
+    actual_text: str | None = None,
 ) -> StructureElement:
     return _element(
         "figure",
         *children,
         page_index=page_index,
         alternate_text=alternate_text,
+        actual_text=actual_text,
         attributes=(
             (bbox_name, bbox_value),
             ("/Placement", "/Block"),
@@ -643,6 +645,40 @@ def test_detects_inline_icon_after_one_sided_paragraph_text() -> None:
     )
 
 
+def test_inline_icon_hint_is_equivalent_for_none_and_arbitrary_alt_text() -> None:
+    alternate_texts = (None, "Arbitrary metadata, not a rendered icon name")
+    figures = tuple(
+        _figure(alternate_text=alternate_text)
+        for alternate_text in alternate_texts
+    )
+    documents = tuple(
+        _document(
+            _element(
+                "paragraph",
+                _styled_fragment("Before", mcid=119),
+                figure,
+                _styled_fragment("After", mcid=120),
+            )
+        )
+        for figure in figures
+    )
+
+    hints = tuple(detect_inline_icon_hints(document) for document in documents)
+
+    expected = (
+        InlineIconHint(
+            child_path=(0, 1),
+            page_index=3,
+            bbox=(100.0, 200.0, 109.0, 209.0),
+            reference_font_size=6.5,
+            width_ratio=9.0 / 6.5,
+            height_ratio=9.0 / 6.5,
+        ),
+    )
+    assert hints == (expected, expected)
+    assert tuple(figure.alternate_text for figure in figures) == alternate_texts
+
+
 def test_reference_size_is_visible_character_weighted_median() -> None:
     document = _document(
         _element(
@@ -748,6 +784,20 @@ def test_inline_icon_rejects_missing_bbox() -> None:
     assert detect_inline_icon_hints(document) == ()
 
 
+def test_inline_icon_rejects_bbox_coordinate_that_overflows_float() -> None:
+    enormous_integer = "1" + ("0" * 400)
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(bbox_value=f"[0, 0, {enormous_integer}, 9]"),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
 def test_inline_icon_rejects_conflicting_duplicate_bbox_attributes() -> None:
     document = _document(
         _element(
@@ -781,6 +831,25 @@ def test_inline_icon_accepts_equivalent_duplicate_bbox_attributes() -> None:
     assert len(detect_inline_icon_hints(document)) == 1
 
 
+@pytest.mark.parametrize(
+    "bbox_name",
+    [" BBox", "BBox ", " /BBox", "/BBox ", "//BBox", "[0]/BBox"],
+)
+def test_inline_icon_rejects_non_exact_bbox_attribute_names(
+    bbox_name: str,
+) -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(bbox_name=bbox_name),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
 def test_inline_icon_rejects_standalone_figure_even_with_alt_and_placement() -> None:
     document = _document(_element("paragraph", _figure()))
 
@@ -811,6 +880,20 @@ def test_inline_icon_rejects_adjacent_text_on_another_page() -> None:
 def test_inline_icon_rejects_adjacent_text_without_styles() -> None:
     unstyled = ContentFragment(3, 110, ("Visible",))
     document = _document(_element("paragraph", _figure(), unstyled))
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_malformed_side_even_when_other_side_is_valid() -> None:
+    unstyled = ContentFragment(3, 115, ("Malformed side",))
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Valid side", mcid=116),
+            _figure(),
+            unstyled,
+        )
+    )
 
     assert detect_inline_icon_hints(document) == ()
 
@@ -883,6 +966,33 @@ def test_inline_icon_rejects_figure_with_visible_extracted_text() -> None:
     assert detect_inline_icon_hints(document) == ()
 
 
+def test_inline_icon_rejects_visible_actual_text_on_figure() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(actual_text="Rendered icon text"),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_visible_actual_text_on_nested_structure() -> None:
+    figure = _figure(_element("span", actual_text="Rendered icon text"))
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            figure,
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
 @pytest.mark.parametrize(
     "container_role",
     ["table_cell", "heading", "caption", "label", "list", "table"],
@@ -940,7 +1050,15 @@ def test_inline_icon_hints_are_unique_and_in_document_order() -> None:
 
 def test_apply_readability_formatting_replaces_only_detected_hint_fields() -> None:
     text = "First sentence. Next sentence."
-    source = _list_body_document(_fragment(text, mcid=60))
+    source = _list_body_document(
+        _element("paragraph", _fragment(text, mcid=60)),
+        _element(
+            "paragraph",
+            _styled_fragment("Before", mcid=117),
+            _figure(),
+            _styled_fragment("After", mcid=118),
+        ),
+    )
     stale_sentence = SentenceBreakHint((9,), (1,))
     stale_icon = InlineIconHint(
         child_path=(9,),
@@ -960,10 +1078,20 @@ def test_apply_readability_formatting_replaces_only_detected_hint_fields() -> No
 
     assert formatted is not source
     assert formatted.children is source.children
+    assert formatted.sentence_break_hints
+    assert formatted.inline_icon_hints
     assert formatted.sentence_break_hints == (
-        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+        SentenceBreakHint((0, 0, 1, 0, 0), (text.index("Next"),)),
     )
-    assert formatted.inline_icon_hints == ()
-    assert detect_inline_icon_hints(source) == ()
+    assert formatted.inline_icon_hints == (
+        InlineIconHint(
+            child_path=(0, 0, 1, 1, 1),
+            page_index=3,
+            bbox=(100.0, 200.0, 109.0, 209.0),
+            reference_font_size=6.5,
+            width_ratio=9.0 / 6.5,
+            height_ratio=9.0 / 6.5,
+        ),
+    )
     assert source.sentence_break_hints == (stale_sentence,)
     assert source.inline_icon_hints == (stale_icon,)

@@ -2100,6 +2100,43 @@ def test_inline_icon_stays_inside_its_original_list_item(tmp_path: Path) -> None
     assert "[그림: 텍스트 없음]" not in markdown
 
 
+@pytest.mark.parametrize(
+    "bbox_name",
+    ["bbox", "BBOX", "bBoX", "/bbox", "/BBOX", "/bBoX"],
+)
+def test_standalone_inline_icon_accepts_exact_case_equivalent_bbox_names(
+    tmp_path: Path,
+    bbox_name: str,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        '<paragraph><text page-index="0">Before</text>'
+        + _inline_icon_element(bbox_name=bbox_name)
+        + '<text page-index="0">After</text></paragraph>',
+    )
+
+    assert "Before [아이콘] After" in markdown
+
+
+def test_standalone_inline_icon_accepts_identical_case_equivalent_bbox_duplicates(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        '<paragraph><text page-index="0">Before</text>'
+        + _inline_icon_element(
+            content=(
+                '<attributes><attribute name="bBoX" '
+                'value="[100, 200, 109.1, 209.1]" /></attributes>'
+                '<text page-index="0" />'
+            )
+        )
+        + '<text page-index="0">After</text></paragraph>',
+    )
+
+    assert "Before [아이콘] After" in markdown
+
+
 def _inline_icon_element(
     *,
     tag: str = "figure",
@@ -2223,9 +2260,32 @@ def test_invalid_inline_icon_evidence_is_rejected(
             + '<text page-index="0">After</text></paragraph>',
             "invalid inline-icon BBox",
         ),
+        *(
+            (
+                '<paragraph><text page-index="0">Before</text>'
+                + _inline_icon_element(bbox_name=bbox_name)
+                + '<text page-index="0">After</text></paragraph>',
+                "invalid inline-icon BBox",
+            )
+            for bbox_name in (
+                " BBox",
+                "BBox ",
+                " /BBox",
+                "/BBox ",
+                "//BBox",
+                "xBBox",
+                "BBox/x",
+            )
+        ),
         (
             '<paragraph><text page-index="0">Before</text>'
-            + _inline_icon_element(bbox_name="/bbox")
+            + _inline_icon_element(
+                content=(
+                    '<attributes><attribute name="bBoX" '
+                    'value="invalid" /></attributes>'
+                    '<text page-index="0" />'
+                )
+            )
             + '<text page-index="0">After</text></paragraph>',
             "invalid inline-icon BBox",
         ),
@@ -2233,7 +2293,7 @@ def test_invalid_inline_icon_evidence_is_rejected(
             '<paragraph><text page-index="0">Before</text>'
             + _inline_icon_element(
                 content=(
-                    '<attributes><attribute name="BBox" '
+                    '<attributes><attribute name="/bBoX" '
                     'value="[100, 200, 108, 208]" /></attributes>'
                     '<text page-index="0" />'
                 )

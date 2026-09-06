@@ -1076,7 +1076,7 @@ def test_inline_icon_rejects_conflicting_duplicate_bbox_attributes() -> None:
             _styled_fragment("Before"),
             _figure(
                 extra_attributes=(
-                    ("BBox", "[100.0, 200.0, 110.0, 209.0]"),
+                    ("/bBoX", "[100.0, 200.0, 110.0, 209.0]"),
                 )
             ),
             _styled_fragment("After"),
@@ -1093,7 +1093,7 @@ def test_inline_icon_accepts_equivalent_duplicate_bbox_attributes() -> None:
             _styled_fragment("Before"),
             _figure(
                 extra_attributes=(
-                    ("BBox", "[100.0, 200.0, 109.0, 209.0]"),
+                    ("bBoX", "[100.0, 200.0, 109.0, 209.0]"),
                 )
             ),
         )
@@ -1104,7 +1104,35 @@ def test_inline_icon_accepts_equivalent_duplicate_bbox_attributes() -> None:
 
 @pytest.mark.parametrize(
     "bbox_name",
-    [" BBox", "BBox ", " /BBox", "/BBox ", "bbox", "/bbox", "BBOX", "//BBox", "[0]/BBox"],
+    ["bbox", "BBOX", "bBoX", "/bbox", "/BBOX", "/bBoX"],
+)
+def test_inline_icon_accepts_exact_case_equivalent_bbox_names(
+    bbox_name: str,
+) -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(bbox_name=bbox_name),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert len(detect_inline_icon_hints(document)) == 1
+
+
+@pytest.mark.parametrize(
+    "bbox_name",
+    [
+        " BBox",
+        "BBox ",
+        " /BBox",
+        "/BBox ",
+        "//BBox",
+        "[0]/BBox",
+        "xBBox",
+        "BBox/x",
+    ],
 )
 def test_inline_icon_rejects_non_exact_bbox_attribute_names(
     bbox_name: str,

@@ -13,7 +13,11 @@ MAX_INLINE_ICON_HEIGHT_FONT_RATIO = 2.0
 def parse_unambiguous_bbox(
     attributes: Iterable[tuple[object, object]],
 ) -> tuple[float, float, float, float] | None:
-    values = [value for name, value in attributes if name in {"BBox", "/BBox"}]
+    values = [
+        value
+        for name, value in attributes
+        if isinstance(name, str) and name.casefold() in {"bbox", "/bbox"}
+    ]
     if not values:
         return None
     parsed = tuple(_parse_bbox(value) for value in values)

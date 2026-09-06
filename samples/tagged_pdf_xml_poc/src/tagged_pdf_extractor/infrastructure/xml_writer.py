@@ -196,21 +196,6 @@ class XmlDocumentWriter:
         self, document: TaggedDocument, path: Path
     ) -> tuple[dict[str, object], ...]:
         validated_display_hints = validate_display_hints(document)
-        for hint in document.subtitle_hints:
-            child_path = hint.child_path
-            if (
-                type(child_path) is not tuple
-                or not child_path
-                or any(
-                    type(component) is not int or component < 0
-                    for component in child_path
-                )
-            ):
-                raise ValueError(
-                    "invalid subtitle hint path "
-                    f"{child_path!r}: expected a nonempty tuple of "
-                    "nonnegative exact integers"
-                )
         root = ET.Element("document")
         expected_parts: list[str] = []
         decisions: list[dict[str, object]] = []
@@ -218,8 +203,6 @@ class XmlDocumentWriter:
         subtitle_by_path = {
             hint.child_path: hint for hint in document.subtitle_hints
         }
-        if len(subtitle_by_path) != len(document.subtitle_hints):
-            raise ValueError("duplicate subtitle hint path")
         consumed_subtitle_paths: set[tuple[int, ...]] = set()
         consumed_line_break_paths: set[tuple[int, ...]] = set()
         consumed_text_display_paths: set[tuple[int, ...]] = set()

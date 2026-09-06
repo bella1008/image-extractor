@@ -11,6 +11,7 @@ from tagged_pdf_extractor.domain.models import (
     LineBreakHint,
     SentenceBreakHint,
     StructureElement,
+    SubtitleHint,
     TaggedDocument,
     TextDisplayHint,
 )
@@ -41,6 +42,7 @@ class ValidatedReviewFormattingHints:
 def validate_review_formatting_hints(
     document: TaggedDocument,
 ) -> ValidatedReviewFormattingHints:
+    subtitle_by_path = _unique_hints(document.subtitle_hints, "subtitle hint")
     line_break_by_path = _unique_hints(document.line_break_hints, "line break hint")
     text_display_by_path = _unique_hints(
         document.text_display_hints, "text display hint"
@@ -52,6 +54,8 @@ def validate_review_formatting_hints(
         document.inline_icon_hints, "inline icon hint"
     )
     elements, ancestors = _index_document(document.children)
+    for path in subtitle_by_path:
+        _resolved_structure_element(elements, path, "subtitle hint")
 
     detected_line_paths = {
         hint.child_path for hint in detect_rf_line_break_hints(document.children)
@@ -82,7 +86,7 @@ def validate_review_formatting_hints(
         )
     }
     promotion_paths = tuple(item.child_path for item in document.heading_promotions)
-    subtitle_paths = tuple(item.child_path for item in document.subtitle_hints)
+    subtitle_paths = tuple(subtitle_by_path)
     text_paths = tuple(text_display_by_path)
     sentence_paths = tuple(sentence_break_by_path)
     icon_paths = tuple(inline_icon_by_path)
@@ -248,7 +252,12 @@ def validate_display_hints(
 
 
 _Hint = TypeVar(
-    "_Hint", LineBreakHint, TextDisplayHint, SentenceBreakHint, InlineIconHint
+    "_Hint",
+    SubtitleHint,
+    LineBreakHint,
+    TextDisplayHint,
+    SentenceBreakHint,
+    InlineIconHint,
 )
 
 

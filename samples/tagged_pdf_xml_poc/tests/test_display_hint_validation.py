@@ -578,8 +578,16 @@ def test_rejects_overlapping_text_display_paths() -> None:
         validate_review_formatting_hints(document)
 
 
-@pytest.mark.parametrize("conflict_kind", ["promotion", "subtitle"])
-@pytest.mark.parametrize("conflict_path", [(0,), (0, 0), ()])
+@pytest.mark.parametrize(
+    ("conflict_kind", "conflict_path"),
+    [
+        ("promotion", (0,)),
+        ("promotion", (0, 0)),
+        ("promotion", ()),
+        ("subtitle", (0,)),
+        ("subtitle", (0, 0)),
+    ],
+)
 def test_rejects_equal_ancestor_or_descendant_existing_hint_conflicts(
     conflict_kind: str, conflict_path: tuple[int, ...]
 ) -> None:
@@ -775,6 +783,99 @@ def test_readability_hints_reject_unresolved_paths(kind: str) -> None:
         document = replace(document, inline_icon_hints=(hint,))
 
     with pytest.raises(ValueError, match=rf"unresolved {kind} hint path.*\(9,"):
+        validate_review_formatting_hints(document)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [(), [0], (False,), (True,), (-1,), (0, 1.0), ("0",)],
+    ids=(
+        "empty",
+        "not-tuple",
+        "false-bool",
+        "true-bool",
+        "negative",
+        "float",
+        "string",
+    ),
+)
+def test_subtitle_hints_reject_invalid_exact_tuple_paths_before_redetection(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Any,
+) -> None:
+    document = replace(
+        _document(_element("paragraph", _fragment("Subtitle"))),
+        subtitle_hints=(_subtitle(cast(Any, path)),),
+    )
+
+    def unexpected_redetection(_actual: TaggedDocument) -> None:
+        pytest.fail("readability detector ran before subtitle path validation")
+
+    monkeypatch.setattr(
+        validation_module,
+        "detect_sentence_break_hints",
+        unexpected_redetection,
+    )
+
+    with pytest.raises(ValueError, match="invalid subtitle hint path"):
+        validate_review_formatting_hints(document)
+
+
+def test_subtitle_hints_reject_duplicates_before_redetection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hint = _subtitle((0,))
+    document = replace(
+        _document(_element("paragraph", _fragment("Subtitle"))),
+        subtitle_hints=(hint, hint),
+    )
+    monkeypatch.setattr(
+        validation_module,
+        "detect_sentence_break_hints",
+        lambda actual: pytest.fail(
+            "readability detector ran before subtitle duplicate validation"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="duplicate subtitle hint path"):
+        validate_review_formatting_hints(document)
+
+
+def test_subtitle_hints_reject_unresolved_paths_before_redetection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = replace(
+        _document(_element("paragraph", _fragment("Subtitle"))),
+        subtitle_hints=(_subtitle((9,)),),
+    )
+    monkeypatch.setattr(
+        validation_module,
+        "detect_sentence_break_hints",
+        lambda actual: pytest.fail(
+            "readability detector ran before subtitle resolution"
+        ),
+    )
+
+    with pytest.raises(ValueError, match=r"unresolved subtitle hint path.*\(9,"):
+        validate_review_formatting_hints(document)
+
+
+def test_subtitle_hint_path_must_resolve_to_structure_before_redetection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = replace(
+        _document(_fragment("Not a structure element")),
+        subtitle_hints=(_subtitle((0,)),),
+    )
+    monkeypatch.setattr(
+        validation_module,
+        "detect_sentence_break_hints",
+        lambda actual: pytest.fail(
+            "readability detector ran before subtitle target resolution"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="subtitle hint must target a StructureElement"):
         validate_review_formatting_hints(document)
 
 

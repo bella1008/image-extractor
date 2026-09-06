@@ -19,7 +19,7 @@ Improve human readability of `semantic_document.md` without changing the PDF-obs
 - Preserve the meaningful source footnote label `※` as `※ 설명` without adding a Markdown bullet that is absent from the PDF.
 - Preserve spacing around an inline `※` reference, for example `UK ※ 2025-10-31`.
 - Apply the generic rules independently of buyer and language when the same structural evidence is present.
-- Use ZG as the positive sample and ZC, ZA, XY, and KR as regression controls.
+- Use ZG as the multilingual BOOK positive sample, ZC as the two-language sheet control, and KR as the Korean single-language control. Keep existing ZA/XY unit coverage, but do not regenerate or manually inspect those PDFs for this change.
 
 ### Excluded
 
@@ -140,10 +140,10 @@ Evidence records include the target structure path, display role/reason, source 
 ### Sample regression gates
 
 - Regenerate ZG and verify ENG, DEU, FRA, ITA, and DUT examples.
-- Regenerate ZC, ZA, XY, and KR and confirm no false icon promotion or structural sentence splitting.
+- Regenerate ZC and KR and confirm no false icon promotion or structural sentence splitting. Existing ZA/XY unit tests remain in the suite without a new real-PDF review run.
 - Keep existing numbered headings, subtitles, RF breaks, Declaration-of-Conformity hierarchy, complex tables, and output-bundle safety tests passing.
 - Run the complete POC test suite and repository compile checks required by `AGENTS.md`.
 
 ## Completion Output
 
-Regenerate review bundles for ZG, ZC, ZA, XY, and KR. Provide the five `semantic_document.md` paths and call out the exact ZG lines for the four-sentence bullet, multi-sentence table cell, inline icons, and `※` footnote so they can be inspected manually.
+Regenerate review bundles for ZG, ZC, and KR. Provide the three `semantic_document.md` paths and call out the exact ZG lines for the four-sentence bullet, multi-sentence table cell, inline icons, and `※` footnote so they can be inspected manually.

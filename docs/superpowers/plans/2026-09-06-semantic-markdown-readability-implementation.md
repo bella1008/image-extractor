@@ -22,7 +22,7 @@
 - Modify `samples/tagged_pdf_xml_poc/tests/test_xml_writer.py`: Semantic/Raw XML 분리와 힌트 소비 검증.
 - Modify `samples/tagged_pdf_xml_poc/tests/test_markdown_writer.py`: 한 구조 안의 시각적 줄바꿈, 아이콘 순서, `※` 표시 검증.
 - Modify `samples/tagged_pdf_xml_poc/tests/test_output_bundle.py`: 파이프라인 순서와 실패 시 기존 묶음 보존 검증.
-- Modify `samples/tagged_pdf_xml_poc/tests/test_layout_regression.py`: ZG 양성 사례와 ZC/ZA/XY/KR 회귀 게이트.
+- Modify `samples/tagged_pdf_xml_poc/tests/test_layout_regression.py`: ZG 양성 사례와 ZC/KR 실물 PDF 회귀 게이트를 분리하고 기존 ZA/XY 단위 테스트는 보존.
 - Modify `samples/tagged_pdf_xml_poc/README.md`: 신규 표시 의미, 보수적 판별 범위와 검토 방법 문서화.
 
 ### Task 1: Immutable Readability Hint Models
@@ -524,15 +524,15 @@ Expected: `※`는 의미 있는 note marker로 한 번만 보이고 손상 glyp
 
 Commit: `Preserve semantic note markers in Markdown`
 
-### Task 8: Five-Sample Regression Gates
+### Task 8: Three-Sample PDF Regression Gates
 
 **Files:**
 - Modify: `samples/tagged_pdf_xml_poc/tests/test_layout_regression.py`
 - Modify: `samples/tagged_pdf_xml_poc/README.md`
 
-- [ ] **Step 1: Replace profile-only absence assertions with role-specific assertions**
+- [ ] **Step 1: Separate the existing XY/KR parameterized real-PDF test**
 
-기존 `_assert_no_zg_display_evidence()`는 ZC/ZA/XY/KR에 ZG 전용 `preserved-line-break`, `section-heading`, `strong-label`이 없다는 의미만 유지하도록 이름과 내용을 명확히 바꾼다. 공용 `sentence-break-source`와 `inline-icon`은 구조 근거가 있을 때 다른 구매처에도 나타날 수 있으므로 전부 0이라고 단정하지 않는다.
+기존 XY/KR parameterized test를 같은 helper를 공유하는 `test_xy_retains_structure_without_zg_display_rules`와 `test_kr_retains_structure_without_zg_display_rules`로 나눈다. 이번 실물 PDF 검수에서는 KR만 선택 실행할 수 있게 하되 XY 테스트 코드와 기존 기대값은 삭제하지 않는다. `_assert_no_zg_display_evidence()`는 이름을 `_assert_no_zg_profile_display_evidence()`로 바꾸고 ZG 전용 `preserved-line-break`, `section-heading`, `strong-label`의 부재만 확인한다. 공용 `sentence-break-source`와 `inline-icon`은 구조 근거가 있을 때 ZC/KR에도 나타날 수 있으므로 전부 0이라고 단정하지 않는다.
 
 - [ ] **Step 2: Add exact ZG positive assertions**
 
@@ -546,9 +546,9 @@ Commit: `Preserve semantic note markers in Markdown`
 - ZG 기존 `90` RF source breaks, `10` DoC section headings, `70` strong labels, 번호형 제목 `25`개와 subtitle 집계가 유지됨;
 - bracketed model labels는 plain source text 그대로이며 추출기가 색상/escape 표시를 추가하지 않음.
 
-- [ ] **Step 3: Add ZC/ZA/XY/KR negative and structural controls**
+- [ ] **Step 3: Add ZC/KR negative and structural controls**
 
-각 sample에 대해 다음을 검증한다.
+ZC와 KR sample에 대해 다음을 검증한다. 기존 ZA/XY 단위·회귀 테스트 코드는 유지하지만 이번 변경의 필수 실물 PDF 실행 대상에서는 제외한다.
 
 - raw XML에는 신규 display attributes가 없음;
 - sentence break가 새 list item, paragraph, table row/cell을 만들지 않음;
@@ -556,21 +556,23 @@ Commit: `Preserve semantic note markers in Markdown`
 - `[그림: 텍스트 없음]` fallback과 OSD 특수문자 `>`, `/`, `[`, `]`, `(`, `)`가 유지됨;
 - 기존 번호형 heading 수와 text, ZG 전용 규칙 부재, report `status=pass`가 유지됨.
 
-- [ ] **Step 4: Run required five-sample regression suite**
+- [ ] **Step 4: Run required three-sample PDF regression suite**
 
 Run from `samples/tagged_pdf_xml_poc` after resolving all paths from the repository sample tree:
 
 ```powershell
 $env:TAGGED_PDF_REQUIRE_SAMPLES = "1"
 $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf").Path
-$env:TAGGED_PDF_ZA_SAMPLE = (Resolve-Path "..\SUG_RAW\0_TV_ZA\BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf").Path
 $env:TAGGED_PDF_ZG_SAMPLE = (Resolve-Path "..\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf").Path
-$env:TAGGED_PDF_XY_SAMPLE = (Resolve-Path "..\SUG_RAW\TV_XY\BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf").Path
 $env:TAGGED_PDF_KR_SAMPLE = (Resolve-Path "..\SUG_RAW\TV_KR\BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf").Path
-.\.venv\Scripts\python -m pytest tests\test_layout_regression.py -q
+.\.venv\Scripts\python -m pytest `
+  tests\test_zc_integration.py::test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs `
+  tests\test_layout_regression.py::test_zg_retains_all_pages_without_false_image_xobject_loss `
+  tests\test_layout_regression.py::test_kr_retains_structure_without_zg_display_rules `
+  -q
 ```
 
-Expected: five required samples run without skip and all structural/readability assertions pass.
+Expected: ZC, ZG, KR 필수 sample이 skip 없이 실행되고 모든 구조·가독성 assertion이 통과한다. ZA/XY PDF는 이 명령에서 열지 않는다.
 
 - [ ] **Step 5: Document the review contract and commit**
 
@@ -589,7 +591,7 @@ Run:
 .\.venv\Scripts\python -m compileall src tests
 ```
 
-Commit: `Gate readability changes across five PDF profiles`
+Commit: `Gate readability changes across three PDF profiles`
 
 ### Task 9: Regenerate Human-Review Bundles and Final Verification
 
@@ -602,24 +604,24 @@ Commit: `Gate readability changes across five PDF profiles`
 
 - [ ] **Step 1: Run the complete POC suite in required-sample mode**
 
-같은 shell에서 Task 8의 다섯 환경변수를 유지한 뒤 실행한다.
+같은 shell에서 Task 8의 ZC/ZG/KR 환경변수를 유지한 뒤 실행한다. 전체 코드 테스트에서는 ZA/XY 실물 PDF test node 두 개만 명시적으로 제외하고 나머지 unit/behavior tests를 모두 실행한다.
 
 ```powershell
-.\.venv\Scripts\python -m pytest tests -q
+.\.venv\Scripts\python -m pytest tests -q `
+  --deselect tests/test_layout_regression.py::test_za_retains_complete_structure_and_clean_page_text `
+  --deselect tests/test_layout_regression.py::test_xy_retains_structure_without_zg_display_rules
 .\.venv\Scripts\python -m compileall src tests
 ```
 
-Expected: unit/integration suite passes; only the existing Windows symbolic-link capability test may skip when the OS cannot create symlinks. Required PDF sample tests must not skip.
+Expected: unit/behavior suite와 ZC/ZG/KR integration이 통과한다. ZA/XY real-PDF node는 명시적으로 deselect되며, 기존 Windows symbolic-link capability test만 OS가 symlink를 만들 수 없을 때 skip될 수 있다. ZC/ZG/KR PDF test는 skip되면 안 된다.
 
-- [ ] **Step 2: Regenerate five timestamped review bundles**
+- [ ] **Step 2: Regenerate three timestamped review bundles**
 
 충돌 없는 고정 실행 이름을 사용한다.
 
 ```powershell
 .\.venv\Scripts\tagged-pdf-extract.exe "$env:TAGGED_PDF_ZG_SAMPLE" --output "outputs\readability_review_zg_260906" --overwrite
 .\.venv\Scripts\tagged-pdf-extract.exe "$env:TAGGED_PDF_ZC_SAMPLE" --output "outputs\readability_review_zc_260906" --overwrite
-.\.venv\Scripts\tagged-pdf-extract.exe "$env:TAGGED_PDF_ZA_SAMPLE" --output "outputs\readability_review_za_260906" --overwrite
-.\.venv\Scripts\tagged-pdf-extract.exe "$env:TAGGED_PDF_XY_SAMPLE" --output "outputs\readability_review_xy_260906" --overwrite
 .\.venv\Scripts\tagged-pdf-extract.exe "$env:TAGGED_PDF_KR_SAMPLE" --output "outputs\readability_review_kr_260906" --overwrite
 ```
 
@@ -633,10 +635,10 @@ Expected: unit/integration suite passes; only the existing Windows symbolic-link
 - Semantic XML의 `sentence-break-source`, `inline-icon`, 기존 ZG 표시 role 수;
 - Raw XML의 display attribute 수가 0인지;
 - ZG Markdown에서 네 문장 FRA bullet, 세 문장 DEU cell, `[아이콘]`, `※ Cette adresse` 시작 문장, `UK ※ 2025-10-31`의 1-based line numbers;
-- ZC/ZA/XY/KR의 `[아이콘]`은 각각 대응 Semantic XML evidence와 개수가 같은지;
+- ZC/KR의 `[아이콘]`은 각각 대응 Semantic XML evidence와 개수가 같은지;
 - `Ł`, `Œ`, `[CONTROL U+0003]` 형태의 표시 재발 여부.
 
-검토자에게는 다섯 `semantic_document.md` 절대 경로와 위 ZG line numbers를 전달한다.
+검토자에게는 세 `semantic_document.md` 절대 경로와 위 ZG line numbers를 전달한다.
 
 - [ ] **Step 4: Run repository-required compile verification**
 

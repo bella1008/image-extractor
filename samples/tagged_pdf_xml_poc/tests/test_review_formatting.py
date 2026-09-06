@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError, replace
+import os
 from pathlib import Path
 from typing import Literal, get_type_hints
 
@@ -28,7 +29,12 @@ from .acceptance_support import require_sample
 
 
 ZG_NAME = "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf"
-ZG_SAMPLE = Path(__file__).parents[2] / "SUG_RAW" / "TV_ZG" / ZG_NAME
+ZG_SAMPLE = Path(
+    os.environ.get(
+        "TAGGED_PDF_ZG_SAMPLE",
+        Path(__file__).parents[2] / "SUG_RAW" / "TV_ZG" / ZG_NAME,
+    )
+)
 
 
 def _fragment(

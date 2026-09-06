@@ -23,6 +23,9 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.domain.display_hint_validation import (
     ValidatedReviewFormattingHints,
 )
+from tagged_pdf_extractor.domain.readability_formatting import (
+    apply_readability_formatting,
+)
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
 
@@ -301,6 +304,116 @@ def test_semantic_writer_serializes_readability_evidence_without_raw_mutation(
         "height-font-ratio": "1.384615",
     }
     assert [item.attrib for item in figure.findall("./attributes/attribute")] == [
+        {"name": "/BBox", "value": "[100, 200, 109, 209]"}
+    ]
+
+
+def test_semantic_writer_integrates_detector_validator_and_recursive_targets(
+    tmp_path: Path,
+) -> None:
+    sentence_text = "First sentence. Next sentence."
+    sentence_fragment = ContentFragment(3, 20, (sentence_text,))
+    before_icon = ContentFragment(
+        3,
+        21,
+        ("Before icon",),
+        text_styles=(TextStyle("SamsungOne-400", 6.5),),
+    )
+    icon = StructureElement(
+        "Figure",
+        "figure",
+        object_ref="123 0 R",
+        page_index=3,
+        attributes=(("/BBox", "[100, 200, 109, 209]"),),
+    )
+    after_icon = ContentFragment(
+        3,
+        22,
+        ("After icon",),
+        text_styles=(TextStyle("SamsungOne-400", 6.5),),
+    )
+    source_document = TaggedDocument(
+        Path("detector-produced.pdf"),
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "L",
+                "list",
+                children=(
+                    StructureElement(
+                        "LI",
+                        "list_item",
+                        children=(
+                            StructureElement(
+                                "Lbl",
+                                "label",
+                                children=(ContentFragment(3, 19, ("1",)),),
+                            ),
+                            StructureElement(
+                                "LBody",
+                                "list_body",
+                                children=(
+                                    StructureElement(
+                                        "P",
+                                        "paragraph",
+                                        children=(sentence_fragment,),
+                                    ),
+                                    StructureElement(
+                                        "P",
+                                        "paragraph",
+                                        children=(before_icon, icon, after_icon),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    document = apply_readability_formatting(source_document)
+    assert document.sentence_break_hints == (
+        SentenceBreakHint((0, 0, 1, 0, 0), (sentence_text.index("Next"),)),
+    )
+    assert document.inline_icon_hints == (
+        InlineIconHint(
+            (0, 0, 1, 1, 1),
+            page_index=3,
+            bbox=(100.0, 200.0, 109.0, 209.0),
+            reference_font_size=6.5,
+            width_ratio=9 / 6.5,
+            height_ratio=9 / 6.5,
+        ),
+    )
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    root = ET.parse(semantic_path).getroot()
+    sentence = root.find("./list/list_item/list_body/paragraph[1]/text")
+    inline_icon = root.find("./list/list_item/list_body/paragraph[2]/figure")
+    assert sentence is not None
+    assert sentence.attrib["display-role"] == "sentence-break-source"
+    assert sentence.attrib["sentence-break-offsets"] == str(
+        sentence_text.index("Next")
+    )
+    assert sentence.attrib["sentence-break-reason"] == (
+        "conservative_sentence_terminal_in_review_container"
+    )
+    assert inline_icon is not None
+    assert inline_icon.attrib["display-role"] == "inline-icon"
+    assert inline_icon.attrib["icon-reason"] == (
+        "small_inline_figure_with_adjacent_text"
+    )
+    assert inline_icon.attrib["reference-font-size"] == "6.5"
+    assert inline_icon.attrib["width-font-ratio"] == "1.384615"
+    assert inline_icon.attrib["height-font-ratio"] == "1.384615"
+    assert inline_icon.attrib["page-index"] == "3"
+    assert inline_icon.attrib["object-ref"] == "123 0 R"
+    assert [item.attrib for item in inline_icon.findall("./attributes/attribute")] == [
         {"name": "/BBox", "value": "[100, 200, 109, 209]"}
     ]
 

@@ -2,6 +2,7 @@ import base64
 from dataclasses import replace
 import math
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 from xml.etree import ElementTree as ET
 
@@ -10,12 +11,17 @@ import pytest
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
+    InlineIconHint,
     LineBreakHint,
+    SentenceBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
     TextDisplayHint,
     TextStyle,
+)
+from tagged_pdf_extractor.domain.display_hint_validation import (
+    ValidatedReviewFormattingHints,
 )
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
@@ -124,6 +130,223 @@ def _review_formatting_document() -> TaggedDocument:
             ),
         ),
     )
+
+
+def _readability_evidence_document() -> tuple[
+    TaggedDocument, SentenceBreakHint, InlineIconHint
+]:
+    sentence = ContentFragment(
+        18,
+        27,
+        ("Deuxième phrase. Troisième phrase.",),
+        object_ref="88 0 R",
+    )
+    before_icon = ContentFragment(
+        18,
+        28,
+        ("Home",),
+        object_ref="89 0 R",
+        text_styles=(TextStyle("SamsungOne-400", 6.5),),
+    )
+    icon = StructureElement(
+        "Figure",
+        "figure",
+        object_ref="123 0 R",
+        page_index=18,
+        alternate_text="Home",
+        attributes=(("/BBox", "[100, 200, 109, 209]"),),
+    )
+    after_icon = ContentFragment(
+        18,
+        29,
+        ("Settings",),
+        object_ref="90 0 R",
+        text_styles=(TextStyle("SamsungOne-400", 6.5),),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "fr",
+        (),
+        (
+            StructureElement("P", "paragraph", children=(sentence,)),
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(before_icon, icon, after_icon),
+            ),
+        ),
+    )
+    sentence_hint = SentenceBreakHint(
+        child_path=(0, 0),
+        offsets=(0, 17),
+        reason="conservative_sentence_terminal_in_review_container",
+    )
+    icon_hint = InlineIconHint(
+        child_path=(1, 1),
+        page_index=18,
+        bbox=(100.0, 200.0, 109.0, 209.0),
+        reference_font_size=6.5,
+        width_ratio=9 / 6.5,
+        height_ratio=9 / 6.5,
+        reason="small_inline_figure_with_adjacent_text",
+    )
+    return (
+        replace(
+            document,
+            sentence_break_hints=(sentence_hint,),
+            inline_icon_hints=(icon_hint,),
+        ),
+        sentence_hint,
+        icon_hint,
+    )
+
+
+def _validated_readability_hints(
+    sentence_hint: SentenceBreakHint,
+    icon_hint: InlineIconHint,
+) -> ValidatedReviewFormattingHints:
+    return ValidatedReviewFormattingHints(
+        line_break_by_path=MappingProxyType({}),
+        text_display_by_path=MappingProxyType({}),
+        sentence_break_by_path=MappingProxyType(
+            {sentence_hint.child_path: sentence_hint}
+        ),
+        inline_icon_by_path=MappingProxyType({icon_hint.child_path: icon_hint}),
+    )
+
+
+def test_semantic_writer_serializes_readability_evidence_without_raw_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, sentence_hint, icon_hint = _readability_evidence_document()
+    monkeypatch.setattr(
+        xml_writer_module,
+        "validate_display_hints",
+        lambda actual: _validated_readability_hints(sentence_hint, icon_hint),
+    )
+    raw_path = tmp_path / "raw.xml"
+    raw_without_hints_path = tmp_path / "raw-without-hints.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_raw(
+        replace(document, sentence_break_hints=(), inline_icon_hints=()),
+        raw_without_hints_path,
+    )
+    writer.write_semantic(document, semantic_path)
+
+    assert raw_path.read_bytes() == raw_without_hints_path.read_bytes()
+    raw = raw_path.read_text(encoding="utf-8")
+    for attribute_name in (
+        "display-role",
+        "sentence-break-offsets",
+        "sentence-break-reason",
+        "icon-reason",
+        "reference-font-size",
+        "width-font-ratio",
+        "height-font-ratio",
+    ):
+        assert attribute_name not in raw
+    raw_root = ET.parse(raw_path).getroot()
+    raw_sentence = raw_root.find("./element/fragment")
+    raw_figure = raw_root.find("./element[2]/element")
+    assert raw_sentence is not None
+    assert raw_sentence.attrib == {
+        "page-index": "18",
+        "mcid": "27",
+        "object-ref": "88 0 R",
+    }
+    assert [part.text for part in raw_sentence.findall("part")] == [
+        "Deuxième phrase. Troisième phrase.",
+    ]
+    assert raw_figure is not None
+    assert raw_figure.attrib == {
+        "source-role": "Figure",
+        "semantic-role": "figure",
+        "object-ref": "123 0 R",
+        "page-index": "18",
+        "alternate-text": "Home",
+    }
+    assert [item.attrib for item in raw_figure.findall("./attributes/attribute")] == [
+        {"name": "/BBox", "value": "[100, 200, 109, 209]"}
+    ]
+
+    semantic_root = ET.parse(semantic_path).getroot()
+    sentence = semantic_root.find("./paragraph[1]/text")
+    figure = semantic_root.find("./paragraph[2]/figure")
+    assert sentence is not None
+    assert sentence.attrib == {
+        "page-index": "18",
+        "mcid": "27",
+        "object-ref": "88 0 R",
+        "display-role": "sentence-break-source",
+        "sentence-break-offsets": "0,17",
+        "sentence-break-reason": (
+            "conservative_sentence_terminal_in_review_container"
+        ),
+    }
+    assert sentence.text == "Deuxième phrase. Troisième phrase."
+    assert figure is not None
+    assert figure.attrib == {
+        "object-ref": "123 0 R",
+        "page-index": "18",
+        "alternate-text": "Home",
+        "display-role": "inline-icon",
+        "icon-reason": "small_inline_figure_with_adjacent_text",
+        "reference-font-size": "6.5",
+        "width-font-ratio": "1.384615",
+        "height-font-ratio": "1.384615",
+    }
+    assert [item.attrib for item in figure.findall("./attributes/attribute")] == [
+        {"name": "/BBox", "value": "[100, 200, 109, 209]"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("hint_kind", "error_pattern"),
+    [
+        ("sentence", r"unresolved sentence break hint path"),
+        ("icon", r"unresolved inline icon hint path"),
+    ],
+)
+def test_semantic_writer_rejects_unconsumed_readability_hint_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    hint_kind: str,
+    error_pattern: str,
+) -> None:
+    document, sentence_hint, icon_hint = _readability_evidence_document()
+    unresolved_sentence = replace(sentence_hint, child_path=(9, 9))
+    unresolved_icon = replace(icon_hint, child_path=(9, 9))
+    validated = ValidatedReviewFormattingHints(
+        line_break_by_path=MappingProxyType({}),
+        text_display_by_path=MappingProxyType({}),
+        sentence_break_by_path=MappingProxyType(
+            {unresolved_sentence.child_path: unresolved_sentence}
+            if hint_kind == "sentence"
+            else {}
+        ),
+        inline_icon_by_path=MappingProxyType(
+            {unresolved_icon.child_path: unresolved_icon}
+            if hint_kind == "icon"
+            else {}
+        ),
+    )
+    monkeypatch.setattr(
+        xml_writer_module,
+        "validate_display_hints",
+        lambda actual: validated,
+    )
+    target = tmp_path / "semantic.xml"
+    target.write_text("sentinel", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=error_pattern):
+        XmlDocumentWriter().write_semantic(document, target)
+
+    assert target.read_text(encoding="utf-8") == "sentinel"
 
 
 def test_semantic_writer_serializes_validated_review_formatting_only_semantically(

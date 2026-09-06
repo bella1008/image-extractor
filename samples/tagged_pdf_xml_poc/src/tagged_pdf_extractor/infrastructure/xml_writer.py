@@ -18,7 +18,9 @@ from tagged_pdf_extractor.domain.display_hint_validation import (
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
+    InlineIconHint,
     LineBreakHint,
+    SentenceBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
@@ -221,6 +223,8 @@ class XmlDocumentWriter:
         consumed_subtitle_paths: set[tuple[int, ...]] = set()
         consumed_line_break_paths: set[tuple[int, ...]] = set()
         consumed_text_display_paths: set[tuple[int, ...]] = set()
+        consumed_sentence_break_paths: set[tuple[int, ...]] = set()
+        consumed_inline_icon_paths: set[tuple[int, ...]] = set()
 
         for index, child in enumerate(document.children):
             self._append_semantic_child(
@@ -236,6 +240,12 @@ class XmlDocumentWriter:
                 consumed_line_break_paths=consumed_line_break_paths,
                 text_display_by_path=validated_display_hints.text_display_by_path,
                 consumed_text_display_paths=consumed_text_display_paths,
+                sentence_break_by_path=(
+                    validated_display_hints.sentence_break_by_path
+                ),
+                consumed_sentence_break_paths=consumed_sentence_break_paths,
+                inline_icon_by_path=validated_display_hints.inline_icon_by_path,
+                consumed_inline_icon_paths=consumed_inline_icon_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -254,6 +264,16 @@ class XmlDocumentWriter:
             validated_display_hints.text_display_by_path,
             consumed_text_display_paths,
             "text display hint",
+        )
+        self._assert_display_hints_consumed(
+            validated_display_hints.sentence_break_by_path,
+            consumed_sentence_break_paths,
+            "sentence break hint",
+        )
+        self._assert_display_hints_consumed(
+            validated_display_hints.inline_icon_by_path,
+            consumed_inline_icon_paths,
+            "inline icon hint",
         )
         self._write_and_verify(
             root,
@@ -303,6 +323,10 @@ class XmlDocumentWriter:
         consumed_line_break_paths: set[tuple[int, ...]],
         text_display_by_path: Mapping[tuple[int, ...], TextDisplayHint],
         consumed_text_display_paths: set[tuple[int, ...]],
+        sentence_break_by_path: Mapping[tuple[int, ...], SentenceBreakHint],
+        consumed_sentence_break_paths: set[tuple[int, ...]],
+        inline_icon_by_path: Mapping[tuple[int, ...], InlineIconHint],
+        consumed_inline_icon_paths: set[tuple[int, ...]],
         expected_parts: list[str],
         decisions: list[dict[str, object]],
     ) -> None:
@@ -311,6 +335,8 @@ class XmlDocumentWriter:
         subtitle = subtitle_by_path.get(child_path)
         line_break = line_break_by_path.get(child_path)
         text_display = text_display_by_path.get(child_path)
+        sentence_break = sentence_break_by_path.get(child_path)
+        inline_icon = inline_icon_by_path.get(child_path)
         if subtitle is not None:
             rejection = subtitle_target_rejection(
                 child, promoted=promotion is not None
@@ -335,10 +361,14 @@ class XmlDocumentWriter:
             consumed_subtitle_paths.add(child_path)
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)
+            attributes = self._fragment_attributes(child)
+            if sentence_break is not None:
+                attributes.update(self._sentence_break_attributes(sentence_break))
+                consumed_sentence_break_paths.add(child_path)
             text_element = ET.SubElement(
                 parent,
                 "text",
-                _encoded_attributes(self._fragment_attributes(child)),
+                _encoded_attributes(attributes),
             )
             _set_data_text(text_element, text)
             expected_parts.append(text)
@@ -378,6 +408,9 @@ class XmlDocumentWriter:
         if text_display is not None:
             attributes.update(self._text_display_attributes(text_display))
             consumed_text_display_paths.add(child_path)
+        if inline_icon is not None:
+            attributes.update(self._inline_icon_attributes(inline_icon))
+            consumed_inline_icon_paths.add(child_path)
         element = ET.SubElement(
             parent,
             tag,
@@ -398,6 +431,10 @@ class XmlDocumentWriter:
                 consumed_line_break_paths=consumed_line_break_paths,
                 text_display_by_path=text_display_by_path,
                 consumed_text_display_paths=consumed_text_display_paths,
+                sentence_break_by_path=sentence_break_by_path,
+                consumed_sentence_break_paths=consumed_sentence_break_paths,
+                inline_icon_by_path=inline_icon_by_path,
+                consumed_inline_icon_paths=consumed_inline_icon_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -438,6 +475,30 @@ class XmlDocumentWriter:
         if hint.display_role == "section_heading":
             attributes["display-level"] = "2"
         return attributes
+
+    @staticmethod
+    def _sentence_break_attributes(hint: SentenceBreakHint) -> dict[str, str]:
+        return {
+            "display-role": "sentence-break-source",
+            "sentence-break-offsets": ",".join(str(offset) for offset in hint.offsets),
+            "sentence-break-reason": hint.reason,
+        }
+
+    @staticmethod
+    def _inline_icon_attributes(hint: InlineIconHint) -> dict[str, str]:
+        return {
+            "display-role": "inline-icon",
+            "icon-reason": hint.reason,
+            "reference-font-size": XmlDocumentWriter._format_number(
+                hint.reference_font_size
+            ),
+            "width-font-ratio": XmlDocumentWriter._format_number(
+                hint.width_ratio
+            ),
+            "height-font-ratio": XmlDocumentWriter._format_number(
+                hint.height_ratio
+            ),
+        }
 
     @staticmethod
     def _assert_display_hints_consumed(

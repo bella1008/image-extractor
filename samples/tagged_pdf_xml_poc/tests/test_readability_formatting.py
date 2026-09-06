@@ -211,6 +211,33 @@ def test_url_internal_punctuation_is_protected_but_terminal_period_splits() -> N
     )
 
 
+def test_url_terminal_period_before_unicode_closing_quote_splits() -> None:
+    text = "Visit “https://www.samsung.com/support.” Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
+def test_url_terminal_period_before_external_closing_parenthesis_splits() -> None:
+    text = "Visit (https://www.samsung.com/support.) Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
+def test_balanced_parentheses_remain_part_of_url_protected_range() -> None:
+    text = "Visit https://www.samsung.com/support(topic?Details). Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
 def test_email_internal_punctuation_is_protected_but_terminal_period_splits() -> None:
     text = "Write to service.team@example.co.kr. Next step."
     document = _list_body_document(_fragment(text))
@@ -247,6 +274,15 @@ def test_one_period_uppercase_dotted_tokens_do_not_split_internally() -> None:
             (0, 0, 1, 0),
             (text.index("Next"), text.index("Final")),
         ),
+    )
+
+
+def test_mixed_case_basename_with_uppercase_extension_does_not_split() -> None:
+    text = "Open manual.PDF. Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
     )
 
 

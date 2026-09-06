@@ -289,9 +289,7 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
     protected = [False] * len(text)
 
     for match in _URL_PATTERN.finditer(text):
-        end = match.end()
-        while end > match.start() and text[end - 1] in ".,!?;:":
-            end -= 1
+        end = _url_protected_end(text, match.start(), match.end())
         _mark_terminators(text, protected, match.start(), end)
 
     for pattern in (_EMAIL_PATTERN, _COMPACT_ABBREVIATION_PATTERN):
@@ -301,14 +299,16 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
     for match in _DOTTED_TOKEN_PATTERN.finditer(text):
         token = match.group()
         components = token.split(".")
-        uppercase_pair = len(components) == 2 and all(
-            component.isalpha() and component.isupper()
-            for component in components
+        uppercase_extension = (
+            len(components) == 2
+            and all(component.isalpha() for component in components)
+            and len(components[1]) >= 2
+            and components[1].isupper()
         )
         if (
             token.count(".") >= 2
             or any(character.isdigit() for character in token)
-            or uppercase_pair
+            or uppercase_extension
         ):
             _mark_terminators(text, protected, match.start(), match.end())
 
@@ -322,6 +322,24 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
 
     _protect_initials(text, protected)
     return tuple(protected)
+
+
+def _url_protected_end(text: str, start: int, end: int) -> int:
+    while end > start and _is_external_url_closer(text, start, end):
+        end -= 1
+    while end > start and text[end - 1] in ".,!?;:":
+        end -= 1
+    return end
+
+
+def _is_external_url_closer(text: str, start: int, end: int) -> bool:
+    character = text[end - 1]
+    if not _is_closing_punctuation(character):
+        return False
+    if character != ")":
+        return True
+    candidate = text[start:end]
+    return candidate.count(")") > candidate.count("(")
 
 
 def _mark_terminators(

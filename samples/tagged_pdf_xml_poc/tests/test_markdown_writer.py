@@ -1661,11 +1661,10 @@ def test_sentence_breaks_keep_three_sentences_in_one_complex_table_cell(
     assert markdown.count("Dritter Satz.") == 1
 
 
-def test_sentence_breaks_do_not_split_safe_pipe_table_rows(
+def test_safe_pipe_table_rows_remain_intact_without_sentence_evidence(
     tmp_path: Path,
 ) -> None:
     value = "First value. Second | value. Third value."
-    text = _sentence_text(value, "Second", "Third")
 
     markdown = _render(
         tmp_path,
@@ -1673,7 +1672,7 @@ def test_sentence_breaks_do_not_split_safe_pipe_table_rows(
         "<table_row><table_header><text>Name</text></table_header>"
         "<table_header><text>Details</text></table_header></table_row>"
         "<table_row><table_cell><text>Menu</text></table_cell>"
-        f"<table_cell>{text}</table_cell></table_row>"
+        f"<table_cell><text>{value}</text></table_cell></table_row>"
         "</table>",
     )
 
@@ -1681,8 +1680,25 @@ def test_sentence_breaks_do_not_split_safe_pipe_table_rows(
     assert rows == [
         "| Name | Details |",
         "| --- | --- |",
-        "| Menu | First value.<br>Second \\| value.<br>Third value. |",
+        "| Menu | First value. Second \\| value. Third value. |",
     ]
+
+
+def test_direct_table_cell_sentence_evidence_is_rejected(tmp_path: Path) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<table><table_row><table_cell>"
+        f'{_sentence_text("First sentence. Next sentence.", "Next")}'
+        "</table_cell></table_row></table>",
+    )
+
+    with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
 
 
 def test_sentence_breaks_escape_markdown_continuations_and_preserve_rf_lines(
@@ -1760,6 +1776,100 @@ def test_inline_icon_stays_inside_its_original_list_item(tmp_path: Path) -> None
     assert body == "- Open menu ( [아이콘] > Settings)"
     assert markdown.count("[아이콘]") == 1
     assert "[그림: 텍스트 없음]" not in markdown
+
+
+def _inline_icon_element(
+    *,
+    tag: str = "figure",
+    omit: str | None = None,
+    override: tuple[str, str] | None = None,
+) -> str:
+    attributes = {
+        "display-role": "inline-icon",
+        "page-index": "0",
+        "icon-reason": "small_inline_figure_with_adjacent_text",
+        "reference-font-size": "6.5",
+        "width-font-ratio": "1.4",
+        "height-font-ratio": "1.4",
+    }
+    if omit is not None:
+        attributes.pop(omit)
+    if override is not None:
+        attributes[override[0]] = override[1]
+    serialized = " ".join(f'{name}="{value}"' for name, value in attributes.items())
+    return f"<{tag} {serialized}><text /></{tag}>"
+
+
+@pytest.mark.parametrize(
+    ("element", "message"),
+    [
+        (_inline_icon_element(tag="paragraph"), "inline-icon must target figure"),
+        (
+            _inline_icon_element(omit="display-role"),
+            "inline-icon attributes without inline-icon display role",
+        ),
+        (_inline_icon_element(omit="page-index"), "invalid inline-icon page-index"),
+        (_inline_icon_element(omit="icon-reason"), "missing inline-icon icon-reason"),
+        (
+            _inline_icon_element(omit="reference-font-size"),
+            "invalid inline-icon reference-font-size",
+        ),
+        (
+            _inline_icon_element(omit="width-font-ratio"),
+            "invalid inline-icon width-font-ratio",
+        ),
+        (
+            _inline_icon_element(omit="height-font-ratio"),
+            "invalid inline-icon height-font-ratio",
+        ),
+        (
+            _inline_icon_element(override=("page-index", "true")),
+            "invalid inline-icon page-index",
+        ),
+        (
+            _inline_icon_element(override=("page-index", "nan")),
+            "invalid inline-icon page-index",
+        ),
+        (
+            _inline_icon_element(override=("page-index", "inf")),
+            "invalid inline-icon page-index",
+        ),
+        (
+            _inline_icon_element(override=("page-index", "1.5")),
+            "invalid inline-icon page-index",
+        ),
+        (
+            _inline_icon_element(override=("page-index", "-1")),
+            "invalid inline-icon page-index",
+        ),
+        *[
+            (
+                _inline_icon_element(override=(attribute, value)),
+                f"invalid inline-icon {attribute}",
+            )
+            for attribute in (
+                "reference-font-size",
+                "width-font-ratio",
+                "height-font-ratio",
+            )
+            for value in ("true", "nan", "inf", "0", "-1", "invalid")
+        ],
+    ],
+)
+def test_invalid_inline_icon_evidence_is_rejected(
+    tmp_path: Path,
+    element: str,
+    message: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, f"<paragraph><text>Before</text>{element}<text>After</text></paragraph>")
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
 
 
 @pytest.mark.parametrize(
@@ -1886,7 +1996,6 @@ def test_manual_non_sentence_offsets_are_rejected(
 @pytest.mark.parametrize(
     "body",
     [
-        "<heading>{text}</heading>",
         "<paragraph>{text}</paragraph>",
         "<list><list_item>{text}</list_item></list>",
         (
@@ -1900,7 +2009,6 @@ def test_manual_non_sentence_offsets_are_rejected(
         ),
     ],
     ids=(
-        "heading",
         "top-level-paragraph",
         "direct-list-item",
         "caption-under-list-body",
@@ -1916,6 +2024,135 @@ def test_sentence_evidence_under_ineligible_structure_is_rejected(
     _write_xml(semantic, body.format(text=text))
 
     with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+@pytest.mark.parametrize(
+    ("container", "message"),
+    [
+        ("<heading>{text}</heading>", "source heading"),
+        (
+            '<paragraph display-role="subtitle">{text}</paragraph>',
+            "subtitle",
+        ),
+        (
+            '<paragraph display-role="strong-label">{text}</paragraph>',
+            "strong-label",
+        ),
+        (
+            '<paragraph display-role="section-heading" display-level="2">'
+            "{text}</paragraph>",
+            "section-heading",
+        ),
+    ],
+)
+def test_sentence_evidence_overlapping_heading_display_roles_is_rejected(
+    tmp_path: Path,
+    container: str,
+    message: str,
+) -> None:
+    text = _sentence_text("First sentence. Next sentence.", "Next")
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body>"
+        f"{container.format(text=text)}"
+        "</list_body></list_item></list>",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+def test_sentence_evidence_overlapping_report_promoted_heading_is_rejected(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body><paragraph>"
+        f'{_sentence_text("First sentence. Next sentence.", "Next")}'
+        "</paragraph></list_body></list_item></list>",
+    )
+    report = _report(
+        {
+            "structure_path": (
+                "/list[0]/list_item[0]/list_body[0]/paragraph[0]"
+            ),
+            "source_role": "Heading1",
+            "semantic_role": "paragraph",
+            "level": 1,
+            "joined_text": "First sentence. Next sentence.",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+
+    with pytest.raises(ValueError, match="promoted heading"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            report,
+            source_name="manual.pdf",
+        )
+
+
+def test_sentence_evidence_on_directly_promoted_text_is_rejected(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body><paragraph>"
+        f'{_sentence_text("First sentence. Next sentence.", "Next")}'
+        "</paragraph></list_body></list_item></list>",
+    )
+    report = _report(
+        {
+            "structure_path": (
+                "/list[0]/list_item[0]/list_body[0]/paragraph[0]/text[0]"
+            ),
+            "source_role": "Heading1",
+            "semantic_role": "text",
+            "level": 1,
+            "joined_text": "First sentence. Next sentence.",
+            "title": None,
+            "classification": "source_role_candidate",
+        }
+    )
+
+    with pytest.raises(ValueError, match="promoted heading"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            report,
+            source_name="manual.pdf",
+        )
+
+
+def test_render_text_defensively_rejects_internal_sentence_sentinel_leak(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, "<paragraph><text>Ordinary</text></paragraph>")
+    monkeypatch.setattr(
+        MarkdownDocumentWriter,
+        "_render_children",
+        classmethod(
+            lambda cls, root, promoted: [
+                f"## Leaked{markdown_writer_module._SENTENCE_BREAK}heading"
+            ]
+        ),
+    )
+
+    with pytest.raises(AssertionError, match="internal sentence sentinel leaked"):
         MarkdownDocumentWriter.render_text(
             semantic,
             _report(),

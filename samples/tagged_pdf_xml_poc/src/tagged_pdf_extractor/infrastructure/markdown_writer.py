@@ -66,6 +66,9 @@ _SENTENCE_FLOW_CONTAINERS = frozenset({"list_body", "table_cell"})
 _SENTENCE_FLOW_BARRIERS = frozenset(
     {"list", "table", "heading", "caption", "label", "figure"}
 )
+_SENTENCE_HEADING_DISPLAY_ROLES = frozenset(
+    {"subtitle", "strong-label", "section-heading"}
+)
 _SENTENCE_SOURCE_BOUNDARY = object()
 _SENTENCE_BLOCK_BOUNDARY = object()
 
@@ -101,8 +104,8 @@ class MarkdownDocumentWriter:
         source_name: str,
     ) -> str:
         root = ET.parse(semantic_xml).getroot()
-        cls._validate_display_evidence(root)
         promoted = cls._resolve_heading_candidates(root, report)
+        cls._validate_display_evidence(root, promoted)
 
         header = [
             "# Semantic XML 문서 검토",
@@ -116,6 +119,8 @@ class MarkdownDocumentWriter:
         if blocks:
             markdown += "\n\n" + "\n\n".join(blocks)
         markdown += "\n"
+        if _SENTENCE_BREAK in markdown:
+            raise AssertionError("internal sentence sentinel leaked into Markdown")
         return markdown
 
     @classmethod
@@ -125,8 +130,8 @@ class MarkdownDocumentWriter:
         report: QualityReport,
     ) -> Counter[str]:
         root = ET.parse(semantic_xml).getroot()
-        cls._validate_display_evidence(root)
         promoted = cls._resolve_heading_candidates(root, report)
+        cls._validate_display_evidence(root, promoted)
         rendered: Counter[str] = Counter()
         for element, entry in promoted.items():
             rendered.update(cls._render_element(element, {element: entry}))
@@ -968,7 +973,11 @@ class MarkdownDocumentWriter:
         return offsets
 
     @classmethod
-    def _validate_display_evidence(cls, root: ET.Element) -> None:
+    def _validate_display_evidence(
+        cls,
+        root: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> None:
         sentence_offsets_by_element: dict[ET.Element, tuple[int, ...]] = {}
         for element in root.iter():
             display_role = element.get("display-role")
@@ -996,16 +1005,26 @@ class MarkdownDocumentWriter:
                 raise ValueError(
                     "inline-icon attributes without inline-icon display role"
                 )
-        cls._validate_sentence_boundaries(root, sentence_offsets_by_element)
+        cls._validate_sentence_boundaries(
+            root,
+            sentence_offsets_by_element,
+            promoted,
+        )
 
     @classmethod
     def _validate_sentence_boundaries(
         cls,
         root: ET.Element,
         offsets_by_element: dict[ET.Element, tuple[int, ...]],
+        promoted: dict[ET.Element, dict[str, object]],
     ) -> None:
         if not offsets_by_element:
             return
+        cls._reject_sentence_heading_overlaps(
+            root,
+            offsets_by_element,
+            promoted,
+        )
         eligible_offsets = cls._eligible_sentence_offsets(root)
         for element, offsets in offsets_by_element.items():
             expected = eligible_offsets.get(element)
@@ -1017,6 +1036,35 @@ class MarkdownDocumentWriter:
                 )
 
     @classmethod
+    def _reject_sentence_heading_overlaps(
+        cls,
+        root: ET.Element,
+        offsets_by_element: dict[ET.Element, tuple[int, ...]],
+        promoted: dict[ET.Element, dict[str, object]],
+    ) -> None:
+        parents = {
+            child: parent
+            for parent in root.iter()
+            for child in cls._structural_children(parent)
+        }
+        for element in offsets_by_element:
+            ancestor: ET.Element | None = element
+            while ancestor is not None:
+                if ancestor in promoted:
+                    raise ValueError(
+                        "sentence-break-source overlaps report-promoted heading"
+                    )
+                if ancestor.tag == "heading":
+                    raise ValueError("sentence-break-source overlaps source heading")
+                display_role = ancestor.get("display-role")
+                if display_role in _SENTENCE_HEADING_DISPLAY_ROLES:
+                    raise ValueError(
+                        "sentence-break-source overlaps "
+                        f"{display_role} display role"
+                    )
+                ancestor = parents.get(ancestor)
+
+    @classmethod
     def _eligible_sentence_offsets(
         cls,
         root: ET.Element,
@@ -1025,7 +1073,7 @@ class MarkdownDocumentWriter:
 
         def visit(parent: ET.Element, ancestors: tuple[str, ...]) -> None:
             for child in cls._structural_children(parent):
-                if child.tag in _SENTENCE_FLOW_CONTAINERS:
+                if child.tag == "list_body":
                     flows.extend(cls._direct_sentence_flows(child))
                 if (
                     child.tag == "paragraph"

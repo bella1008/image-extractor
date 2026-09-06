@@ -103,6 +103,24 @@ class TextDisplayHint:
 
 
 @dataclass(frozen=True)
+class SentenceBreakHint:
+    child_path: tuple[int, ...]
+    offsets: tuple[int, ...]
+    reason: str = "conservative_sentence_terminal_in_review_container"
+
+
+@dataclass(frozen=True)
+class InlineIconHint:
+    child_path: tuple[int, ...]
+    page_index: int
+    bbox: tuple[float, float, float, float]
+    reference_font_size: float
+    width_ratio: float
+    height_ratio: float
+    reason: str = "small_inline_figure_with_adjacent_text"
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -116,6 +134,8 @@ class TaggedDocument:
     subtitle_hints: tuple[SubtitleHint, ...] = ()
     line_break_hints: tuple[LineBreakHint, ...] = ()
     text_display_hints: tuple[TextDisplayHint, ...] = ()
+    sentence_break_hints: tuple[SentenceBreakHint, ...] = ()
+    inline_icon_hints: tuple[InlineIconHint, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -254,6 +254,46 @@ def _readability_document() -> tuple[
     )
 
 
+def _multiple_readability_document() -> TaggedDocument:
+    body_children = (
+        _element(
+            "paragraph",
+            _styled_fragment("First sentence. Next sentence.", mcid=20),
+        ),
+        _element(
+            "paragraph",
+            _styled_fragment("Another sentence. Final sentence.", mcid=21),
+        ),
+        _element(
+            "paragraph",
+            _styled_fragment("Before first icon", mcid=22),
+            _figure(),
+            _styled_fragment("After first icon", mcid=23),
+        ),
+        _element(
+            "paragraph",
+            _styled_fragment("Before second icon", mcid=24),
+            _figure(),
+            _styled_fragment("After second icon", mcid=25),
+        ),
+    )
+    document = _document(
+        _element(
+            "list",
+            _element(
+                "list_item",
+                _element("label", _fragment("1")),
+                _element("list_body", *body_children),
+            ),
+        )
+    )
+    return replace(
+        document,
+        sentence_break_hints=detect_sentence_break_hints(document),
+        inline_icon_hints=detect_inline_icon_hints(document),
+    )
+
+
 def test_returns_read_only_path_lookups_for_valid_hints() -> None:
     line_document, line_path = _line_document()
     title = _element("paragraph", _fragment("Visible title"))
@@ -600,6 +640,38 @@ def test_returns_read_only_sentence_and_inline_icon_lookups_together() -> None:
         validated.sentence_break_by_path[sentence_path] = document.sentence_break_hints[0]  # type: ignore[index]
     with pytest.raises(TypeError):
         validated.inline_icon_by_path[icon_path] = document.inline_icon_hints[0]  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("field", "name"),
+    [
+        ("sentence_break_hints", "sentence break"),
+        ("inline_icon_hints", "inline icon"),
+    ],
+)
+def test_rejects_total_detector_hint_omission(field: str, name: str) -> None:
+    document, _, _ = _readability_document()
+    document = replace(document, **{field: ()})
+
+    with pytest.raises(ValueError, match=rf"{name} hint mapping mismatch"):
+        validate_review_formatting_hints(document)
+
+
+@pytest.mark.parametrize(
+    ("field", "name"),
+    [
+        ("sentence_break_hints", "sentence break"),
+        ("inline_icon_hints", "inline icon"),
+    ],
+)
+def test_rejects_partial_detector_hint_omission(field: str, name: str) -> None:
+    document = _multiple_readability_document()
+    detected = getattr(document, field)
+    assert len(detected) == 2
+    document = replace(document, **{field: detected[:1]})
+
+    with pytest.raises(ValueError, match=rf"{name} hint mapping mismatch"):
+        validate_review_formatting_hints(document)
 
 
 def test_sibling_sentence_text_and_inline_figure_paths_do_not_overlap(
@@ -1070,7 +1142,6 @@ def test_inline_icon_hint_rejects_existing_target_subtree_conflicts(
 ) -> None:
     document, _, icon_path = _readability_document()
     paragraph_path = icon_path[:-1]
-    document = replace(document, sentence_break_hints=())
     if conflict_kind == "source heading":
         paragraph = cast(StructureElement, _resolve_path(document, paragraph_path))
         document = _replace_path(
@@ -1094,7 +1165,7 @@ def test_inline_icon_hint_rejects_semantic_heading_conflict(
     paragraph_path = icon_path[:-1]
     paragraph = cast(StructureElement, _resolve_path(document, paragraph_path))
     document = _replace_path(
-        replace(document, sentence_break_hints=()),
+        document,
         paragraph_path,
         replace(paragraph, semantic_role="heading"),
     )
@@ -1115,7 +1186,6 @@ def test_inline_icon_hint_rejects_text_display_target_subtree() -> None:
     paragraph_path = icon_path[:-1]
     document = replace(
         document,
-        sentence_break_hints=(),
         text_display_hints=(_text_hint(paragraph_path),),
     )
 

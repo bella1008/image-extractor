@@ -111,6 +111,8 @@ def validate_review_formatting_hints(
             )
         if detected_sentence_by_path.get(path) != hint:
             raise ValueError(f"sentence break detector mismatch at {path}")
+    if sentence_break_by_path != detected_sentence_by_path:
+        raise ValueError("sentence break hint mapping mismatch")
 
     detected_icon_by_path = _detected_inline_icon_hints(document)
     for path, hint in inline_icon_by_path.items():
@@ -134,6 +136,8 @@ def validate_review_formatting_hints(
             raise ValueError(f"invalid inline icon reason at {path}")
         if detected_icon_by_path.get(path) != hint:
             raise ValueError(f"inline icon detector mismatch at {path}")
+    if inline_icon_by_path != detected_icon_by_path:
+        raise ValueError("inline icon hint mapping mismatch")
 
     for line_path in line_break_by_path:
         _reject_line_path_conflict(

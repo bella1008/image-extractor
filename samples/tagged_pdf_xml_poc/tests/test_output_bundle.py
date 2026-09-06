@@ -18,11 +18,13 @@ from tagged_pdf_extractor.domain.models import (
     HeadingPromotion,
     LineBreakHint,
     QualityReport,
-    SentenceBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
     TextStyle,
+)
+from tagged_pdf_extractor.domain.readability_formatting import (
+    apply_readability_formatting,
 )
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
@@ -2550,16 +2552,53 @@ def test_extract_document_keeps_review_formatting_disabled_for_other_profiles(
     assert "**Direct label 0**" not in markdown
 
 
+@pytest.mark.parametrize(
+    ("hint_kind", "error_pattern"),
+    [
+        ("sentence", r"sentence break detector mismatch"),
+        ("icon", r"inline icon detector mismatch"),
+    ],
+)
 def test_extract_document_rejects_tampered_readability_hint_before_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    hint_kind: str,
+    error_pattern: str,
 ) -> None:
     source = tmp_path / "source.pdf"
     source.write_bytes(b"pdf")
     text = "First sentence. Next sentence."
     fragment = ContentFragment(0, 1, (text,))
-    paragraph = StructureElement("P", "paragraph", children=(fragment,))
-    list_body = StructureElement("LBody", "list_body", children=(paragraph,))
+    sentence_paragraph = StructureElement("P", "paragraph", children=(fragment,))
+    before_icon = ContentFragment(
+        3,
+        2,
+        ("Before icon",),
+        text_styles=(TextStyle("Synthetic", 6.5),),
+    )
+    icon = StructureElement(
+        "Figure",
+        "figure",
+        page_index=3,
+        alternate_text="Smart Hub",
+        attributes=(("/BBox", "[100.0, 200.0, 109.0, 209.0]"),),
+    )
+    after_icon = ContentFragment(
+        3,
+        3,
+        ("After icon",),
+        text_styles=(TextStyle("Synthetic", 6.5),),
+    )
+    icon_paragraph = StructureElement(
+        "P",
+        "paragraph",
+        children=(before_icon, icon, after_icon),
+    )
+    list_body = StructureElement(
+        "LBody",
+        "list_body",
+        children=(sentence_paragraph, icon_paragraph),
+    )
     list_item = StructureElement(
         "LI",
         "list_item",
@@ -2572,16 +2611,29 @@ def test_extract_document_rejects_tampered_readability_hint_before_publication(
         (),
         (StructureElement("L", "list", children=(list_item,)),),
     )
-    tampered_document = replace(
-        source_document,
-        sentence_break_hints=(
-            SentenceBreakHint(
-                (0, 0, 1, 0, 0),
-                (text.index("Next"),),
-                reason="manual override",
+    detected_document = apply_readability_formatting(source_document)
+    assert len(detected_document.sentence_break_hints) == 1
+    assert len(detected_document.inline_icon_hints) == 1
+    if hint_kind == "sentence":
+        tampered_document = replace(
+            detected_document,
+            sentence_break_hints=(
+                replace(
+                    detected_document.sentence_break_hints[0],
+                    reason="manual override",
+                ),
             ),
-        ),
-    )
+        )
+    else:
+        tampered_document = replace(
+            detected_document,
+            inline_icon_hints=(
+                replace(
+                    detected_document.inline_icon_hints[0],
+                    reason="manual override",
+                ),
+            ),
+        )
     monkeypatch.setattr(
         extract_document_module,
         "apply_readability_formatting",
@@ -2610,7 +2662,7 @@ def test_extract_document_rejects_tampered_readability_hint_before_publication(
         def evaluate(self, *args: object, **kwargs: object) -> QualityReport:
             raise AssertionError("validation must fail before evaluation")
 
-    with pytest.raises(ValueError, match=r"sentence break detector mismatch"):
+    with pytest.raises(ValueError, match=error_pattern):
         ExtractDocument(
             Reader(), Baseline(), Evaluator(), OutputBundleWriter()
         ).run(source, output, overwrite=True)

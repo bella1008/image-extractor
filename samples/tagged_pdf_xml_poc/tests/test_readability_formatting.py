@@ -253,10 +253,37 @@ def test_compact_abbreviations_and_initials_do_not_split_sentences() -> None:
     )
 
 
+def test_singular_uppercase_initial_before_name_does_not_split() -> None:
+    text = "Meet A. Smith. Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
 def test_unicode_ellipsis_does_not_create_a_sentence_break() -> None:
     document = _list_body_document(_fragment("Wait… Continue carefully."))
 
     assert detect_sentence_break_hints(document) == ()
+
+
+def test_unicode_closing_punctuation_is_skipped_before_next_sentence() -> None:
+    text = "첫 문장.」 다음 문장."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("다음"),)),
+    )
+
+
+def test_unicode_opening_punctuation_is_checked_before_next_sentence() -> None:
+    text = "첫 문장. 「다음 문장.」"
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("「"),)),
+    )
 
 
 def test_model_and_file_tokens_are_protected_but_terminal_period_splits() -> None:
@@ -274,6 +301,62 @@ def test_lowercase_or_ambiguous_continuation_does_not_split() -> None:
     assert detect_sentence_break_hints(document) == ()
 
 
+@pytest.mark.parametrize(
+    ("text", "next_sentence"),
+    [
+        ("Stop! Next sentence.", "Next"),
+        ("Ready? Continue reading.", "Continue"),
+    ],
+)
+def test_exclamation_and_question_marks_are_terminators(
+    text: str,
+    next_sentence: str,
+) -> None:
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index(next_sentence),)),
+    )
+
+
+def test_nonterminal_punctuation_does_not_create_boundaries() -> None:
+    text = "First clause, Next clause; Another clause: Final clause."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_digit_can_start_the_next_sentence() -> None:
+    text = "Setup complete. 2 steps remain."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("2 steps"),)),
+    )
+
+
+@pytest.mark.parametrize("opening_quote", ['"', "“"])
+def test_explicit_opening_quotes_allow_sentence_starts(opening_quote: str) -> None:
+    text = f"First sentence. {opening_quote}Next sentence."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index(opening_quote),)),
+    )
+
+
+@pytest.mark.parametrize("closing_punctuation", ['"', "”", ")", "]"])
+def test_explicit_closing_quotes_and_brackets_are_skipped(
+    closing_punctuation: str,
+) -> None:
+    text = f"First sentence.{closing_punctuation} Next sentence."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
 def test_general_body_paragraph_outside_approved_context_does_not_split() -> None:
     document = _document(
         _element("paragraph", _fragment("First sentence. Next sentence."))
@@ -286,6 +369,17 @@ def test_general_body_paragraph_outside_approved_context_does_not_split() -> Non
 def test_non_body_semantic_roles_do_not_split_inside_list_body(role: str) -> None:
     excluded = _element(role, _fragment("First sentence. Next sentence."))
     document = _list_body_document(excluded)
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+@pytest.mark.parametrize("role", ["heading", "caption", "label", "figure"])
+def test_non_body_roles_are_barriers_between_outer_text_fragments(role: str) -> None:
+    document = _list_body_document(
+        _fragment("Before barrier."),
+        _element(role, _fragment("Inside barrier.")),
+        _fragment("After barrier."),
+    )
 
     assert detect_sentence_break_hints(document) == ()
 
@@ -344,6 +438,30 @@ def test_existing_line_break_marker_prevents_duplicate_sentence_boundary() -> No
     )
 
     assert detect_sentence_break_hints(document) == ()
+
+
+def test_terminator_in_own_fragment_still_detects_next_sentence() -> None:
+    document = _list_body_document(
+        _fragment("First sentence", mcid=61),
+        _fragment(". ", mcid=62),
+        _fragment("Next sentence.", mcid=63),
+    )
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 2), (0,)),
+    )
+
+
+def test_leading_period_fragment_preserves_split_decimal_token() -> None:
+    document = _list_body_document(
+        _fragment("Use 2", mcid=64),
+        _fragment(".5 GHz. ", mcid=65),
+        _fragment("Next sentence.", mcid=66),
+    )
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 2), (0,)),
+    )
 
 
 def test_apply_readability_formatting_replaces_only_detected_hint_fields() -> None:

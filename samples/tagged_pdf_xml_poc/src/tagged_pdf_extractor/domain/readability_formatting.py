@@ -22,6 +22,8 @@ _FLOW_BARRIER_ROLES = frozenset(
 _TERMINATORS = frozenset(".!?")
 _CLOSING_CHARACTERS = frozenset("\"'”’»›)]}")
 _OPENING_CHARACTERS = frozenset("\"'“‘«‹([{")
+_CLOSING_PUNCTUATION_CATEGORIES = frozenset({"Pe", "Pf"})
+_OPENING_PUNCTUATION_CATEGORIES = frozenset({"Ps", "Pi"})
 
 _URL_PATTERN = re.compile(r"\b(?:https?://|www\.)[^\s<>{}\[\]]+", re.IGNORECASE)
 _EMAIL_PATTERN = re.compile(
@@ -212,8 +214,7 @@ def _join_flow(
         if (
             characters
             and fragment.text
-            and not characters[-1].isspace()
-            and not fragment.text[0].isspace()
+            and _needs_synthetic_space(characters[-1], fragment.text[0])
         ):
             characters.append(" ")
             locations.append(None)
@@ -223,6 +224,14 @@ def _join_flow(
             for offset in range(len(fragment.text))
         )
     return "".join(characters), tuple(locations)
+
+
+def _needs_synthetic_space(
+    previous_character: str,
+    next_character: str,
+) -> bool:
+    _, decisions = join_text_parts((previous_character, next_character))
+    return decisions[0]["action"] == "insert_space"
 
 
 def _sentence_starts(text: str) -> tuple[int, ...]:
@@ -239,7 +248,7 @@ def _sentence_starts(text: str) -> tuple[int, ...]:
 
 def _next_sentence_start(text: str, terminator_index: int) -> int | None:
     cursor = terminator_index + 1
-    while cursor < len(text) and text[cursor] in _CLOSING_CHARACTERS:
+    while cursor < len(text) and _is_closing_punctuation(text[cursor]):
         cursor += 1
     while cursor < len(text) and text[cursor].isspace():
         cursor += 1
@@ -247,11 +256,25 @@ def _next_sentence_start(text: str, terminator_index: int) -> int | None:
         return None
 
     visible_start = cursor
-    while cursor < len(text) and text[cursor] in _OPENING_CHARACTERS:
+    while cursor < len(text) and _is_opening_punctuation(text[cursor]):
         cursor += 1
     if cursor >= len(text) or not _valid_sentence_initial(text[cursor]):
         return None
     return visible_start
+
+
+def _is_closing_punctuation(character: str) -> bool:
+    return (
+        character in _CLOSING_CHARACTERS
+        or unicodedata.category(character) in _CLOSING_PUNCTUATION_CATEGORIES
+    )
+
+
+def _is_opening_punctuation(character: str) -> bool:
+    return (
+        character in _OPENING_CHARACTERS
+        or unicodedata.category(character) in _OPENING_PUNCTUATION_CATEGORIES
+    )
 
 
 def _valid_sentence_initial(character: str) -> bool:
@@ -271,12 +294,13 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
             end -= 1
         _mark_terminators(text, protected, match.start(), end)
 
-    for pattern in (
-        _EMAIL_PATTERN,
-        _DOTTED_TOKEN_PATTERN,
-        _COMPACT_ABBREVIATION_PATTERN,
-    ):
+    for pattern in (_EMAIL_PATTERN, _COMPACT_ABBREVIATION_PATTERN):
         for match in pattern.finditer(text):
+            _mark_terminators(text, protected, match.start(), match.end())
+
+    for match in _DOTTED_TOKEN_PATTERN.finditer(text):
+        token = match.group()
+        if token.count(".") >= 2 or any(character.isdigit() for character in token):
             _mark_terminators(text, protected, match.start(), match.end())
 
     for index in range(1, len(text) - 1):
@@ -321,3 +345,11 @@ def _protect_initials(text: str, protected: list[bool]) -> None:
         if following + 1 in initial_periods:
             protected[index] = True
             protected[following + 1] = True
+            continue
+        if following >= len(text) or not text[following].isupper():
+            continue
+        preceding = index - 2
+        while preceding >= 0 and text[preceding].isspace():
+            preceding -= 1
+        if preceding < 0 or not text[preceding].isdigit():
+            protected[index] = True

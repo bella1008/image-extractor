@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass, replace
+import math
 import re
 import unicodedata
 
@@ -19,6 +21,11 @@ _FLOW_CONTAINER_ROLES = frozenset({"list_body", "table_cell"})
 _FLOW_BARRIER_ROLES = frozenset(
     {"list", "table", "heading", "caption", "label", "figure"}
 )
+_INLINE_ICON_SUBTREE_BARRIER_ROLES = frozenset(
+    {"heading", "caption", "label", "figure"}
+)
+_MAX_INLINE_ICON_WIDTH_FONT_RATIO = 3.0
+_MAX_INLINE_ICON_HEIGHT_FONT_RATIO = 2.0
 _TERMINATORS = frozenset(".!?")
 _CLOSING_CHARACTERS = frozenset("\"'”’»›)]}")
 _OPENING_CHARACTERS = frozenset("\"'“‘«‹([{")
@@ -49,6 +56,18 @@ class _FragmentText:
     text: str
 
 
+@dataclass(frozen=True)
+class _InlineFlowFragment:
+    child_path: tuple[int, ...]
+    fragment: ContentFragment
+
+
+@dataclass(frozen=True)
+class _InlineFlowFigure:
+    child_path: tuple[int, ...]
+    figure: StructureElement
+
+
 def detect_sentence_break_hints(
     document: TaggedDocument,
 ) -> tuple[SentenceBreakHint, ...]:
@@ -76,7 +95,15 @@ def detect_sentence_break_hints(
 def detect_inline_icon_hints(
     document: TaggedDocument,
 ) -> tuple[InlineIconHint, ...]:
-    return ()
+    hints_by_path: dict[tuple[int, ...], InlineIconHint] = {}
+    for flow in _inline_icon_flows(document.children):
+        for index, item in enumerate(flow):
+            if not isinstance(item, _InlineFlowFigure):
+                continue
+            hint = _inline_icon_hint(flow, index, item)
+            if hint is not None:
+                hints_by_path.setdefault(hint.child_path, hint)
+    return tuple(hints_by_path[path] for path in sorted(hints_by_path))
 
 
 def apply_readability_formatting(document: TaggedDocument) -> TaggedDocument:
@@ -85,6 +112,261 @@ def apply_readability_formatting(document: TaggedDocument) -> TaggedDocument:
         sentence_break_hints=detect_sentence_break_hints(document),
         inline_icon_hints=detect_inline_icon_hints(document),
     )
+
+
+def _inline_icon_flows(
+    children: tuple[StructureElement | ContentFragment, ...],
+) -> tuple[tuple[_InlineFlowFragment | _InlineFlowFigure, ...], ...]:
+    flows: list[tuple[_InlineFlowFragment | _InlineFlowFigure, ...]] = []
+
+    def visit(
+        siblings: tuple[StructureElement | ContentFragment, ...],
+        parent_path: tuple[int, ...],
+    ) -> None:
+        for index, child in enumerate(siblings):
+            if not isinstance(child, StructureElement):
+                continue
+            child_path = (*parent_path, index)
+            role = child.semantic_role
+            if role in _INLINE_ICON_SUBTREE_BARRIER_ROLES:
+                continue
+
+            if role == "paragraph":
+                tokens = _inline_icon_tokens(child.children, child_path)
+                if _BLOCK_BOUNDARY not in tokens:
+                    flow = tuple(
+                        token
+                        for token in tokens
+                        if isinstance(
+                            token, (_InlineFlowFragment, _InlineFlowFigure)
+                        )
+                    )
+                    if flow:
+                        flows.append(flow)
+            elif role == "list_body":
+                flows.extend(
+                    _inline_icon_segments(
+                        _inline_icon_tokens(child.children, child_path)
+                    )
+                )
+
+            visit(child.children, child_path)
+
+    visit(children, ())
+    return tuple(flows)
+
+
+def _inline_icon_tokens(
+    siblings: tuple[StructureElement | ContentFragment, ...],
+    parent_path: tuple[int, ...],
+) -> tuple[_InlineFlowFragment | _InlineFlowFigure | object, ...]:
+    tokens: list[_InlineFlowFragment | _InlineFlowFigure | object] = []
+    for index, child in enumerate(siblings):
+        child_path = (*parent_path, index)
+        if isinstance(child, ContentFragment):
+            tokens.append(_InlineFlowFragment(child_path, child))
+        elif child.semantic_role in _INLINE_ROLES:
+            tokens.extend(_inline_icon_tokens(child.children, child_path))
+        elif child.semantic_role == "figure":
+            tokens.append(_InlineFlowFigure(child_path, child))
+        else:
+            tokens.append(_BLOCK_BOUNDARY)
+    return tuple(tokens)
+
+
+def _inline_icon_segments(
+    tokens: tuple[_InlineFlowFragment | _InlineFlowFigure | object, ...],
+) -> tuple[tuple[_InlineFlowFragment | _InlineFlowFigure, ...], ...]:
+    segments: list[tuple[_InlineFlowFragment | _InlineFlowFigure, ...]] = []
+    current: list[_InlineFlowFragment | _InlineFlowFigure] = []
+    for token in tokens:
+        if isinstance(token, (_InlineFlowFragment, _InlineFlowFigure)):
+            current.append(token)
+        elif current:
+            segments.append(tuple(current))
+            current = []
+    if current:
+        segments.append(tuple(current))
+    return tuple(segments)
+
+
+def _inline_icon_hint(
+    flow: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
+    index: int,
+    candidate: _InlineFlowFigure,
+) -> InlineIconHint | None:
+    figure = candidate.figure
+    if (
+        not isinstance(figure.page_index, int)
+        or isinstance(figure.page_index, bool)
+        or figure.page_index < 0
+        or _has_visible_figure_text(figure)
+    ):
+        return None
+
+    bbox = _figure_bbox(figure)
+    if bbox is None:
+        return None
+
+    adjacent = tuple(
+        fragment
+        for fragment in (
+            _adjacent_visible_fragment(flow, index, -1),
+            _adjacent_visible_fragment(flow, index, 1),
+        )
+        if fragment is not None
+        and fragment.fragment.page_index == figure.page_index
+    )
+    font_weights = tuple(
+        weights
+        for fragment in adjacent
+        if (weights := _visible_font_size_weights(fragment.fragment)) is not None
+    )
+    if not font_weights:
+        return None
+
+    reference_font_size = _weighted_median(
+        tuple(weight for weights in font_weights for weight in weights)
+    )
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    width_ratio = width / reference_font_size
+    height_ratio = height / reference_font_size
+    if (
+        width_ratio > _MAX_INLINE_ICON_WIDTH_FONT_RATIO
+        or height_ratio > _MAX_INLINE_ICON_HEIGHT_FONT_RATIO
+    ):
+        return None
+
+    return InlineIconHint(
+        child_path=candidate.child_path,
+        page_index=figure.page_index,
+        bbox=bbox,
+        reference_font_size=reference_font_size,
+        width_ratio=width_ratio,
+        height_ratio=height_ratio,
+    )
+
+
+def _adjacent_visible_fragment(
+    flow: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
+    figure_index: int,
+    direction: int,
+) -> _InlineFlowFragment | None:
+    index = figure_index + direction
+    while 0 <= index < len(flow):
+        item = flow[index]
+        if isinstance(item, _InlineFlowFigure):
+            return None
+        if _visible_character_count(item.fragment.text) > 0:
+            return item
+        index += direction
+    return None
+
+
+def _has_visible_figure_text(figure: StructureElement) -> bool:
+    for child in figure.children:
+        if isinstance(child, ContentFragment):
+            if _visible_character_count(child.text) > 0:
+                return True
+        elif _has_visible_figure_text(child):
+            return True
+    return False
+
+
+def _figure_bbox(
+    figure: StructureElement,
+) -> tuple[float, float, float, float] | None:
+    values = [
+        value
+        for name, value in figure.attributes
+        if isinstance(name, str)
+        and name.strip().lstrip("/").casefold() == "bbox"
+    ]
+    if not values:
+        return None
+
+    parsed = tuple(_parse_bbox(value) for value in values)
+    if any(value is None for value in parsed):
+        return None
+    bbox = parsed[0]
+    if bbox is None or any(value != bbox for value in parsed[1:]):
+        return None
+    return bbox
+
+
+def _parse_bbox(value: str) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = ast.literal_eval(value)
+    except (SyntaxError, ValueError):
+        return None
+    if not isinstance(parsed, (list, tuple)) or len(parsed) != 4:
+        return None
+    if any(
+        isinstance(coordinate, bool)
+        or not isinstance(coordinate, (int, float))
+        for coordinate in parsed
+    ):
+        return None
+    bbox = tuple(float(coordinate) for coordinate in parsed)
+    if (
+        not all(math.isfinite(coordinate) for coordinate in bbox)
+        or bbox[2] <= bbox[0]
+        or bbox[3] <= bbox[1]
+    ):
+        return None
+    return bbox
+
+
+def _visible_font_size_weights(
+    fragment: ContentFragment,
+) -> tuple[tuple[float, int], ...] | None:
+    if len(fragment.text_parts) != len(fragment.text_styles):
+        return None
+
+    weights: list[tuple[float, int]] = []
+    for text, style in zip(fragment.text_parts, fragment.text_styles):
+        visible_count = _visible_character_count(text)
+        if visible_count == 0:
+            continue
+        font_size = style.font_size
+        if (
+            font_size is None
+            or isinstance(font_size, bool)
+            or not isinstance(font_size, (int, float))
+            or not math.isfinite(font_size)
+            or font_size <= 0
+        ):
+            return None
+        weights.append((float(font_size), visible_count))
+    return tuple(weights) or None
+
+
+def _visible_character_count(text: str) -> int:
+    return sum(not character.isspace() for character in text)
+
+
+def _weighted_median(weights: tuple[tuple[float, int], ...]) -> float:
+    ordered = sorted(weights)
+    total_weight = sum(weight for _, weight in ordered)
+    lower_rank = (total_weight + 1) // 2
+    upper_rank = (total_weight + 2) // 2
+    lower = _weighted_rank_value(ordered, lower_rank)
+    upper = _weighted_rank_value(ordered, upper_rank)
+    return (lower + upper) / 2.0
+
+
+def _weighted_rank_value(
+    ordered: list[tuple[float, int]], rank: int
+) -> float:
+    cumulative = 0
+    for value, weight in ordered:
+        cumulative += weight
+        if cumulative >= rank:
+            return value
+    raise ValueError("weighted rank exceeds total weight")
 
 
 def _eligible_flows(

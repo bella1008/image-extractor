@@ -12,6 +12,7 @@ from tagged_pdf_extractor.domain.models import (
     SentenceBreakHint,
     StructureElement,
     TaggedDocument,
+    TextStyle,
 )
 from tagged_pdf_extractor.domain.readability_formatting import (
     apply_readability_formatting,
@@ -29,11 +30,17 @@ def _element(
     role: str,
     *children: StructureElement | ContentFragment,
     actual_text: str | None = None,
+    page_index: int | None = None,
+    alternate_text: str | None = None,
+    attributes: tuple[tuple[str, str], ...] = (),
 ) -> StructureElement:
     return StructureElement(
         source_role=role,
         semantic_role=role,
         actual_text=actual_text,
+        page_index=page_index,
+        alternate_text=alternate_text,
+        attributes=attributes,
         children=children,
     )
 
@@ -86,6 +93,45 @@ def _assert_fragment_targets(
     assert all(
         isinstance(_resolve_path(document, hint.child_path), ContentFragment)
         for hint in hints
+    )
+
+
+def _styled_fragment(
+    *text_parts: str,
+    page_index: int = 3,
+    font_sizes: tuple[float | None, ...] | None = None,
+    mcid: int = 100,
+) -> ContentFragment:
+    if font_sizes is None:
+        font_sizes = tuple(6.5 for _ in text_parts)
+    return ContentFragment(
+        page_index=page_index,
+        mcid=mcid,
+        text_parts=text_parts,
+        text_styles=tuple(
+            TextStyle("Synthetic", font_size) for font_size in font_sizes
+        ),
+    )
+
+
+def _figure(
+    *children: StructureElement | ContentFragment,
+    page_index: int | None = 3,
+    bbox_name: str = "/BBox",
+    bbox_value: str = "[100.0, 200.0, 109.0, 209.0]",
+    extra_attributes: tuple[tuple[str, str], ...] = (),
+    alternate_text: str | None = "Smart Hub",
+) -> StructureElement:
+    return _element(
+        "figure",
+        *children,
+        page_index=page_index,
+        alternate_text=alternate_text,
+        attributes=(
+            (bbox_name, bbox_value),
+            ("/Placement", "/Block"),
+            *extra_attributes,
+        ),
     )
 
 
@@ -519,6 +565,377 @@ def test_leading_period_fragment_preserves_split_decimal_token() -> None:
     assert detect_sentence_break_hints(document) == (
         SentenceBreakHint((0, 0, 1, 2), (0,)),
     )
+
+
+def test_detects_inline_icon_between_wrapped_text_in_leaf_paragraph() -> None:
+    figure = _figure()
+    document = _document(
+        _element(
+            "paragraph",
+            _element("span", _styled_fragment("Open ", mcid=101)),
+            figure,
+            _element(
+                "link",
+                _element(
+                    "span",
+                    _styled_fragment("Smart Hub", mcid=102),
+                ),
+            ),
+        )
+    )
+
+    hints = detect_inline_icon_hints(document)
+
+    assert hints == (
+        InlineIconHint(
+            child_path=(0, 1),
+            page_index=3,
+            bbox=(100.0, 200.0, 109.0, 209.0),
+            reference_font_size=6.5,
+            width_ratio=9.0 / 6.5,
+            height_ratio=9.0 / 6.5,
+        ),
+    )
+    assert figure.attributes == (
+        ("/BBox", "[100.0, 200.0, 109.0, 209.0]"),
+        ("/Placement", "/Block"),
+    )
+    assert figure.alternate_text == "Smart Hub"
+
+
+def test_detects_inline_icon_before_one_sided_list_body_text() -> None:
+    document = _list_body_document(
+        _figure(),
+        _styled_fragment("   ", font_sizes=(None,), mcid=103),
+        _element("link", _styled_fragment("Settings", mcid=104)),
+    )
+
+    assert detect_inline_icon_hints(document) == (
+        InlineIconHint(
+            child_path=(0, 0, 1, 0),
+            page_index=3,
+            bbox=(100.0, 200.0, 109.0, 209.0),
+            reference_font_size=6.5,
+            width_ratio=9.0 / 6.5,
+            height_ratio=9.0 / 6.5,
+        ),
+    )
+
+
+def test_detects_inline_icon_after_one_sided_paragraph_text() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _element("span", _styled_fragment("Source", mcid=105)),
+            _figure(bbox_name="bBoX"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == (
+        InlineIconHint(
+            child_path=(0, 1),
+            page_index=3,
+            bbox=(100.0, 200.0, 109.0, 209.0),
+            reference_font_size=6.5,
+            width_ratio=9.0 / 6.5,
+            height_ratio=9.0 / 6.5,
+        ),
+    )
+
+
+def test_reference_size_is_visible_character_weighted_median() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment(
+                "AA",
+                "   ",
+                "BBBBB",
+                font_sizes=(6.0, None, 8.0),
+                mcid=106,
+            ),
+            _figure(),
+            _styled_fragment("C", font_sizes=(12.0,), mcid=107),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.reference_font_size == 8.0
+    assert hint.width_ratio == 9.0 / 8.0
+    assert hint.height_ratio == 9.0 / 8.0
+
+
+def test_inline_icon_ratio_boundaries_are_inclusive() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before", mcid=108),
+            _figure(bbox_value="[100.0, 200.0, 119.5, 213.0]"),
+            _styled_fragment("After", mcid=109),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.width_ratio == 3.0
+    assert hint.height_ratio == 2.0
+
+
+@pytest.mark.parametrize(
+    "page_index",
+    [None, -1],
+)
+def test_inline_icon_requires_nonnegative_figure_page_index(
+    page_index: int | None,
+) -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(page_index=page_index),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+@pytest.mark.parametrize(
+    "bbox_value",
+    [
+        "",
+        "not-a-box",
+        "[100.0, 200.0, 109.0]",
+        "[100.0, 200.0, 109.0, 209.0, 210.0]",
+        "[nan, 200.0, 109.0, 209.0]",
+        "[100.0, -inf, 109.0, 209.0]",
+        "[100.0, 200.0, inf, 209.0]",
+        "[100.0, 200.0, 100.0, 209.0]",
+        "[100.0, 200.0, 99.0, 209.0]",
+        "[100.0, 200.0, 109.0, 200.0]",
+        "[100.0, 200.0, 109.0, 199.0]",
+    ],
+)
+def test_inline_icon_rejects_invalid_bbox(bbox_value: str) -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(bbox_value=bbox_value),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_missing_bbox() -> None:
+    figure = _element(
+        "figure",
+        page_index=3,
+        attributes=(("/Placement", "/Block"),),
+    )
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            figure,
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_conflicting_duplicate_bbox_attributes() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(
+                extra_attributes=(
+                    ("bbox", "[100.0, 200.0, 110.0, 209.0]"),
+                )
+            ),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_accepts_equivalent_duplicate_bbox_attributes() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(
+                extra_attributes=(
+                    ("BBOX", "[100.0, 200.0, 109.0, 209.0]"),
+                )
+            ),
+        )
+    )
+
+    assert len(detect_inline_icon_hints(document)) == 1
+
+
+def test_inline_icon_rejects_standalone_figure_even_with_alt_and_placement() -> None:
+    document = _document(_element("paragraph", _figure()))
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_text_available_only_in_another_leaf_flow() -> None:
+    document = _document(
+        _element("paragraph", _styled_fragment("Nearby")),
+        _element("paragraph", _figure()),
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_adjacent_text_on_another_page() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _figure(),
+            _styled_fragment("Other page", page_index=4),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_adjacent_text_without_styles() -> None:
+    unstyled = ContentFragment(3, 110, ("Visible",))
+    document = _document(_element("paragraph", _figure(), unstyled))
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+@pytest.mark.parametrize(
+    "font_size",
+    [None, 0.0, -1.0, float("nan"), float("inf"), -float("inf")],
+)
+def test_inline_icon_rejects_unavailable_or_invalid_adjacent_font_size(
+    font_size: float | None,
+) -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _figure(),
+            _styled_fragment("Visible", font_sizes=(font_size,)),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_mismatched_text_style_evidence() -> None:
+    mismatched = ContentFragment(3, 111, ("Visible", " text"))
+    object.__setattr__(
+        mismatched,
+        "text_styles",
+        (TextStyle("Synthetic", 6.5),),
+    )
+    document = _document(_element("paragraph", _figure(), mismatched))
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+@pytest.mark.parametrize(
+    "bbox_value",
+    [
+        "[100.0, 200.0, 119.500001, 213.0]",
+        "[100.0, 200.0, 119.5, 213.000001]",
+    ],
+)
+def test_inline_icon_rejects_ratio_above_either_limit(
+    bbox_value: str,
+) -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _figure(bbox_value=bbox_value),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_rejects_figure_with_visible_extracted_text() -> None:
+    figure = _figure(
+        _element("span", ContentFragment(3, 112, ("Smart Hub",)))
+    )
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            figure,
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+@pytest.mark.parametrize(
+    "container_role",
+    ["table_cell", "heading", "caption", "label", "list", "table"],
+)
+def test_inline_icon_rejects_direct_child_of_non_inline_flow_container(
+    container_role: str,
+) -> None:
+    document = _document(
+        _element(
+            container_role,
+            _styled_fragment("Before"),
+            _figure(),
+            _styled_fragment("After"),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_does_not_use_text_across_structural_barrier() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before"),
+            _element("caption", _styled_fragment("Barrier")),
+            _figure(),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
+
+
+def test_inline_icon_hints_are_unique_and_in_document_order() -> None:
+    document = _list_body_document(
+        _element(
+            "paragraph",
+            _styled_fragment("Before", mcid=113),
+            _figure(),
+        ),
+        _element(
+            "paragraph",
+            _figure(),
+            _styled_fragment("After", mcid=114),
+        ),
+    )
+
+    hints = detect_inline_icon_hints(document)
+
+    assert [hint.child_path for hint in hints] == [
+        (0, 0, 1, 0, 1),
+        (0, 0, 1, 1, 0),
+    ]
+    assert len(hints) == len({hint.child_path for hint in hints})
 
 
 def test_apply_readability_formatting_replaces_only_detected_hint_fields() -> None:

@@ -76,7 +76,7 @@ def detect_sentence_break_hints(
 
     for flow in _eligible_flows(document.children, line_break_paths):
         text, locations = _join_flow(flow)
-        for start in _sentence_starts(text):
+        for start in sentence_start_offsets(text):
             location = locations[start]
             if location is None:
                 continue
@@ -533,7 +533,7 @@ def _needs_synthetic_space(
     return decisions[0]["action"] == "insert_space"
 
 
-def _sentence_starts(text: str) -> tuple[int, ...]:
+def sentence_start_offsets(text: str) -> tuple[int, ...]:
     protected = _protected_terminators(text)
     starts: list[int] = []
     for index, character in enumerate(text):

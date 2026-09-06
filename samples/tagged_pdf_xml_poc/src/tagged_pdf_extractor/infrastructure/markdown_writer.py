@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 import math
 import os
 import re
@@ -10,6 +11,9 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import QualityReport
+from tagged_pdf_extractor.domain.readability_formatting import (
+    sentence_start_offsets,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
@@ -57,6 +61,19 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
     }
 )
 _INLINE_ICON_TOKEN = "[아이콘]"
+_SENTENCE_INLINE_TAGS = frozenset({"span", "link"})
+_SENTENCE_FLOW_CONTAINERS = frozenset({"list_body", "table_cell"})
+_SENTENCE_FLOW_BARRIERS = frozenset(
+    {"list", "table", "heading", "caption", "label", "figure"}
+)
+_SENTENCE_SOURCE_BOUNDARY = object()
+_SENTENCE_BLOCK_BOUNDARY = object()
+
+
+@dataclass(frozen=True)
+class _SemanticTextFragment:
+    element: ET.Element
+    text: str
 
 
 class MarkdownDocumentWriter:
@@ -952,6 +969,7 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _validate_display_evidence(cls, root: ET.Element) -> None:
+        sentence_offsets_by_element: dict[ET.Element, tuple[int, ...]] = {}
         for element in root.iter():
             display_role = element.get("display-role")
             has_sentence_attributes = any(
@@ -960,7 +978,10 @@ class MarkdownDocumentWriter:
             if display_role == "sentence-break-source":
                 if element.tag != "text":
                     raise ValueError("sentence-break-source must target text")
-                cls._sentence_break_offsets(element, decode_data_element(element))
+                sentence_offsets_by_element[element] = cls._sentence_break_offsets(
+                    element,
+                    decode_data_element(element),
+                )
             elif has_sentence_attributes:
                 raise ValueError(
                     "sentence-break attributes without sentence-break-source"
@@ -975,6 +996,144 @@ class MarkdownDocumentWriter:
                 raise ValueError(
                     "inline-icon attributes without inline-icon display role"
                 )
+        cls._validate_sentence_boundaries(root, sentence_offsets_by_element)
+
+    @classmethod
+    def _validate_sentence_boundaries(
+        cls,
+        root: ET.Element,
+        offsets_by_element: dict[ET.Element, tuple[int, ...]],
+    ) -> None:
+        if not offsets_by_element:
+            return
+        eligible_offsets = cls._eligible_sentence_offsets(root)
+        for element, offsets in offsets_by_element.items():
+            expected = eligible_offsets.get(element)
+            if expected is None:
+                raise ValueError("ineligible sentence-break-source structure")
+            if any(offset not in expected for offset in offsets):
+                raise ValueError(
+                    "sentence-break offset is not an eligible sentence-start boundary"
+                )
+
+    @classmethod
+    def _eligible_sentence_offsets(
+        cls,
+        root: ET.Element,
+    ) -> dict[ET.Element, frozenset[int]]:
+        flows: list[tuple[_SemanticTextFragment, ...]] = []
+
+        def visit(parent: ET.Element, ancestors: tuple[str, ...]) -> None:
+            for child in cls._structural_children(parent):
+                if child.tag in _SENTENCE_FLOW_CONTAINERS:
+                    flows.extend(cls._direct_sentence_flows(child))
+                if (
+                    child.tag == "paragraph"
+                    and cls._eligible_sentence_paragraph_context(ancestors)
+                ):
+                    flows.extend(cls._leaf_sentence_paragraph_flows(child))
+                visit(child, (*ancestors, child.tag))
+
+        visit(root, ())
+        offsets: dict[ET.Element, set[int]] = {}
+        for flow in flows:
+            text, locations = cls._join_sentence_flow(flow)
+            for fragment in flow:
+                offsets.setdefault(fragment.element, set())
+            for start in sentence_start_offsets(text):
+                location = locations[start]
+                if location is None:
+                    continue
+                element, local_offset = location
+                offsets.setdefault(element, set()).add(local_offset)
+        return {
+            element: frozenset(values)
+            for element, values in offsets.items()
+        }
+
+    @staticmethod
+    def _eligible_sentence_paragraph_context(
+        ancestors: tuple[str, ...],
+    ) -> bool:
+        for tag in reversed(ancestors):
+            if tag in _SENTENCE_FLOW_CONTAINERS:
+                return True
+            if tag in _SENTENCE_FLOW_BARRIERS:
+                return False
+        return False
+
+    @classmethod
+    def _direct_sentence_flows(
+        cls,
+        container: ET.Element,
+    ) -> tuple[tuple[_SemanticTextFragment, ...], ...]:
+        return cls._sentence_segments(cls._sentence_inline_tokens(container))
+
+    @classmethod
+    def _leaf_sentence_paragraph_flows(
+        cls,
+        paragraph: ET.Element,
+    ) -> tuple[tuple[_SemanticTextFragment, ...], ...]:
+        tokens = cls._sentence_inline_tokens(paragraph)
+        if _SENTENCE_BLOCK_BOUNDARY in tokens:
+            return ()
+        return cls._sentence_segments(tokens)
+
+    @classmethod
+    def _sentence_inline_tokens(
+        cls,
+        parent: ET.Element,
+    ) -> tuple[_SemanticTextFragment | object, ...]:
+        tokens: list[_SemanticTextFragment | object] = []
+        for child in cls._structural_children(parent):
+            if child.tag == "text":
+                source = decode_data_element(child)
+                if source:
+                    tokens.append(_SemanticTextFragment(child, source))
+            elif cls._is_preserved_line_break(child):
+                tokens.append(_SENTENCE_SOURCE_BOUNDARY)
+            elif child.tag in _SENTENCE_INLINE_TAGS:
+                tokens.extend(cls._sentence_inline_tokens(child))
+            else:
+                tokens.append(_SENTENCE_BLOCK_BOUNDARY)
+        return tuple(tokens)
+
+    @staticmethod
+    def _sentence_segments(
+        tokens: tuple[_SemanticTextFragment | object, ...],
+    ) -> tuple[tuple[_SemanticTextFragment, ...], ...]:
+        segments: list[tuple[_SemanticTextFragment, ...]] = []
+        current: list[_SemanticTextFragment] = []
+        for token in tokens:
+            if isinstance(token, _SemanticTextFragment):
+                current.append(token)
+            elif current:
+                segments.append(tuple(current))
+                current = []
+        if current:
+            segments.append(tuple(current))
+        return tuple(segments)
+
+    @staticmethod
+    def _join_sentence_flow(
+        fragments: tuple[_SemanticTextFragment, ...],
+    ) -> tuple[str, tuple[tuple[ET.Element, int] | None, ...]]:
+        characters: list[str] = []
+        locations: list[tuple[ET.Element, int] | None] = []
+        for fragment in fragments:
+            if characters and fragment.text:
+                _, decisions = join_text_parts(
+                    (characters[-1], fragment.text[0])
+                )
+                if decisions[0]["action"] == "insert_space":
+                    characters.append(" ")
+                    locations.append(None)
+            characters.extend(fragment.text)
+            locations.extend(
+                (fragment.element, offset)
+                for offset in range(len(fragment.text))
+            )
+        return "".join(characters), tuple(locations)
 
     @staticmethod
     def _validate_inline_icon_evidence(element: ET.Element) -> None:

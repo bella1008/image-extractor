@@ -1834,6 +1834,143 @@ def test_malformed_sentence_break_evidence_is_rejected(
         )
 
 
+@pytest.mark.parametrize(
+    ("value", "offset"),
+    [
+        ("First sentence. Next sentence.", 1),
+        ("First sentence. Next sentence.", len("First sentence.")),
+        ("Use V2.2.3 now. Next sentence.", len("Use V2.")),
+        ("Value is 2.5 GHz. Next sentence.", len("Value is 2.")),
+        ("Open README.PDF now. Next sentence.", len("Open README.")),
+        (
+            "Visit https://EXAMPLE.COM now. Next sentence.",
+            len("Visit https://EXAMPLE."),
+        ),
+    ],
+    ids=(
+        "mid-word",
+        "whitespace",
+        "version-token",
+        "decimal-token",
+        "file-token",
+        "url-token",
+    ),
+)
+def test_manual_non_sentence_offsets_are_rejected(
+    tmp_path: Path,
+    value: str,
+    offset: int,
+) -> None:
+    text = (
+        '<text display-role="sentence-break-source" '
+        f'sentence-break-offsets="{offset}" '
+        'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
+        f"{value}</text>"
+    )
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body><paragraph>"
+        f"{text}"
+        "</paragraph></list_body></list_item></list>",
+    )
+
+    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<heading>{text}</heading>",
+        "<paragraph>{text}</paragraph>",
+        "<list><list_item>{text}</list_item></list>",
+        (
+            "<list><list_item><list_body><caption>{text}</caption>"
+            "</list_body></list_item></list>"
+        ),
+        (
+            "<list><list_item><list_body><paragraph>{text}"
+            "<list><list_item><text>Nested</text></list_item></list>"
+            "</paragraph></list_body></list_item></list>"
+        ),
+    ],
+    ids=(
+        "heading",
+        "top-level-paragraph",
+        "direct-list-item",
+        "caption-under-list-body",
+        "paragraph-with-block-descendant",
+    ),
+)
+def test_sentence_evidence_under_ineligible_structure_is_rejected(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    text = _sentence_text("First sentence. Next sentence.", "Next")
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, body.format(text=text))
+
+    with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+@pytest.mark.parametrize("with_paragraph", [False, True])
+def test_offset_zero_is_valid_at_an_eligible_fragment_boundary(
+    tmp_path: Path,
+    with_paragraph: bool,
+) -> None:
+    next_text = (
+        '<text display-role="sentence-break-source" sentence-break-offsets="0" '
+        'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
+        "Next sentence.</text>"
+    )
+    flow = f"<text>First sentence.</text>{next_text}"
+    if with_paragraph:
+        flow = f"<paragraph>{flow}</paragraph>"
+
+    markdown = _render(
+        tmp_path,
+        "<list><list_item><list_body>"
+        f"{flow}"
+        "</list_body></list_item></list>",
+    )
+
+    assert "- First sentence.<br>\n  Next sentence." in markdown
+    assert markdown.count("<br>") == 1
+
+
+def test_source_rf_boundary_rejects_duplicate_manual_sentence_evidence(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body><paragraph>"
+        "<text>First sentence.</text>"
+        '<span actual-text="&#10;" display-role="preserved-line-break" />'
+        '<text display-role="sentence-break-source" sentence-break-offsets="0" '
+        'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
+        "Next sentence.</text>"
+        "</paragraph></list_body></list_item></list>",
+    )
+
+    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
 def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> None:
     semantic = tmp_path / "semantic_document.xml"
     output = tmp_path / "semantic_document.md"
@@ -1841,14 +1978,15 @@ def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> 
     text = _sentence_text(value, "Next")
     _write_xml(
         semantic,
-        "<paragraph>"
+        "<list><list_item><list_body><paragraph>"
         f"{text}"
+        "</paragraph><paragraph>"
         '<figure display-role="inline-icon" page-index="0" '
         'icon-reason="small_inline_figure_with_adjacent_text" '
         'reference-font-size="6.5" width-font-ratio="1.4" '
         'height-font-ratio="1.4"><text /></figure>'
         "<text>Tail</text>"
-        "</paragraph>",
+        "</paragraph></list_body></list_item></list>",
     )
     writer = MarkdownDocumentWriter()
 

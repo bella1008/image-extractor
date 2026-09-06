@@ -681,20 +681,29 @@ def test_readme_documents_sample_overrides_and_independent_skips() -> None:
     assert "TAGGED_PDF_REQUIRE_SAMPLES" in readme
     assert "그 샘플의 테스트만 독립적으로 건너뛰" in readme
     assert "Set-Location .\\samples\\tagged_pdf_xml_poc" in readme
+    required_command = readme.split(
+        "# Current mandatory gate: ZC, ZG, and KR only.", 1
+    )[1].split("```", 1)[0]
     for variable in (
         "TAGGED_PDF_ZC_SAMPLE",
-        "TAGGED_PDF_ZA_SAMPLE",
         "TAGGED_PDF_ZG_SAMPLE",
-        "TAGGED_PDF_XY_SAMPLE",
         "TAGGED_PDF_KR_SAMPLE",
     ):
-        assert f'$env:{variable} = (Resolve-Path `' in readme
+        assert f'$env:{variable} = (Resolve-Path `' in required_command
+    assert "TAGGED_PDF_ZA_SAMPLE" not in required_command
+    assert "TAGGED_PDF_XY_SAMPLE" not in required_command
     assert '"..\\SUG_RAW\\0_TV_ZC\\BN68-25100B-00_' in readme
-    assert '"..\\SUG_RAW\\0_TV_ZA\\BN68-25099B-00_' in readme
     assert '"..\\SUG_RAW\\1_TV_ZG\\BN68-25448A-00_' in readme
-    assert '"..\\SUG_RAW\\TV_XY\\BN68-25031B-00_' in readme
-    assert '"..\\SUG_RAW\\TV_KR\\BN68-25108A-00_' in readme
-    assert ".\\.venv\\Scripts\\python -m pytest tests -v" in readme
+    assert '"..\\SUG_RAW\\1_TV_KR\\BN68-25108A-00_' in readme
+    assert (
+        "--deselect tests/test_layout_regression.py::"
+        "test_za_retains_complete_structure_and_clean_page_text"
+    ) in required_command
+    assert (
+        "--deselect tests/test_layout_regression.py::"
+        "test_xy_retains_structure_without_zg_display_rules"
+    ) in required_command
+    assert "ZA/XY" in readme and "optional" in readme
     assert "Set-Location C:\\Users\\bella" not in readme
 
 

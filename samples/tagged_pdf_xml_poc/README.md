@@ -66,36 +66,34 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 통합 테스트의 PDF 위치를 직접 지정해야 할 때는 다음 환경변수를 사용합니다.
 
 - `TAGGED_PDF_ZC_SAMPLE`: ZC 기준 PDF
-- `TAGGED_PDF_ZA_SAMPLE`: ZA 레이아웃 회귀 PDF
 - `TAGGED_PDF_ZG_SAMPLE`: ZG BOOK 레이아웃 회귀 PDF
+- `TAGGED_PDF_KR_SAMPLE`: KR 레이아웃 회귀 PDF
+- `TAGGED_PDF_ZA_SAMPLE`: ZA 레이아웃 회귀 PDF(테스트 코드는 유지하지만 현재 필수 게이트에서는 optional)
+- `TAGGED_PDF_XY_SAMPLE`: XY 레이아웃 회귀 PDF(테스트 코드는 유지하지만 현재 필수 게이트에서는 optional)
 
 각 테스트는 해당 환경변수, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 자기 샘플을 찾습니다. 기본 휴대용 테스트 모드에서는 샘플이 없으면 그 샘플의 테스트만 독립적으로 건너뛰며, 다른 단위 테스트와 사용 가능한 샘플 테스트는 계속 실행합니다.
 
-세 기준 PDF가 반드시 있는 검수 환경에서는 아래처럼 필수 샘플 모드를 사용합니다. 이 명령은 `samples\SUG_RAW` 원본이 있는 기본 저장소 루트에서 시작해야 합니다(원본 PDF를 복제하지 않은 Git worktree에서는 샘플 경로를 별도로 지정하세요). 이 모드에서는 ZC, ZA, ZG 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다.
+현재 필수 실물 PDF 검수 대상은 ZC, ZG, KR 세 개입니다. 아래 명령은 `samples\SUG_RAW` 원본이 있는 기본 저장소 루트에서 시작해야 합니다(원본 PDF를 복제하지 않은 Git worktree에서는 샘플 경로를 별도로 지정하세요). 필수 샘플 모드에서는 이 세 샘플 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다. ZA/XY 실물 테스트 노드는 코드와 선택 실행 방법을 유지하지만, 현재 게이트에서는 명시적으로 제외하며 해당 환경변수도 요구하지 않습니다.
 
 ```powershell
 Set-Location .\samples\tagged_pdf_xml_poc
-# Required mode uses all five regression samples: ZC, ZA, ZG, XY, and KR.
+# Current mandatory gate: ZC, ZG, and KR only.
 $env:TAGGED_PDF_REQUIRE_SAMPLES = "1"
 $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
   "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
 ).Path
-$env:TAGGED_PDF_ZA_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\0_TV_ZA\BN68-25099B-00_SUG_Y26 TV ALL_ZA_ENG_260126.0.pdf" `
-).Path
 $env:TAGGED_PDF_ZG_SAMPLE = (Resolve-Path `
   "..\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf" `
 ).Path
-$env:TAGGED_PDF_XY_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\TV_XY\BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf" `
-).Path
 $env:TAGGED_PDF_KR_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\TV_KR\BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf" `
+  "..\SUG_RAW\1_TV_KR\BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf" `
 ).Path
-.\.venv\Scripts\python -m pytest tests -v
+.\.venv\Scripts\python -m pytest tests -v `
+  --deselect tests/test_layout_regression.py::test_za_retains_complete_structure_and_clean_page_text `
+  --deselect tests/test_layout_regression.py::test_xy_retains_structure_without_zg_display_rules
 ```
 
-일반 개발 PC에서는 `TAGGED_PDF_REQUIRE_SAMPLES`를 설정하지 않고 같은 명령을 실행하면 됩니다.
+ZA 또는 XY 실물 회귀를 별도로 수행할 때만 해당 optional 환경변수를 지정하고 그 노드를 선택 실행합니다. 일반 개발 PC에서는 `TAGGED_PDF_REQUIRE_SAMPLES`를 설정하지 않으면 없는 샘플만 독립적으로 skip됩니다.
 
 종료 코드는 다음과 같습니다.
 

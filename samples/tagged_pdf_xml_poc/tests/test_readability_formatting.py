@@ -362,6 +362,50 @@ def test_compact_abbreviations_and_initials_do_not_split_sentences() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "abbreviation_flow",
+    (
+        "Ask Dr. Smith for help.",
+        "See No. 5 for details.",
+        "See Fig. 2 for details.",
+        "Ask Dŕ. Šimon for help.",
+        "参照 図. 2 を確認してください.",
+    ),
+)
+def test_compact_single_period_tokens_do_not_create_false_sentence_breaks(
+    abbreviation_flow: str,
+) -> None:
+    text = f"{abbreviation_flow} Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "Finish now. Next step.",
+        "Complete setup. 2 checks remain.",
+        "Read this. 다음 단계입니다.",
+    ),
+)
+def test_compact_abbreviation_guard_preserves_unambiguous_sentence_endings(
+    text: str,
+) -> None:
+    document = _list_body_document(_fragment(text))
+    expected_start = next(
+        text.index(candidate)
+        for candidate in ("Next", "2", "다음")
+        if candidate in text
+    )
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (expected_start,)),
+    )
+
+
 def test_singular_uppercase_initial_before_name_does_not_split() -> None:
     text = "Meet A. Smith. Next step."
     document = _list_body_document(_fragment(text))
@@ -856,7 +900,7 @@ def test_detects_inline_icon_after_one_sided_paragraph_text() -> None:
         _element(
             "paragraph",
             _element("span", _styled_fragment("Source", mcid=105)),
-            _figure(bbox_name="bBoX"),
+            _figure(bbox_name="BBox"),
         )
     )
 
@@ -1032,7 +1076,7 @@ def test_inline_icon_rejects_conflicting_duplicate_bbox_attributes() -> None:
             _styled_fragment("Before"),
             _figure(
                 extra_attributes=(
-                    ("bbox", "[100.0, 200.0, 110.0, 209.0]"),
+                    ("BBox", "[100.0, 200.0, 110.0, 209.0]"),
                 )
             ),
             _styled_fragment("After"),
@@ -1049,7 +1093,7 @@ def test_inline_icon_accepts_equivalent_duplicate_bbox_attributes() -> None:
             _styled_fragment("Before"),
             _figure(
                 extra_attributes=(
-                    ("BBOX", "[100.0, 200.0, 109.0, 209.0]"),
+                    ("BBox", "[100.0, 200.0, 109.0, 209.0]"),
                 )
             ),
         )
@@ -1060,7 +1104,7 @@ def test_inline_icon_accepts_equivalent_duplicate_bbox_attributes() -> None:
 
 @pytest.mark.parametrize(
     "bbox_name",
-    [" BBox", "BBox ", " /BBox", "/BBox ", "//BBox", "[0]/BBox"],
+    [" BBox", "BBox ", " /BBox", "/BBox ", "bbox", "/bbox", "BBOX", "//BBox", "[0]/BBox"],
 )
 def test_inline_icon_rejects_non_exact_bbox_attribute_names(
     bbox_name: str,

@@ -1727,6 +1727,37 @@ def test_sentence_breaks_render_in_subtitle_linked_body_paragraph(
 
 
 @pytest.mark.parametrize(
+    ("value", "false_start"),
+    (
+        ("Ask Dr. Smith for help.", "Smith"),
+        ("See No. 5 for details.", "5"),
+        ("See Fig. 2 for details.", "2"),
+        ("Ask Dŕ. Šimon for help.", "Šimon"),
+        ("参照 図. 2 を確認してください。", "2"),
+    ),
+)
+def test_standalone_markdown_rejects_sentence_break_after_compact_token(
+    tmp_path: Path,
+    value: str,
+    false_start: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body>"
+        f"{_sentence_text(value, false_start)}"
+        "</list_body></list_item></list>",
+    )
+
+    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+@pytest.mark.parametrize(
     "barrier_tag",
     ["heading", "caption", "label", "figure", "list", "table"],
 )
@@ -2018,14 +2049,18 @@ def test_inline_icons_render_in_child_order_and_generic_figures_keep_fallback(
         'reference-font-size="6.5" width-font-ratio="1.4" '
         'height-font-ratio="1.4"'
     )
+    bbox = (
+        '<attributes><attribute name="/BBox" '
+        'value="[100, 200, 109.1, 209.1]" /></attributes>'
+    )
     markdown = _render(
         tmp_path,
         "<paragraph>"
-        "<text>menu (</text>"
-        f"<figure {icon_attributes}><text /></figure>"
-        "<text>&gt; left directional button &gt;</text>"
-        f"<figure {icon_attributes}><text /></figure>"
-        "<text>Settings)</text>"
+        '<text page-index="0">menu (</text>'
+        f'<figure {icon_attributes}>{bbox}<text page-index="0" /></figure>'
+        '<text page-index="0">&gt; left directional button &gt;</text>'
+        f'<figure {icon_attributes}>{bbox}<text page-index="0" /></figure>'
+        '<text page-index="0">Settings)</text>'
         "</paragraph>"
         "<figure><text /></figure>"
         "<figure><text>Figure caption text</text></figure>",
@@ -2047,12 +2082,15 @@ def test_inline_icon_stays_inside_its_original_list_item(tmp_path: Path) -> None
     markdown = _render(
         tmp_path,
         "<list><list_item><list_body><paragraph>"
-        "<text>Open menu (</text>"
+        '<text page-index="0">Open menu (</text>'
         '<figure display-role="inline-icon" page-index="0" '
         'icon-reason="small_inline_figure_with_adjacent_text" '
         'reference-font-size="6.5" width-font-ratio="1.4" '
-        'height-font-ratio="1.4"><text /></figure>'
-        "<text>&gt; Settings)</text>"
+        'height-font-ratio="1.4">'
+        '<attributes><attribute name="BBox" '
+        'value="[100, 200, 109.1, 209.1]" /></attributes>'
+        '<text page-index="0" /></figure>'
+        '<text page-index="0">&gt; Settings)</text>'
         "</paragraph></list_body></list_item></list>",
     )
 
@@ -2067,6 +2105,9 @@ def _inline_icon_element(
     tag: str = "figure",
     omit: str | None = None,
     override: tuple[str, str] | None = None,
+    bbox: str | None = "[100, 200, 109.1, 209.1]",
+    bbox_name: str = "/BBox",
+    content: str = '<text page-index="0" />',
 ) -> str:
     attributes = {
         "display-role": "inline-icon",
@@ -2081,7 +2122,14 @@ def _inline_icon_element(
     if override is not None:
         attributes[override[0]] = override[1]
     serialized = " ".join(f'{name}="{value}"' for name, value in attributes.items())
-    return f"<{tag} {serialized}><text /></{tag}>"
+    source_attributes = (
+        ""
+        if bbox is None
+        else "<attributes>"
+        f'<attribute name="{bbox_name}" value="{bbox}" />'
+        "</attributes>"
+    )
+    return f"<{tag} {serialized}>{source_attributes}{content}</{tag}>"
 
 
 @pytest.mark.parametrize(
@@ -2146,7 +2194,135 @@ def test_invalid_inline_icon_evidence_is_rejected(
     message: str,
 ) -> None:
     semantic = tmp_path / "semantic_document.xml"
-    _write_xml(semantic, f"<paragraph><text>Before</text>{element}<text>After</text></paragraph>")
+    _write_xml(
+        semantic,
+        '<paragraph><text page-index="0">Before</text>'
+        f'{element}<text page-index="0">After</text></paragraph>',
+    )
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    (
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(bbox=None)
+            + '<text page-index="0">After</text></paragraph>',
+            "invalid inline-icon BBox",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(bbox="[100, 200, 100, 209.1]")
+            + '<text page-index="0">After</text></paragraph>',
+            "invalid inline-icon BBox",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(bbox_name="/bbox")
+            + '<text page-index="0">After</text></paragraph>',
+            "invalid inline-icon BBox",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(
+                content=(
+                    '<attributes><attribute name="BBox" '
+                    'value="[100, 200, 108, 208]" /></attributes>'
+                    '<text page-index="0" />'
+                )
+            )
+            + '<text page-index="0">After</text></paragraph>',
+            "invalid inline-icon BBox",
+        ),
+        (_inline_icon_element(), "ineligible inline-icon structure"),
+        (
+            "<table><table_row><table_cell>"
+            + _inline_icon_element()
+            + '<text page-index="0">After</text></table_cell></table_row></table>',
+            "ineligible inline-icon structure",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(content='<text page-index="0">hidden</text>')
+            + '<text page-index="0">After</text></paragraph>',
+            "inline-icon figure contains visible text",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(content='<span actual-text="hidden" />')
+            + '<text page-index="0">After</text></paragraph>',
+            "inline-icon figure contains visible text",
+        ),
+        (
+            "<paragraph>"
+            + _inline_icon_element()
+            + "</paragraph>",
+            "inline-icon requires adjacent visible text",
+        ),
+        (
+            '<paragraph><span actual-text="Before" />'
+            + _inline_icon_element()
+            + "</paragraph>",
+            "inline-icon requires adjacent visible text",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text><figure><text /></figure>'
+            + _inline_icon_element()
+            + '<figure><text /></figure><text page-index="0">After</text></paragraph>',
+            "inline-icon requires adjacent visible text",
+        ),
+        (
+            '<paragraph><text page-index="1">Before</text>'
+            + _inline_icon_element()
+            + '<text page-index="1">After</text></paragraph>',
+            "inline-icon requires adjacent same-page visible text",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(override=("icon-reason", "manual"))
+            + '<text page-index="0">After</text></paragraph>',
+            "invalid inline-icon icon-reason",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(override=("width-font-ratio", "1.5"))
+            + '<text page-index="0">After</text></paragraph>',
+            "inline-icon width-font-ratio does not match BBox",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(
+                override=("width-font-ratio", "3.000001"),
+                bbox="[100, 200, 119.5000065, 209.1]",
+            )
+            + '<text page-index="0">After</text></paragraph>',
+            "inline-icon width-font-ratio exceeds limit",
+        ),
+        (
+            '<paragraph><text page-index="0">Before</text>'
+            + _inline_icon_element(
+                override=("height-font-ratio", "2.000001"),
+                bbox="[100, 200, 109.1, 213.0000065]",
+            )
+            + '<text page-index="0">After</text></paragraph>',
+            "inline-icon height-font-ratio exceeds limit",
+        ),
+    ),
+)
+def test_standalone_inline_icon_requires_detector_equivalent_evidence(
+    tmp_path: Path,
+    body: str,
+    message: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(semantic, body)
 
     with pytest.raises(ValueError, match=message):
         MarkdownDocumentWriter.render_text(
@@ -2502,11 +2678,14 @@ def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> 
         "<list><list_item><list_body><paragraph>"
         f"{text}"
         "</paragraph><paragraph>"
-        '<figure display-role="inline-icon" page-index="0" '
-        'icon-reason="small_inline_figure_with_adjacent_text" '
-        'reference-font-size="6.5" width-font-ratio="1.4" '
-        'height-font-ratio="1.4"><text /></figure>'
-        "<text>Tail</text>"
+            '<figure display-role="inline-icon" page-index="0" '
+            'icon-reason="small_inline_figure_with_adjacent_text" '
+            'reference-font-size="6.5" width-font-ratio="1.4" '
+            'height-font-ratio="1.4">'
+            '<attributes><attribute name="/BBox" '
+            'value="[100, 200, 109.1, 209.1]" /></attributes>'
+            '<text page-index="0" /></figure>'
+            '<text page-index="0">Tail</text>'
         "</paragraph></list_body></list_item>"
         "<list_item><label><text>※</text></label><list_body><paragraph>"
         "<text>Source line one</text>"

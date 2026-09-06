@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from dataclasses import dataclass, replace
 import math
 import re
@@ -12,6 +11,11 @@ from tagged_pdf_extractor.domain.models import (
     SentenceBreakHint,
     StructureElement,
     TaggedDocument,
+)
+from tagged_pdf_extractor.domain.inline_icon_policy import (
+    MAX_INLINE_ICON_HEIGHT_FONT_RATIO,
+    MAX_INLINE_ICON_WIDTH_FONT_RATIO,
+    parse_unambiguous_bbox,
 )
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_nonempty_inline_paragraph,
@@ -27,8 +31,6 @@ _FLOW_BARRIER_ROLES = frozenset(
 _INLINE_ICON_SUBTREE_BARRIER_ROLES = frozenset(
     {"heading", "caption", "label", "figure"}
 )
-_MAX_INLINE_ICON_WIDTH_FONT_RATIO = 3.0
-_MAX_INLINE_ICON_HEIGHT_FONT_RATIO = 2.0
 _TERMINATORS = frozenset(".!?")
 _CLOSING_CHARACTERS = frozenset("\"'”’»›)]}")
 _OPENING_CHARACTERS = frozenset("\"'“‘«‹([{")
@@ -248,8 +250,8 @@ def _inline_icon_hint(
     width_ratio = width / reference_font_size
     height_ratio = height / reference_font_size
     if (
-        width_ratio > _MAX_INLINE_ICON_WIDTH_FONT_RATIO
-        or height_ratio > _MAX_INLINE_ICON_HEIGHT_FONT_RATIO
+        width_ratio > MAX_INLINE_ICON_WIDTH_FONT_RATIO
+        or height_ratio > MAX_INLINE_ICON_HEIGHT_FONT_RATIO
     ):
         return None
 
@@ -297,50 +299,7 @@ def _has_visible_figure_text(element: StructureElement) -> bool:
 def _figure_bbox(
     figure: StructureElement,
 ) -> tuple[float, float, float, float] | None:
-    values = [
-        value
-        for name, value in figure.attributes
-        if isinstance(name, str)
-        and name.casefold() in {"bbox", "/bbox"}
-    ]
-    if not values:
-        return None
-
-    parsed = tuple(_parse_bbox(value) for value in values)
-    if any(value is None for value in parsed):
-        return None
-    bbox = parsed[0]
-    if bbox is None or any(value != bbox for value in parsed[1:]):
-        return None
-    return bbox
-
-
-def _parse_bbox(value: str) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = ast.literal_eval(value)
-    except (SyntaxError, ValueError):
-        return None
-    if not isinstance(parsed, (list, tuple)) or len(parsed) != 4:
-        return None
-    if any(
-        isinstance(coordinate, bool)
-        or not isinstance(coordinate, (int, float))
-        for coordinate in parsed
-    ):
-        return None
-    try:
-        bbox = tuple(float(coordinate) for coordinate in parsed)
-    except (OverflowError, ValueError):
-        return None
-    if (
-        not all(math.isfinite(coordinate) for coordinate in bbox)
-        or bbox[2] <= bbox[0]
-        or bbox[3] <= bbox[1]
-    ):
-        return None
-    return bbox
+    return parse_unambiguous_bbox(figure.attributes)
 
 
 def _visible_font_size_weights(
@@ -733,8 +692,48 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
         ):
             protected[index] = True
 
+    _protect_compact_single_period_tokens(text, protected)
     _protect_initials(text, protected)
     return tuple(protected)
+
+
+def _protect_compact_single_period_tokens(
+    text: str,
+    protected: list[bool],
+) -> None:
+    """Protect short title/code-like words whose trailing period is ambiguous."""
+
+    for period_index, character in enumerate(text):
+        if character != "." or protected[period_index]:
+            continue
+        token_start = period_index
+        while token_start > 0 and text[token_start - 1].isalpha():
+            token_start -= 1
+        token = text[token_start:period_index]
+        if not 1 <= len(token) <= 3:
+            continue
+        if token_start > 0 and (
+            text[token_start - 1].isalnum() or text[token_start - 1] == "_"
+        ):
+            continue
+        first = token[0]
+        if (
+            len(token) >= 2
+            and first.isupper()
+            and all(character.islower() for character in token[1:])
+        ):
+            protected[period_index] = True
+            continue
+        following = period_index + 1
+        while following < len(text) and text[following].isspace():
+            following += 1
+        if (
+            len(token) == 1
+            and unicodedata.category(first) == "Lo"
+            and following < len(text)
+            and text[following].isdigit()
+        ):
+            protected[period_index] = True
 
 
 def _url_protected_end(text: str, start: int, end: int) -> int:

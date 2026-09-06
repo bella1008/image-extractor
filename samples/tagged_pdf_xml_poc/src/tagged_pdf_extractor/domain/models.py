@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from tagged_pdf_extractor.domain.inline_icon_policy import INLINE_ICON_REASON
+
 
 @dataclass(frozen=True)
 class Diagnostic:
@@ -117,7 +119,7 @@ class InlineIconHint:
     reference_font_size: float
     width_ratio: float
     height_ratio: float
-    reason: str = "small_inline_figure_with_adjacent_text"
+    reason: str = INLINE_ICON_REASON
 
 
 @dataclass(frozen=True)

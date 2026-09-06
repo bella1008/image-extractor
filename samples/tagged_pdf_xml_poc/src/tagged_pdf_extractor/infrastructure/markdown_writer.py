@@ -11,6 +11,13 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import QualityReport
+from tagged_pdf_extractor.domain.inline_icon_policy import (
+    INLINE_ICON_REASON,
+    MAX_INLINE_ICON_HEIGHT_FONT_RATIO,
+    MAX_INLINE_ICON_WIDTH_FONT_RATIO,
+    parse_positive_finite_number,
+    parse_unambiguous_bbox,
+)
 from tagged_pdf_extractor.domain.readability_formatting import (
     is_verified_subtitle_table_wrapper_pair,
     sentence_start_offsets,
@@ -79,6 +86,26 @@ _SENTENCE_BLOCK_BOUNDARY = object()
 class _SemanticTextFragment:
     element: ET.Element
     text: str
+
+
+@dataclass(frozen=True)
+class _SemanticInlineFigure:
+    element: ET.Element
+
+
+@dataclass(frozen=True)
+class _SemanticInlineText:
+    element: ET.Element
+    text: str
+
+
+@dataclass(frozen=True)
+class _SemanticInlineIconEvidence:
+    page_index: int
+    bbox: tuple[float, float, float, float]
+    reference_font_size: float
+    width_ratio: float
+    height_ratio: float
 
 
 @dataclass(frozen=True)
@@ -1053,6 +1080,7 @@ class MarkdownDocumentWriter:
         promoted: dict[ET.Element, dict[str, object]],
     ) -> None:
         sentence_offsets_by_element: dict[ET.Element, tuple[int, ...]] = {}
+        inline_icons: dict[ET.Element, _SemanticInlineIconEvidence] = {}
         for element in root.iter():
             display_role = element.get("display-role")
             has_sentence_attributes = any(
@@ -1074,7 +1102,7 @@ class MarkdownDocumentWriter:
                 name in element.attrib for name in _INLINE_ICON_ATTRIBUTE_NAMES
             )
             if display_role == "inline-icon":
-                cls._validate_inline_icon_evidence(element)
+                inline_icons[element] = cls._validate_inline_icon_evidence(element)
             elif has_icon_attributes:
                 raise ValueError(
                     "inline-icon attributes without inline-icon display role"
@@ -1084,6 +1112,7 @@ class MarkdownDocumentWriter:
             sentence_offsets_by_element,
             promoted,
         )
+        cls._validate_inline_icon_structures(root, inline_icons)
 
     @classmethod
     def _validate_sentence_boundaries(
@@ -1345,8 +1374,11 @@ class MarkdownDocumentWriter:
             )
         return "".join(characters), tuple(locations)
 
-    @staticmethod
-    def _validate_inline_icon_evidence(element: ET.Element) -> None:
+    @classmethod
+    def _validate_inline_icon_evidence(
+        cls,
+        element: ET.Element,
+    ) -> _SemanticInlineIconEvidence:
         if element.tag != "figure":
             raise ValueError("inline-icon must target figure")
         page_index = element.get("page-index")
@@ -1358,18 +1390,188 @@ class MarkdownDocumentWriter:
         reason = element.get("icon-reason")
         if reason is None or not reason.strip():
             raise ValueError("missing inline-icon icon-reason")
+        if reason != INLINE_ICON_REASON:
+            raise ValueError("invalid inline-icon icon-reason")
+
+        numbers: dict[str, float] = {}
         for name in (
             "reference-font-size",
             "width-font-ratio",
             "height-font-ratio",
         ):
-            value = element.get(name)
-            try:
-                number = float(value) if value is not None else math.nan
-            except ValueError as error:
-                raise ValueError(f"invalid inline-icon {name}") from error
-            if not math.isfinite(number) or number <= 0:
+            number = parse_positive_finite_number(element.get(name))
+            if number is None:
                 raise ValueError(f"invalid inline-icon {name}")
+            numbers[name] = number
+
+        width_ratio = numbers["width-font-ratio"]
+        height_ratio = numbers["height-font-ratio"]
+        if width_ratio > MAX_INLINE_ICON_WIDTH_FONT_RATIO:
+            raise ValueError("inline-icon width-font-ratio exceeds limit")
+        if height_ratio > MAX_INLINE_ICON_HEIGHT_FONT_RATIO:
+            raise ValueError("inline-icon height-font-ratio exceeds limit")
+
+        bbox = parse_unambiguous_bbox(cls._source_attribute_pairs(element))
+        if bbox is None:
+            raise ValueError("invalid inline-icon BBox")
+        reference_font_size = numbers["reference-font-size"]
+        expected_width_ratio = (bbox[2] - bbox[0]) / reference_font_size
+        expected_height_ratio = (bbox[3] - bbox[1]) / reference_font_size
+        if not math.isclose(width_ratio, expected_width_ratio, rel_tol=5e-7, abs_tol=5e-7):
+            raise ValueError("inline-icon width-font-ratio does not match BBox")
+        if not math.isclose(height_ratio, expected_height_ratio, rel_tol=5e-7, abs_tol=5e-7):
+            raise ValueError("inline-icon height-font-ratio does not match BBox")
+        if cls._inline_icon_has_visible_text(element):
+            raise ValueError("inline-icon figure contains visible text")
+
+        return _SemanticInlineIconEvidence(
+            page_index=int(page_index),
+            bbox=bbox,
+            reference_font_size=reference_font_size,
+            width_ratio=width_ratio,
+            height_ratio=height_ratio,
+        )
+
+    @staticmethod
+    def _source_attribute_pairs(element: ET.Element) -> tuple[tuple[object, object], ...]:
+        return tuple(
+            (attribute.get("name"), attribute.get("value"))
+            for attributes in element.findall("attributes")
+            for attribute in attributes.findall("attribute")
+        )
+
+    @classmethod
+    def _inline_icon_has_visible_text(cls, element: ET.Element) -> bool:
+        for descendant in element.iter():
+            if (descendant.get("actual-text") or "").strip():
+                return True
+            if descendant.tag == "text" and decode_data_element(descendant).strip():
+                return True
+        return False
+
+    @classmethod
+    def _validate_inline_icon_structures(
+        cls,
+        root: ET.Element,
+        icons: dict[ET.Element, _SemanticInlineIconEvidence],
+    ) -> None:
+        if not icons:
+            return
+        eligible: dict[ET.Element, tuple[bool, bool]] = {}
+        for flow in cls._inline_icon_flows(root):
+            for index, item in enumerate(flow):
+                if not isinstance(item, _SemanticInlineFigure) or item.element not in icons:
+                    continue
+                evidence = icons[item.element]
+                adjacent = tuple(
+                    text
+                    for text in (
+                        cls._adjacent_inline_text(flow, index, -1),
+                        cls._adjacent_inline_text(flow, index, 1),
+                    )
+                    if text is not None
+                )
+                eligible[item.element] = (
+                    bool(adjacent),
+                    any(
+                        cls._nonnegative_page_index(text.element) == evidence.page_index
+                        for text in adjacent
+                    ),
+                )
+
+        for element in icons:
+            relationship = eligible.get(element)
+            if relationship is None:
+                raise ValueError("ineligible inline-icon structure")
+            has_adjacent, has_same_page = relationship
+            if not has_adjacent:
+                raise ValueError("inline-icon requires adjacent visible text")
+            if not has_same_page:
+                raise ValueError("inline-icon requires adjacent same-page visible text")
+
+    @classmethod
+    def _inline_icon_flows(
+        cls,
+        root: ET.Element,
+    ) -> tuple[tuple[_SemanticInlineText | _SemanticInlineFigure, ...], ...]:
+        flows: list[tuple[_SemanticInlineText | _SemanticInlineFigure, ...]] = []
+
+        def visit(parent: ET.Element) -> None:
+            for child in cls._structural_children(parent):
+                if child.tag in {"heading", "caption", "label", "figure"}:
+                    continue
+                if child.tag == "paragraph":
+                    tokens = cls._inline_icon_tokens(child)
+                    if _SENTENCE_BLOCK_BOUNDARY not in tokens:
+                        flow = tuple(
+                            token
+                            for token in tokens
+                            if isinstance(token, (_SemanticInlineText, _SemanticInlineFigure))
+                        )
+                        if flow:
+                            flows.append(flow)
+                elif child.tag == "list_body":
+                    flows.extend(cls._inline_icon_segments(cls._inline_icon_tokens(child)))
+                visit(child)
+
+        visit(root)
+        return tuple(flows)
+
+    @classmethod
+    def _inline_icon_tokens(
+        cls,
+        parent: ET.Element,
+    ) -> tuple[_SemanticInlineText | _SemanticInlineFigure | object, ...]:
+        tokens: list[_SemanticInlineText | _SemanticInlineFigure | object] = []
+        for child in cls._structural_children(parent):
+            if child.tag == "text":
+                tokens.append(_SemanticInlineText(child, decode_data_element(child)))
+            elif child.tag in _SENTENCE_INLINE_TAGS:
+                tokens.extend(cls._inline_icon_tokens(child))
+            elif child.tag == "figure":
+                tokens.append(_SemanticInlineFigure(child))
+            else:
+                tokens.append(_SENTENCE_BLOCK_BOUNDARY)
+        return tuple(tokens)
+
+    @staticmethod
+    def _inline_icon_segments(
+        tokens: tuple[_SemanticInlineText | _SemanticInlineFigure | object, ...],
+    ) -> tuple[tuple[_SemanticInlineText | _SemanticInlineFigure, ...], ...]:
+        segments: list[tuple[_SemanticInlineText | _SemanticInlineFigure, ...]] = []
+        current: list[_SemanticInlineText | _SemanticInlineFigure] = []
+        for token in tokens:
+            if isinstance(token, (_SemanticInlineText, _SemanticInlineFigure)):
+                current.append(token)
+            elif current:
+                segments.append(tuple(current))
+                current = []
+        if current:
+            segments.append(tuple(current))
+        return tuple(segments)
+
+    @staticmethod
+    def _adjacent_inline_text(
+        flow: tuple[_SemanticInlineText | _SemanticInlineFigure, ...],
+        figure_index: int,
+        direction: int,
+    ) -> _SemanticInlineText | None:
+        index = figure_index + direction
+        while 0 <= index < len(flow):
+            item = flow[index]
+            if isinstance(item, _SemanticInlineFigure):
+                return None
+            if any(not character.isspace() for character in item.text):
+                return item
+            index += direction
+        return None
+
+    @staticmethod
+    def _nonnegative_page_index(element: ET.Element) -> int | None:
+        value = element.get("page-index")
+        if value is None or re.fullmatch(r"0|[1-9][0-9]*", value) is None:
+            return None
+        return int(value)
 
     @staticmethod
     def _is_preserved_line_break(element: ET.Element) -> bool:

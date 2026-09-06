@@ -471,12 +471,16 @@ def verified_subtitle_linked_body_paths(
     def visit(
         siblings: tuple[StructureElement | ContentFragment, ...],
         parent_path: tuple[int, ...],
+        ancestors: tuple[str, ...],
     ) -> None:
         for index, wrapper in enumerate(siblings):
             if not isinstance(wrapper, StructureElement):
                 continue
             wrapper_path = (*parent_path, index)
-            if index + 1 < len(siblings):
+            if (
+                not any(role in _FLOW_BARRIER_ROLES for role in ancestors)
+                and index + 1 < len(siblings)
+            ):
                 following = siblings[index + 1]
                 meaningful = tuple(
                     (child_index, child)
@@ -516,9 +520,13 @@ def verified_subtitle_linked_body_paths(
                     following_is_nonempty_inline_leaf=following_is_leaf,
                 ):
                     body_paths.add(following_path)
-            visit(wrapper.children, wrapper_path)
+            visit(
+                wrapper.children,
+                wrapper_path,
+                (*ancestors, wrapper.semantic_role),
+            )
 
-    visit(document.children, ())
+    visit(document.children, (), ())
     return tuple(sorted(body_paths))
 
 

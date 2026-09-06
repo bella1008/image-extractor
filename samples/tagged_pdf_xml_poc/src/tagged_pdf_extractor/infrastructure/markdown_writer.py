@@ -1183,41 +1183,41 @@ class MarkdownDocumentWriter:
         root: ET.Element,
     ) -> set[ET.Element]:
         bodies: set[ET.Element] = set()
-        for parent in root.iter():
+
+        def visit(parent: ET.Element, ancestors: tuple[str, ...]) -> None:
             siblings = cls._structural_children(parent)
-            for index in range(len(siblings) - 1):
-                wrapper = siblings[index]
-                following = siblings[index + 1]
-                meaningful = tuple(
-                    child
-                    for child in cls._structural_children(wrapper)
-                    if cls._is_meaningful_sentence_wrapper_child(child)
-                )
-                child_roles = tuple(child.tag for child in meaningful)
-                table_has_subtitle = (
-                    child_roles == ("table",)
-                    and any(
-                        descendant.tag == "paragraph"
-                        and descendant.get("display-role") == "subtitle"
-                        for descendant in meaningful[0].iter()
+            if not any(tag in _SENTENCE_FLOW_BARRIERS for tag in ancestors):
+                for index in range(len(siblings) - 1):
+                    wrapper = siblings[index]
+                    following = siblings[index + 1]
+                    meaningful = tuple(
+                        child
+                        for child in cls._structural_children(wrapper)
+                        if cls._is_meaningful_sentence_wrapper_child(child)
                     )
-                )
-                following_is_leaf = bool(
-                    following.tag == "paragraph"
-                    and any(
-                        fragment.text.strip()
-                        for flow in cls._leaf_sentence_paragraph_flows(following)
-                        for fragment in flow
+                    child_roles = tuple(child.tag for child in meaningful)
+                    table_has_subtitle = (
+                        child_roles == ("table",)
+                        and any(
+                            descendant.tag == "paragraph"
+                            and descendant.get("display-role") == "subtitle"
+                            for descendant in meaningful[0].iter()
+                        )
                     )
-                )
-                if is_verified_subtitle_table_wrapper_pair(
-                    wrapper_role=wrapper.tag,
-                    meaningful_wrapper_child_roles=child_roles,
-                    following_role=following.tag,
-                    table_contains_verified_subtitle=table_has_subtitle,
-                    following_is_nonempty_inline_leaf=following_is_leaf,
-                ):
-                    bodies.add(following)
+                    if is_verified_subtitle_table_wrapper_pair(
+                        wrapper_role=wrapper.tag,
+                        meaningful_wrapper_child_roles=child_roles,
+                        following_role=following.tag,
+                        table_contains_verified_subtitle=table_has_subtitle,
+                        following_is_nonempty_inline_leaf=(
+                            cls._is_nonempty_inline_sentence_paragraph(following)
+                        ),
+                    ):
+                        bodies.add(following)
+            for child in siblings:
+                visit(child, (*ancestors, child.tag))
+
+        visit(root, ())
         return bodies
 
     @classmethod
@@ -1233,6 +1233,33 @@ class MarkdownDocumentWriter:
                 for descendant in cls._structural_children(child)
             )
         return True
+
+    @classmethod
+    def _is_nonempty_inline_sentence_paragraph(
+        cls,
+        element: ET.Element,
+    ) -> bool:
+        if element.tag != "paragraph":
+            return False
+
+        has_visible_text = False
+
+        def visit_inline(parent: ET.Element) -> bool:
+            nonlocal has_visible_text
+            for child in cls._structural_children(parent):
+                if child.tag == "text":
+                    if decode_data_element(child).strip():
+                        has_visible_text = True
+                elif child.tag in _SENTENCE_INLINE_TAGS:
+                    if (child.get("actual-text") or "").strip():
+                        has_visible_text = True
+                    if not visit_inline(child):
+                        return False
+                else:
+                    return False
+            return True
+
+        return visit_inline(element) and has_visible_text
 
     @staticmethod
     def _eligible_sentence_paragraph_context(

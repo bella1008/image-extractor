@@ -189,7 +189,7 @@ This symbol indicates that high voltage is present inside. It is dangerous to ma
 
 ## Semantic Markdown 가독성 표시 계약
 
-Semantic Markdown의 `<br>`는 같은 원본 구조 단위 안의 표시용 문장 경계입니다. 하나의 source list item, paragraph 또는 table cell을 여러 구조 단위로 나눈다는 뜻이 아니며, Raw XML의 원문과 구조는 바꾸지 않습니다.
+Semantic Markdown의 `<br>`는 같은 원본 구조 단위 안의 표시용 문장 경계입니다. 일반 paragraph에서 이 표시를 허용하는 경우는 검증된 subtitle이 들어 있는 단독 table wrapper의 바로 다음 형제인, 비어 있지 않은 inline leaf paragraph뿐입니다. list item과 table cell에도 각 원본 단위 안에서만 표시하며, 어느 경우에도 원본 구조 단위를 여러 단위로 나누거나 Raw XML의 원문·구조를 바꾸지 않습니다.
 
 `[아이콘]`은 아이콘의 이름을 판별한 결과가 아닙니다. 주변 문장, 페이지, BBox, 상대 크기 근거로 확인된 이름 없는 작은 inline figure를 원래 문장 위치에 표시한 것입니다. `[그림: 텍스트 없음]`은 standalone, 큰 그림 또는 판별이 불확실한 figure에 사용하는 보수적인 fallback입니다.
 

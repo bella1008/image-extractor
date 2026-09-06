@@ -1727,6 +1727,49 @@ def test_sentence_breaks_render_in_subtitle_linked_body_paragraph(
 
 
 @pytest.mark.parametrize(
+    "barrier_tag",
+    ["heading", "caption", "label", "figure", "list", "table"],
+)
+def test_subtitle_linked_markdown_body_inside_barrier_is_not_eligible(
+    barrier_tag: str,
+) -> None:
+    root = ET.fromstring(
+        f"<document><{barrier_tag}>"
+        + _subtitle_linked_body_xml(
+            _sentence_text("First sentence. Second sentence.", "Second")
+        )
+        + f"</{barrier_tag}></document>"
+    )
+
+    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == set()
+
+
+def test_actual_text_only_inline_body_has_markdown_candidate_parity() -> None:
+    root = ET.fromstring(
+        "<document>"
+        + _subtitle_linked_body_xml(
+            '<span actual-text="Actual-text-only body." />'
+        )
+        + "</document>"
+    )
+    paragraphs = root.findall("./section/paragraph")
+
+    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == {
+        paragraphs[1]
+    }
+
+
+def test_whitespace_actual_text_only_inline_body_is_not_a_markdown_candidate() -> None:
+    root = ET.fromstring(
+        "<document>"
+        + _subtitle_linked_body_xml('<span actual-text=" &#10; " />')
+        + "</document>"
+    )
+
+    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == set()
+
+
+@pytest.mark.parametrize(
     ("body", "message"),
     [
         (

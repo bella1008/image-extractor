@@ -95,6 +95,18 @@ def _visible_source_text(value: str) -> str:
 
 
 def _semantic_review_tokens(root: ET.Element) -> list[str]:
+    source_text = {
+        element: _visible_source_text(decode_data_element(element))
+        for element in root.iter("text")
+    }
+    for display_token in ("<br>", "[아이콘]"):
+        assert all(
+            display_token not in value for value in source_text.values()
+        ), (
+            "Semantic XML source text contains Markdown display token "
+            f"{display_token!r}"
+        )
+
     suppressed_label_texts: set[ET.Element] = set()
     for item in root.iter("list_item"):
         direct_labels = [child for child in item if child.tag == "label"]
@@ -103,7 +115,7 @@ def _semantic_review_tokens(root: ET.Element) -> list[str]:
                 r"\s+",
                 " ",
                 "".join(
-                    _visible_source_text(decode_data_element(text))
+                    source_text[text]
                     for text in label.iter("text")
                 ),
             ).strip()
@@ -115,7 +127,7 @@ def _semantic_review_tokens(root: ET.Element) -> list[str]:
         for element in root.iter("text")
         if element not in suppressed_label_texts
         for token in _TEXT_TOKEN.findall(
-            _visible_source_text(decode_data_element(element))
+            source_text[element]
         )
     ]
 
@@ -232,6 +244,28 @@ def test_markdown_token_oracle_ignores_only_display_break_and_icon_tokens() -> N
         "Source",
         "note",
     ]
+
+
+@pytest.mark.parametrize("display_token", ["<br>", "[아이콘]"])
+def test_semantic_token_oracle_rejects_literal_markdown_display_tokens(
+    display_token: str,
+) -> None:
+    root = ET.fromstring(
+        "<document><paragraph><text>Literal "
+        + display_token.replace("<", "&lt;").replace(">", "&gt;")
+        + " source</text></paragraph></document>"
+    )
+
+    with pytest.raises(AssertionError, match="display token"):
+        _semantic_review_tokens(root)
+
+
+def test_semantic_token_oracle_never_removes_note_marker() -> None:
+    root = ET.fromstring(
+        "<document><paragraph><text>※ Source note</text></paragraph></document>"
+    )
+
+    assert _semantic_review_tokens(root) == ["※", "Source", "note"]
 
 
 def test_markdown_token_oracle_excludes_only_complex_table_structure_markers() -> None:

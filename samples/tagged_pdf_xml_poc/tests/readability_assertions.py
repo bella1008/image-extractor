@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -7,6 +8,8 @@ import pytest
 from tagged_pdf_extractor.domain.readability_formatting import (
     verified_subtitle_linked_body_paths,
 )
+from tagged_pdf_extractor.domain.text_joining import join_text_parts
+from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
 READABILITY_DISPLAY_ATTRIBUTES = frozenset(
@@ -141,6 +144,72 @@ def assert_inline_icon_evidence_matches_detector(
         assert actual[3:] == pytest.approx(wanted[3:], rel=1e-5, abs=1e-6)
 
 
+def _normalized_display_text(value: str) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        value.replace("<br>", " ")
+        .replace(r"\>", ">")
+        .replace(r"\[", "["),
+    ).strip()
+
+
+def _inline_navigation_flow(element: ET.Element) -> str | None:
+    parts: list[str] = []
+
+    def visit(parent: ET.Element) -> bool:
+        for child in parent:
+            if child.tag == "attributes":
+                continue
+            if child.tag == "text":
+                parts.append(decode_data_element(child))
+            elif (
+                child.tag == "figure"
+                and child.get("display-role") == "inline-icon"
+            ):
+                parts.append(" [아이콘] ")
+            elif child.tag in {"span", "link"}:
+                if (
+                    child.get("display-role") == "preserved-line-break"
+                    and child.get("actual-text") == "\n"
+                ):
+                    parts.append(" ")
+                elif not visit(child):
+                    return False
+            else:
+                return False
+        return True
+
+    if not visit(element):
+        return None
+    joined, _ = join_text_parts(tuple(parts))
+    return _normalized_display_text(joined)
+
+
+def assert_navigation_flows_preserved(
+    semantic_root: ET.Element,
+    markdown: str,
+) -> None:
+    flows: list[str] = []
+    for element in semantic_root.iter():
+        if element.tag not in {"paragraph", "list_body", "table_cell"}:
+            continue
+        flow = _inline_navigation_flow(element)
+        if flow and ">" in flow:
+            flows.append(flow)
+
+    assert flows, "Semantic XML must contain an OSD/navigation flow"
+    assert any(
+        any(character in flow for character in "/[]()") for flow in flows
+    ), "OSD/navigation flow must exercise source special characters"
+
+    normalized_markdown = _normalized_display_text(markdown)
+    for flow, expected_count in Counter(flows).items():
+        assert (
+            normalized_markdown.count(flow) >= expected_count
+        ), f"Markdown navigation flow missing or reordered: {flow!r}"
+
+
 def assert_generic_figure_fallback(semantic_root: ET.Element, markdown: str) -> None:
     generic_figures = [
         figure
@@ -148,7 +217,28 @@ def assert_generic_figure_fallback(semantic_root: ET.Element, markdown: str) -> 
         if figure.get("display-role") is None
     ]
     assert generic_figures
-    assert "[그림: 텍스트 없음]" in markdown
+    empty_figures: list[ET.Element] = []
+    textual_figures: list[str] = []
+    for figure in generic_figures:
+        text_nodes = list(figure.iter("text"))
+        visible_texts = [
+            decode_data_element(text).strip()
+            for text in text_nodes
+            if decode_data_element(text).strip()
+        ]
+        if visible_texts:
+            textual_figures.append(
+                _normalized_display_text(" ".join(visible_texts))
+            )
+        elif text_nodes:
+            empty_figures.append(figure)
+
+    assert empty_figures, "Semantic XML must contain an explicit empty figure"
+    assert markdown.count("[그림: 텍스트 없음]") == len(empty_figures)
+
+    normalized_markdown = _normalized_display_text(markdown)
+    for text, expected_count in Counter(textual_figures).items():
+        assert normalized_markdown.count(text) >= expected_count
 
 
 def assert_profile_readability_controls(document, report, artifacts) -> None:
@@ -163,8 +253,5 @@ def assert_profile_readability_controls(document, report, artifacts) -> None:
     assert_inline_icon_evidence_matches_detector(
         document, semantic_root, markdown
     )
+    assert_navigation_flows_preserved(semantic_root, markdown)
     assert_generic_figure_fallback(semantic_root, markdown)
-    assert all(
-        character in markdown
-        for character in (">", "/", "[", "]", "(", ")")
-    )

@@ -525,6 +525,64 @@ def test_verified_table_subtitle_links_only_immediately_following_leaf_body() ->
     )
 
 
+@pytest.mark.parametrize(
+    "barrier_role",
+    ["heading", "caption", "label", "figure", "list", "table"],
+)
+def test_subtitle_linked_body_inside_flow_barrier_is_not_discovered(
+    barrier_role: str,
+) -> None:
+    table, _ = _verified_subtitle_table()
+    text = "First sentence. Second sentence."
+    subtitle_path = (0, 0, 0, 0, 0, 1, 0)
+    hint = SubtitleHint(
+        child_path=subtitle_path,
+        font_weight=600,
+        comparison_body_font_weight=400,
+        observed_line_count=1,
+    )
+    document = _document(
+        _element(
+            "section",
+            _element(
+                barrier_role,
+                _element("paragraph", table),
+                _element("paragraph", _fragment(text, mcid=216)),
+            ),
+        ),
+        subtitle_hints=(hint,),
+    )
+
+    assert verified_subtitle_linked_body_paths(document) == ()
+    assert apply_readability_formatting(document).sentence_break_hints == ()
+
+
+def test_actual_text_only_inline_body_has_domain_candidate_parity() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element(
+            "paragraph",
+            _element("span", actual_text="Actual-text-only body."),
+        ),
+        subtitle_path=subtitle_path,
+    )
+
+    assert verified_subtitle_linked_body_paths(document) == ((0, 1),)
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_whitespace_actual_text_only_inline_body_is_not_a_candidate() -> None:
+    table, subtitle_path = _verified_subtitle_table()
+    document = _subtitle_linked_document(
+        _element("paragraph", table),
+        _element("paragraph", _element("span", actual_text=" \n ")),
+        subtitle_path=subtitle_path,
+    )
+
+    assert verified_subtitle_linked_body_paths(document) == ()
+
+
 def test_verified_table_subtitle_allows_whitespace_only_wrapper_sibling() -> None:
     table, subtitle_path = _verified_subtitle_table()
     text = "First sentence. Second sentence."

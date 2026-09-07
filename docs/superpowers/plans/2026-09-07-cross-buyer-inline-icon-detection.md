@@ -32,7 +32,7 @@
 - Modify: `samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/models.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_readability_formatting.py`
 
-- [ ] **Step 1: 판별 사유별 정책의 실패 테스트 작성**
+- [x] **Step 1: 판별 사유별 정책의 실패 테스트 작성**
 
 `test_readability_formatting.py`에 다음 계약을 추가한다.
 
@@ -76,7 +76,7 @@ def test_navigation_icon_hint_retains_route_audit_evidence() -> None:
     assert hint.route_parenthesized is True
 ```
 
-- [ ] **Step 2: 테스트를 실행해 현재 API 부재로 실패하는지 확인**
+- [x] **Step 2: 테스트를 실행해 현재 API 부재로 실패하는지 확인**
 
 Run:
 
@@ -86,7 +86,7 @@ Run:
 
 Expected: 새 상수·함수 또는 dataclass 필드가 없어 collection 또는 assertion이 FAIL.
 
-- [ ] **Step 3: 최소 정책 API와 모델 구현**
+- [x] **Step 3: 최소 정책 API와 모델 구현**
 
 `inline_icon_policy.py`에 호환 alias를 유지하면서 정책을 추가한다.
 
@@ -131,7 +131,7 @@ class InlineIconHint:
     route_parenthesized: bool | None = None
 ```
 
-- [ ] **Step 4: 정책 테스트와 기존 icon 테스트 실행**
+- [x] **Step 4: 정책 테스트와 기존 icon 테스트 실행**
 
 Run:
 
@@ -141,7 +141,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```powershell
 git add samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/inline_icon_policy.py samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/models.py samples/tagged_pdf_xml_poc/tests/test_readability_formatting.py
@@ -154,7 +154,7 @@ git commit -m "refactor: define reason-specific inline icon policy"
 - Modify: `samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/readability_formatting.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_readability_formatting.py`
 
-- [ ] **Step 1: 실제 실패 유형을 재현하는 테스트 작성**
+- [x] **Step 1: 실제 실패 유형을 재현하는 테스트 작성**
 
 다음 케이스를 fixture helper를 사용해 추가한다.
 
@@ -281,7 +281,7 @@ def test_generic_inline_icon_uses_contiguous_flow_median_font() -> None:
 
 `distant_separator` fixture는 문장 종결부호 또는 구조 barrier 뒤의 `>`가 후보의 local route segment에 포함되지 않는 구조로 만든다.
 
-- [ ] **Step 2: 새 테스트가 현재 detector에서 실패하는지 확인**
+- [x] **Step 2: 새 테스트가 현재 detector에서 실패하는지 확인**
 
 Run:
 
@@ -291,7 +291,7 @@ Run:
 
 Expected: navigation reason/근거가 없거나 기존 3.0/2.0 비율 때문에 FAIL.
 
-- [ ] **Step 3: 후보 로컬 경로 분석 helper 구현**
+- [x] **Step 3: 후보 로컬 경로 분석 helper 구현**
 
 `readability_formatting.py`에 내부 근거 타입과 helper를 추가한다.
 
@@ -319,7 +319,7 @@ def _is_separator_adjacent(text: str) -> bool:
 
 문구 문자열이나 언어 코드는 검사하지 않는다.
 
-- [ ] **Step 4: 두 경로 판별을 `_inline_icon_hint()`에 연결**
+- [x] **Step 4: 두 경로 판별을 `_inline_icon_hint()`에 연결**
 
 공통 BBox·page·visible figure text 검사를 먼저 수행한다. 그 뒤 다음 형태로 reason과 기준 글자 크기를 선택한다.
 
@@ -359,7 +359,7 @@ return InlineIconHint(
 
 generic 경로는 인라인 여부를 증명하기 위해 기존처럼 좌우 중 한쪽 이상의 visible adjacent fragment를 요구하되, 크기 중앙값은 same-page contiguous segment 전체에서 계산한다.
 
-- [ ] **Step 5: focused domain 테스트 실행**
+- [x] **Step 5: focused domain 테스트 실행**
 
 Run:
 
@@ -369,7 +369,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```powershell
 git add samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/readability_formatting.py samples/tagged_pdf_xml_poc/tests/test_readability_formatting.py
@@ -386,7 +386,7 @@ git commit -m "feat: detect navigation route inline icons"
 - Test: `samples/tagged_pdf_xml_poc/tests/test_markdown_writer.py`
 - Test: `samples/tagged_pdf_xml_poc/tests/test_display_hint_validation.py`
 
-- [ ] **Step 1: navigation-route XML round-trip 실패 테스트 작성**
+- [x] **Step 1: navigation-route XML round-trip 실패 테스트 작성**
 
 `test_xml_writer.py`에서 navigation hint를 만들고 다음 속성을 단언한다.
 
@@ -425,7 +425,7 @@ def test_navigation_route_icon_renders_neutral_icon_token(tmp_path: Path) -> Non
 - navigation reason이 5.0 또는 2.5를 초과함
 - 알 수 없는 reason
 
-- [ ] **Step 2: 직렬화·Markdown 테스트가 실패하는지 확인**
+- [x] **Step 2: 직렬화·Markdown 테스트가 실패하는지 확인**
 
 Run:
 
@@ -435,7 +435,7 @@ Run:
 
 Expected: route 속성 미지원 또는 reason 거부로 FAIL.
 
-- [ ] **Step 3: XML writer에 reason별 근거 직렬화 구현**
+- [x] **Step 3: XML writer에 reason별 근거 직렬화 구현**
 
 `_inline_icon_attributes()`는 공통 속성을 만든 뒤 navigation reason에만 다음을 추가한다.
 
@@ -458,7 +458,7 @@ elif (
     raise ValueError("generic inline icon contains route evidence")
 ```
 
-- [ ] **Step 4: Markdown validator를 reason별 정책으로 변경**
+- [x] **Step 4: Markdown validator를 reason별 정책으로 변경**
 
 고정 `INLINE_ICON_REASON` 비교와 단일 비율 상한 대신 다음 정책을 사용한다.
 
@@ -473,11 +473,11 @@ navigation reason은 count가 정수 2 이상인지, parenthesized가 정확히 
 
 `_SemanticInlineIconEvidence`에도 reason과 route 근거를 보관해 구조 검증 단계에서 손실되지 않게 한다.
 
-- [ ] **Step 5: domain hint validation에 reason별 불변조건 추가**
+- [x] **Step 5: domain hint validation에 reason별 불변조건 추가**
 
 `display_hint_validation.py`에서 `inline_icon_ratio_limits(hint.reason)`을 호출해 reason을 검증하고, navigation reason에는 route count/boolean을 요구하며 generic reason에는 두 필드가 모두 `None`인지 검사한다. 마지막에는 기존처럼 detector 결과와 dataclass의 완전 일치를 요구한다.
 
-- [ ] **Step 6: 관련 writer/validator 테스트 전체 실행**
+- [x] **Step 6: 관련 writer/validator 테스트 전체 실행**
 
 Run:
 
@@ -487,7 +487,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```powershell
 git add samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/infrastructure/xml_writer.py samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/infrastructure/markdown_writer.py samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor/domain/display_hint_validation.py samples/tagged_pdf_xml_poc/tests/test_xml_writer.py samples/tagged_pdf_xml_poc/tests/test_markdown_writer.py samples/tagged_pdf_xml_poc/tests/test_display_hint_validation.py
@@ -500,7 +500,7 @@ git commit -m "feat: preserve navigation icon evidence in XML"
 - Modify: `samples/tagged_pdf_xml_poc/tests/readability_assertions.py`
 - Modify: `samples/tagged_pdf_xml_poc/tests/test_layout_regression.py`
 
-- [ ] **Step 1: 산출물 reason별 근거 검사 추가**
+- [x] **Step 1: 산출물 reason별 근거 검사 추가**
 
 `assert_inline_icon_evidence_matches_detector()`에서 XML의 `icon-reason`을 detector hint와 비교한다. navigation reason이면 다음도 비교한다.
 
@@ -515,7 +515,7 @@ assert (element.attrib["route-parenthesized"] == "true") is (
 
 generic reason이면 route 전용 XML 속성이 없음을 단언한다. model hint 수, XML inline-icon 수, Markdown `[아이콘]` 수의 기존 동일성 검사는 유지한다.
 
-- [ ] **Step 2: 문의한 경로의 회귀 assertion 작성**
+- [x] **Step 2: 문의한 경로의 회귀 assertion 작성**
 
 ZG·ZC·KR 실물 테스트에 문구 전체 일치를 하드코딩하지 않고 구조를 검사하는 helper를 추가한다.
 
@@ -529,7 +529,7 @@ def _assert_repeated_navigation_routes_use_icons(root: ET.Element) -> None:
 
 `_navigation_route_flows()`는 paragraph/list-body의 로컬 `>` 구간만 반환하고 source token, 언어, Settings 등의 단어를 검사하지 않는다. ZG, ZC, KR 필수 샘플에 적용하고 ZA·XY optional 실물 테스트에도 동일 helper를 적용한다.
 
-- [ ] **Step 3: 실물 테스트가 현재 산출에서 실패하는지 확인**
+- [x] **Step 3: 실물 테스트가 현재 산출에서 실패하는지 확인**
 
 Run:
 
@@ -543,13 +543,13 @@ $env:TAGGED_PDF_KR_SAMPLE = (Resolve-Path "..\SUG_RAW\TV_KR\BN68-25108A-00_SUG_Y
 
 Expected: 기존에 `[그림: 텍스트 없음]`으로 남은 route figure 때문에 FAIL.
 
-- [ ] **Step 4: 새 detector로 ZG·ZC·KR 회귀 통과 확인**
+- [x] **Step 4: 새 detector로 ZG·ZC·KR 회귀 통과 확인**
 
 같은 명령을 다시 실행한다.
 
 Expected: PASS이며 세 `extraction_report.json` 모두 `status=pass`.
 
-- [ ] **Step 5: ZA·XY 선택 회귀 실행**
+- [x] **Step 5: ZA·XY 선택 회귀 실행**
 
 ```powershell
 $env:TAGGED_PDF_ZA_SAMPLE = (Resolve-Path "..\SUG_RAW\TV_ZA\BN68-25099A-00_SUG_Y26 TV ALL_ZA_ENG_251217.0.pdf").Path
@@ -559,7 +559,7 @@ $env:TAGGED_PDF_XY_SAMPLE = (Resolve-Path "..\SUG_RAW\TV_XY\BN68-25031B-00_SUG_Y
 
 Expected: PASS. ZA·XY도 별도 dispatch 없이 같은 navigation reason을 사용한다.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```powershell
 git add samples/tagged_pdf_xml_poc/tests/readability_assertions.py samples/tagged_pdf_xml_poc/tests/test_layout_regression.py
@@ -572,7 +572,7 @@ git commit -m "test: gate navigation icons across buyer samples"
 - Generated, ignored: `samples/tagged_pdf_xml_poc/outputs/navigation_icon_review_*_260907/`
 - Modify if required by verified behavior only: `samples/tagged_pdf_xml_poc/README.md`
 
-- [ ] **Step 1: ZG·ZC·KR 검토 bundle 재생성**
+- [x] **Step 1: ZG·ZC·KR 검토 bundle 재생성**
 
 각 샘플에 현재 CLI를 실행한다.
 
@@ -584,7 +584,7 @@ git commit -m "test: gate navigation icons across buyer samples"
 
 Expected: 세 명령 모두 exit code `0`, report `status=pass`.
 
-- [ ] **Step 2: 사람 검토용 핵심 지점 확인**
+- [x] **Step 2: 사람 검토용 핵심 지점 확인**
 
 - ZG 기존 MD 27~29, 438~454, 464~466에 대응하는 새 경로에서 모든 실제 OSD 그림이 `[아이콘]`인지 확인한다.
 - ZC의 Internet security 및 Troubleshooting OSD 경로를 확인한다.
@@ -592,7 +592,7 @@ Expected: 세 명령 모두 exit code `0`, report `status=pass`.
 - Wall-anchor 같은 비경로 인라인 아이콘이 계속 `[아이콘]`인지 확인한다.
 - 독립 그림과 안전 심볼 표가 무리하게 전부 `[아이콘]`으로 바뀌지 않았는지 확인한다.
 
-- [ ] **Step 3: 산출물 정합성 자동 점검**
+- [x] **Step 3: 산출물 정합성 자동 점검**
 
 각 bundle에 대해 다음을 검사한다.
 
@@ -603,7 +603,7 @@ Expected: 세 명령 모두 exit code `0`, report `status=pass`.
 - sentence break 수와 기존 검토 baseline이 동일함
 - headings/lists/tables/RF/DoC 관련 기존 assertion이 모두 통과함
 
-- [ ] **Step 4: 전체 테스트와 compileall 실행**
+- [x] **Step 4: 전체 테스트와 compileall 실행**
 
 ```powershell
 .\.venv\Scripts\python -m pytest tests -q
@@ -612,7 +612,7 @@ Expected: 세 명령 모두 exit code `0`, report `status=pass`.
 
 Expected: pytest PASS(환경상 Windows symlink 테스트만 skip 가능), compileall exit code `0`.
 
-- [ ] **Step 5: README 감사 설명 갱신**
+- [x] **Step 5: README 감사 설명 갱신**
 
 실제 결과가 설계와 일치할 때만 README의 아이콘 설명을 다음 의미로 갱신한다.
 
@@ -622,14 +622,14 @@ Expected: pytest PASS(환경상 Windows symlink 테스트만 skip 가능), compi
 판별 reason과 상대 크기 근거는 semantic XML에 보존된다.
 ```
 
-- [ ] **Step 6: 최종 변경 커밋**
+- [x] **Step 6: 최종 변경 커밋**
 
 ```powershell
 git add samples/tagged_pdf_xml_poc/README.md
 git commit -m "docs: record cross-buyer navigation icon policy"
 ```
 
-- [ ] **Step 7: 최종 diff 확인**
+- [x] **Step 7: 최종 diff 확인**
 
 ```powershell
 git status --short

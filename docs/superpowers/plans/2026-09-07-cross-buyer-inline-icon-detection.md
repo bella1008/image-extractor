@@ -311,7 +311,7 @@ def _is_separator_adjacent(text: str) -> bool:
 `_navigation_route_evidence(flow, index, page_index)`는 다음 순서로 동작한다.
 
 1. candidate 주변에서 구조적으로 연속된 same-page fragment/figure segment를 선택한다.
-2. candidate의 가장 가까운 visible 좌우 fragment 중 한쪽 이상에 `_is_separator_adjacent()`가 참인지 확인한다.
+2. candidate의 가장 가까운 visible 좌우 fragment 중 한쪽 이상에 `_is_separator_adjacent()`가 참인지 확인한다. 또는 후보 직후부터 첫 `>` 전까지 비어 있지 않은 균형 잡힌 괄호 라벨이 있으면 `그림 (조작 라벨) > 동작 > 동작` 구조의 인접 근거로 인정한다.
 3. 후보를 감싸는 가장 가까운 `(` … `)` 범위가 있으면 그 범위를 local window로 사용하고 `parenthesized=True`로 기록한다.
 4. 괄호 범위가 없으면 sentence terminator 또는 flow 끝까지의 candidate-local window를 사용한다.
 5. window의 ASCII `>` 개수가 2 미만이면 `None`을 반환한다.

@@ -28,6 +28,24 @@ def inline_icon_ratio_limits(reason: str) -> tuple[float, float]:
     raise ValueError(f"unknown inline icon reason: {reason}")
 
 
+def starts_with_balanced_parenthesized_label(value: str) -> bool:
+    text = value.lstrip()
+    if not text.startswith("("):
+        return False
+
+    depth = 0
+    for index, character in enumerate(text):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return bool(text[1:index].strip())
+            if depth < 0:
+                return False
+    return False
+
+
 def parse_unambiguous_bbox(
     attributes: Iterable[tuple[object, object]],
 ) -> tuple[float, float, float, float] | None:

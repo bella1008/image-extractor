@@ -17,6 +17,7 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
     NAVIGATION_ROUTE_INLINE_ICON_REASON,
     inline_icon_ratio_limits,
     parse_unambiguous_bbox,
+    starts_with_balanced_parenthesized_label,
 )
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_nonempty_inline_paragraph,
@@ -320,10 +321,15 @@ def _navigation_route_evidence(
         )
         if fragment is not None
     )
-    if not nearest or not any(
+    separator_adjacent = bool(nearest) and any(
         _is_navigation_separator_adjacent(item.fragment.text)
         for item in nearest
-    ):
+    )
+    parenthesized_label_follows = _parenthesized_label_follows_candidate(
+        segment,
+        candidate_index,
+    )
+    if not separator_adjacent and not parenthesized_label_follows:
         return None
 
     separator_count = sum(
@@ -348,7 +354,9 @@ def _navigation_route_evidence(
         for item in segment[candidate_index + 1 :]
         if isinstance(item, _InlineFlowFragment)
     )
-    parenthesized = before.rfind("(") > before.rfind(")") and ")" in after
+    parenthesized = (
+        before.rfind("(") > before.rfind(")") and ")" in after
+    ) or parenthesized_label_follows
     return _NavigationRouteEvidence(
         separator_count=separator_count,
         parenthesized=parenthesized,
@@ -359,6 +367,21 @@ def _navigation_route_evidence(
 def _is_navigation_separator_adjacent(text: str) -> bool:
     stripped = text.strip()
     return stripped.startswith(">") or stripped.endswith(">")
+
+
+def _parenthesized_label_follows_candidate(
+    segment: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
+    candidate_index: int,
+) -> bool:
+    prefix_parts: list[str] = []
+    for item in segment[candidate_index + 1 :]:
+        if isinstance(item, _InlineFlowFigure):
+            break
+        before_separator, separator, _ = item.fragment.text.partition(">")
+        prefix_parts.append(before_separator)
+        if separator:
+            break
+    return starts_with_balanced_parenthesized_label("".join(prefix_parts))
 
 
 def _flow_reference_font_size(

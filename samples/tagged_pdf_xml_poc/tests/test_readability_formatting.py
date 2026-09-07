@@ -1075,6 +1075,23 @@ def test_navigation_route_accepts_elongated_24_by_9_button_icon() -> None:
     assert hint.width_ratio == 24.0 / 6.5
 
 
+def test_navigation_route_accepts_icon_before_parenthesized_control_label() -> None:
+    document = _document(
+        _element(
+            "list_body",
+            _styled_fragment("Press ", mcid=218),
+            _figure(bbox_value="[100.0, 200.0, 124.0, 209.0]"),
+            _styled_fragment(" (Volume) button. > Up > Down > Up", mcid=219),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.reason == NAVIGATION_ROUTE_INLINE_ICON_REASON
+    assert hint.route_separator_count == 3
+    assert hint.route_parenthesized is True
+
+
 def test_single_separator_does_not_enable_navigation_route() -> None:
     document = _document(
         _element(

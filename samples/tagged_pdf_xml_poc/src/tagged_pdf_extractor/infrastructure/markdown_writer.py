@@ -17,6 +17,7 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
     inline_icon_ratio_limits,
     parse_positive_finite_number,
     parse_unambiguous_bbox,
+    starts_with_balanced_parenthesized_label,
 )
 from tagged_pdf_extractor.domain.readability_formatting import (
     is_verified_subtitle_table_wrapper_pair,
@@ -1603,6 +1604,13 @@ class MarkdownDocumentWriter:
             or text.text.strip().endswith(">")
             for text in adjacent
         )
+        parenthesized_label_follows = (
+            cls._parenthesized_label_follows_inline_candidate(
+                segment,
+                candidate_index,
+            )
+        )
+        separator_adjacent = separator_adjacent or parenthesized_label_follows
         separator_count = sum(
             item.text.count(">")
             for item in segment
@@ -1618,8 +1626,26 @@ class MarkdownDocumentWriter:
             for item in segment[candidate_index + 1 :]
             if isinstance(item, _SemanticInlineText)
         )
-        parenthesized = before.rfind("(") > before.rfind(")") and ")" in after
+        parenthesized = (
+            before.rfind("(") > before.rfind(")") and ")" in after
+        ) or parenthesized_label_follows
         return separator_adjacent, separator_count, parenthesized
+
+    @classmethod
+    def _parenthesized_label_follows_inline_candidate(
+        cls,
+        segment: tuple[_SemanticInlineText | _SemanticInlineFigure, ...],
+        candidate_index: int,
+    ) -> bool:
+        prefix_parts: list[str] = []
+        for item in segment[candidate_index + 1 :]:
+            if isinstance(item, _SemanticInlineFigure):
+                break
+            before_separator, separator, _ = item.text.partition(">")
+            prefix_parts.append(before_separator)
+            if separator:
+                break
+        return starts_with_balanced_parenthesized_label("".join(prefix_parts))
 
     @classmethod
     def _inline_icon_flows(

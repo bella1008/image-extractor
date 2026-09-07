@@ -81,11 +81,11 @@ Failure of any mandatory check leaves the node as a generic figure.
 
 Build a local token window around each candidate figure from the existing inline flow. A candidate has strong navigation-route evidence when:
 
-1. The nearest visible token on at least one side begins or ends with the ASCII `>` separator after whitespace normalization.
+1. Either the nearest visible token on at least one side begins or ends with the ASCII `>` separator after whitespace normalization, or the figure is immediately followed by a balanced non-empty parenthesized control label before the first `>` separator.
 2. The contiguous flow segment contains at least two `>` separators and at least one visible non-punctuation text token.
 3. No structural barrier or page transition occurs inside that segment.
 
-Balanced `(` and `)` surrounding the segment increase confidence and are serialized as audit evidence, but they are not required. A single parenthesis or a single `>` is never enough.
+Balanced `(` and `)` surrounding the segment increase confidence and are serialized as audit evidence. A balanced control label immediately after a candidate also supplies local adjacency evidence for layouts such as `figure (control label) > action > action`. Parentheses are not otherwise required, and a single parenthesis or a single `>` is never enough.
 
 The detector must inspect a candidate-local token window, not merely ask whether the entire parent paragraph contains `>`. This prevents an unrelated comparison symbol elsewhere in a long paragraph from classifying every figure in that paragraph.
 
@@ -175,4 +175,3 @@ The raw tagged structure and source text are not rewritten.
 - Existing generic inline icons remain detected.
 - Ambiguous or standalone images remain `[그림: 텍스트 없음]`.
 - Required focused tests, real-PDF regressions, and `python -m compileall src tests` pass.
-

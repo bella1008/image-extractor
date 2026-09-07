@@ -481,6 +481,18 @@ def _assert_zg_inline_osd_icons(root: ET.Element, markdown: str) -> None:
         assert expected.count("[아이콘]") == 2
         assert expected in normalized_markdown
 
+    remote_sequence_flows = [
+        element
+        for element in root.iter("list_body")
+        if _element_text(element).count(">") == 6
+        and len(element.findall(".//figure")) == 4
+    ]
+    assert len(remote_sequence_flows) == 10
+    assert all(
+        len(flow.findall(".//figure[@display-role='inline-icon']")) == 4
+        for flow in remote_sequence_flows
+    )
+
 
 def _assert_zg_note_markers_and_plain_model_labels(
     root: ET.Element, markdown: str

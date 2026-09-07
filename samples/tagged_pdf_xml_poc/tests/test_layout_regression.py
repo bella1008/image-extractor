@@ -839,6 +839,7 @@ def test_za_retains_complete_structure_and_clean_page_text(za_bundle) -> None:
         body_size=7.0,
     )
     _assert_no_zg_profile_display_evidence(document, artifacts.semantic_xml)
+    _assert_profile_readability_controls(document, report, artifacts)
 
 
 def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> None:
@@ -1003,6 +1004,8 @@ def _assert_non_zg_profile_bundle(
 
 def test_xy_retains_structure_without_zg_display_rules(xy_bundle) -> None:
     _assert_non_zg_profile_bundle(xy_bundle, _XY_NUMBERED_HEADINGS)
+    document, report, artifacts = xy_bundle
+    _assert_profile_readability_controls(document, report, artifacts)
 
 
 def test_kr_retains_structure_without_zg_display_rules(kr_bundle) -> None:

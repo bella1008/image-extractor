@@ -633,8 +633,8 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         _assert_candidate_headings(indented_heading, expected_headings)
 
     assert (
-        "( > left directional button > Settings > Support > Tips and User "
-        "Guides > Open User Guide)"
+        "( [아이콘] > left directional button > [아이콘] Settings > Support > "
+        "Tips and User Guides > Open User Guide)"
     ) in markdown
     assert report_data["metrics"]["forbidden_xml_control_count"] == 0
     assert report_data["metrics"]["forbidden_xml_control_field_count"] == 0

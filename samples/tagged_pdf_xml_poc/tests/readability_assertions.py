@@ -21,6 +21,8 @@ READABILITY_DISPLAY_ATTRIBUTES = frozenset(
         "reference-font-size",
         "width-font-ratio",
         "height-font-ratio",
+        "route-separator-count",
+        "route-parenthesized",
         "subtitle-reason",
         "font-weight",
         "comparison-body-font-weight",
@@ -122,6 +124,16 @@ def assert_inline_icon_evidence_matches_detector(
             float(element.attrib["reference-font-size"]),
             float(element.attrib["width-font-ratio"]),
             float(element.attrib["height-font-ratio"]),
+            (
+                int(element.attrib["route-separator-count"])
+                if "route-separator-count" in element.attrib
+                else None
+            ),
+            (
+                element.attrib["route-parenthesized"] == "true"
+                if "route-parenthesized" in element.attrib
+                else None
+            ),
         )
         for element in evidence
     )
@@ -133,6 +145,8 @@ def assert_inline_icon_evidence_matches_detector(
             hint.reference_font_size,
             hint.width_ratio,
             hint.height_ratio,
+            hint.route_separator_count,
+            hint.route_parenthesized,
         )
         for hint in document.inline_icon_hints
     )
@@ -141,7 +155,8 @@ def assert_inline_icon_evidence_matches_detector(
         assert actual[0] == wanted[0]
         assert actual[1] == pytest.approx(wanted[1])
         assert actual[2] == wanted[2]
-        assert actual[3:] == pytest.approx(wanted[3:], rel=1e-5, abs=1e-6)
+        assert actual[3:6] == pytest.approx(wanted[3:6], rel=1e-5, abs=1e-6)
+        assert actual[6:] == wanted[6:]
 
 
 def _normalized_display_text(value: str) -> str:

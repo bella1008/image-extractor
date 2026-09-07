@@ -13,8 +13,9 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.domain.inline_icon_policy import (
-    MAX_INLINE_ICON_HEIGHT_FONT_RATIO,
-    MAX_INLINE_ICON_WIDTH_FONT_RATIO,
+    GENERIC_INLINE_ICON_REASON,
+    NAVIGATION_ROUTE_INLINE_ICON_REASON,
+    inline_icon_ratio_limits,
     parse_unambiguous_bbox,
 )
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
@@ -71,6 +72,13 @@ class _InlineFlowFragment:
 class _InlineFlowFigure:
     child_path: tuple[int, ...]
     figure: StructureElement
+
+
+@dataclass(frozen=True)
+class _NavigationRouteEvidence:
+    separator_count: int
+    parenthesized: bool
+    reference_font_size: float
 
 
 def detect_sentence_break_hints(
@@ -229,29 +237,31 @@ def _inline_icon_hint(
         if fragment is not None
         and fragment.fragment.page_index == figure.page_index
     )
-    font_weights_by_fragment = tuple(
-        _visible_font_size_weights(fragment.fragment) for fragment in adjacent
-    )
-    if not font_weights_by_fragment or any(
-        weights is None for weights in font_weights_by_fragment
-    ):
+    if not adjacent:
         return None
 
-    reference_font_size = _weighted_median(
-        tuple(
-            weight
-            for weights in font_weights_by_fragment
-            if weights is not None
-            for weight in weights
-        )
+    same_page_segment = _same_page_segment(flow, index, figure.page_index)
+    route_evidence = _navigation_route_evidence(
+        same_page_segment,
+        same_page_segment.index(candidate),
     )
+    reason = GENERIC_INLINE_ICON_REASON
+    if route_evidence is not None:
+        reason = NAVIGATION_ROUTE_INLINE_ICON_REASON
+        reference_font_size = route_evidence.reference_font_size
+    else:
+        reference_font_size = _flow_reference_font_size(same_page_segment)
+        if reference_font_size is None:
+            return None
+
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
     width_ratio = width / reference_font_size
     height_ratio = height / reference_font_size
+    max_width_ratio, max_height_ratio = inline_icon_ratio_limits(reason)
     if (
-        width_ratio > MAX_INLINE_ICON_WIDTH_FONT_RATIO
-        or height_ratio > MAX_INLINE_ICON_HEIGHT_FONT_RATIO
+        width_ratio > max_width_ratio
+        or height_ratio > max_height_ratio
     ):
         return None
 
@@ -262,7 +272,118 @@ def _inline_icon_hint(
         reference_font_size=reference_font_size,
         width_ratio=width_ratio,
         height_ratio=height_ratio,
+        reason=reason,
+        route_separator_count=(
+            route_evidence.separator_count
+            if route_evidence is not None
+            else None
+        ),
+        route_parenthesized=(
+            route_evidence.parenthesized
+            if route_evidence is not None
+            else None
+        ),
     )
+
+
+def _same_page_segment(
+    flow: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
+    candidate_index: int,
+    page_index: int,
+) -> tuple[_InlineFlowFragment | _InlineFlowFigure, ...]:
+    start = candidate_index
+    while start > 0 and _flow_item_page_index(flow[start - 1]) == page_index:
+        start -= 1
+    end = candidate_index + 1
+    while end < len(flow) and _flow_item_page_index(flow[end]) == page_index:
+        end += 1
+    return flow[start:end]
+
+
+def _flow_item_page_index(
+    item: _InlineFlowFragment | _InlineFlowFigure,
+) -> int | None:
+    if isinstance(item, _InlineFlowFragment):
+        return item.fragment.page_index
+    return item.figure.page_index
+
+
+def _navigation_route_evidence(
+    segment: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
+    candidate_index: int,
+) -> _NavigationRouteEvidence | None:
+    nearest = tuple(
+        fragment
+        for fragment in (
+            _adjacent_visible_fragment(segment, candidate_index, -1),
+            _adjacent_visible_fragment(segment, candidate_index, 1),
+        )
+        if fragment is not None
+    )
+    if not nearest or not any(
+        _is_navigation_separator_adjacent(item.fragment.text)
+        for item in nearest
+    ):
+        return None
+
+    separator_count = sum(
+        item.fragment.text.count(">")
+        for item in segment
+        if isinstance(item, _InlineFlowFragment)
+    )
+    if separator_count < 2:
+        return None
+
+    reference_font_size = _flow_reference_font_size(segment)
+    if reference_font_size is None:
+        return None
+
+    before = "".join(
+        item.fragment.text
+        for item in segment[:candidate_index]
+        if isinstance(item, _InlineFlowFragment)
+    )
+    after = "".join(
+        item.fragment.text
+        for item in segment[candidate_index + 1 :]
+        if isinstance(item, _InlineFlowFragment)
+    )
+    parenthesized = before.rfind("(") > before.rfind(")") and ")" in after
+    return _NavigationRouteEvidence(
+        separator_count=separator_count,
+        parenthesized=parenthesized,
+        reference_font_size=reference_font_size,
+    )
+
+
+def _is_navigation_separator_adjacent(text: str) -> bool:
+    stripped = text.strip()
+    return stripped.startswith(">") or stripped.endswith(">")
+
+
+def _flow_reference_font_size(
+    segment: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
+) -> float | None:
+    weights: list[tuple[float, int]] = []
+    for item in segment:
+        if not isinstance(item, _InlineFlowFragment):
+            continue
+        if _visible_character_count(item.fragment.text) == 0:
+            continue
+        fragment_weights = _visible_font_size_weights(item.fragment)
+        if fragment_weights is None:
+            return None
+        weights.extend(fragment_weights)
+    if not weights:
+        return None
+
+    largest_font_size = max(font_size for font_size, _ in weights)
+    credible_weights = tuple(
+        (font_size, weight)
+        for font_size, weight in weights
+        if font_size >= largest_font_size * 0.5
+    )
+    return _weighted_median(credible_weights)
 
 
 def _adjacent_visible_fragment(

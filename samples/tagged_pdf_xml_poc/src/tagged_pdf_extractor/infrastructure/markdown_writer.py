@@ -12,9 +12,9 @@ from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import QualityReport
 from tagged_pdf_extractor.domain.inline_icon_policy import (
-    INLINE_ICON_REASON,
-    MAX_INLINE_ICON_HEIGHT_FONT_RATIO,
-    MAX_INLINE_ICON_WIDTH_FONT_RATIO,
+    GENERIC_INLINE_ICON_REASON,
+    NAVIGATION_ROUTE_INLINE_ICON_REASON,
+    inline_icon_ratio_limits,
     parse_positive_finite_number,
     parse_unambiguous_bbox,
 )
@@ -66,6 +66,8 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
         "reference-font-size",
         "width-font-ratio",
         "height-font-ratio",
+        "route-separator-count",
+        "route-parenthesized",
     }
 )
 _INLINE_ICON_TOKEN = "[아이콘]"
@@ -101,11 +103,14 @@ class _SemanticInlineText:
 
 @dataclass(frozen=True)
 class _SemanticInlineIconEvidence:
+    reason: str
     page_index: int
     bbox: tuple[float, float, float, float]
     reference_font_size: float
     width_ratio: float
     height_ratio: float
+    route_separator_count: int | None = None
+    route_parenthesized: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -1390,8 +1395,30 @@ class MarkdownDocumentWriter:
         reason = element.get("icon-reason")
         if reason is None or not reason.strip():
             raise ValueError("missing inline-icon icon-reason")
-        if reason != INLINE_ICON_REASON:
+        try:
+            max_width_ratio, max_height_ratio = inline_icon_ratio_limits(reason)
+        except ValueError as exc:
             raise ValueError("invalid inline-icon icon-reason")
+
+        route_separator_count: int | None = None
+        route_parenthesized: bool | None = None
+        if reason == NAVIGATION_ROUTE_INLINE_ICON_REASON:
+            raw_count = element.get("route-separator-count")
+            if raw_count is None:
+                raise ValueError("missing navigation route-separator-count")
+            if re.fullmatch(r"[2-9]|[1-9][0-9]+", raw_count) is None:
+                raise ValueError("invalid navigation route-separator-count")
+            route_separator_count = int(raw_count)
+            raw_parenthesized = element.get("route-parenthesized")
+            if raw_parenthesized not in {"true", "false"}:
+                raise ValueError("invalid navigation route-parenthesized")
+            route_parenthesized = raw_parenthesized == "true"
+        elif reason == GENERIC_INLINE_ICON_REASON:
+            if (
+                "route-separator-count" in element.attrib
+                or "route-parenthesized" in element.attrib
+            ):
+                raise ValueError("generic inline-icon contains route evidence")
 
         numbers: dict[str, float] = {}
         for name in (
@@ -1406,9 +1433,9 @@ class MarkdownDocumentWriter:
 
         width_ratio = numbers["width-font-ratio"]
         height_ratio = numbers["height-font-ratio"]
-        if width_ratio > MAX_INLINE_ICON_WIDTH_FONT_RATIO:
+        if width_ratio > max_width_ratio:
             raise ValueError("inline-icon width-font-ratio exceeds limit")
-        if height_ratio > MAX_INLINE_ICON_HEIGHT_FONT_RATIO:
+        if height_ratio > max_height_ratio:
             raise ValueError("inline-icon height-font-ratio exceeds limit")
 
         bbox = parse_unambiguous_bbox(cls._source_attribute_pairs(element))
@@ -1425,11 +1452,14 @@ class MarkdownDocumentWriter:
             raise ValueError("inline-icon figure contains visible text")
 
         return _SemanticInlineIconEvidence(
+            reason=reason,
             page_index=int(page_index),
             bbox=bbox,
             reference_font_size=reference_font_size,
             width_ratio=width_ratio,
             height_ratio=height_ratio,
+            route_separator_count=route_separator_count,
+            route_parenthesized=route_parenthesized,
         )
 
     @staticmethod
@@ -1457,7 +1487,7 @@ class MarkdownDocumentWriter:
     ) -> None:
         if not icons:
             return
-        eligible: dict[ET.Element, tuple[bool, bool]] = {}
+        eligible: dict[ET.Element, tuple[bool, bool, bool, int, bool]] = {}
         for flow in cls._inline_icon_flows(root):
             for index, item in enumerate(flow):
                 if not isinstance(item, _SemanticInlineFigure) or item.element not in icons:
@@ -1471,23 +1501,125 @@ class MarkdownDocumentWriter:
                     )
                     if text is not None
                 )
+                same_page_segment, local_index = cls._same_page_inline_segment(
+                    flow,
+                    index,
+                    evidence.page_index,
+                )
+                separator_adjacent, separator_count, parenthesized = (
+                    cls._semantic_navigation_route_evidence(
+                        same_page_segment,
+                        local_index,
+                    )
+                )
                 eligible[item.element] = (
                     bool(adjacent),
                     any(
                         cls._nonnegative_page_index(text.element) == evidence.page_index
                         for text in adjacent
                     ),
+                    separator_adjacent,
+                    separator_count,
+                    parenthesized,
                 )
 
         for element in icons:
             relationship = eligible.get(element)
             if relationship is None:
                 raise ValueError("ineligible inline-icon structure")
-            has_adjacent, has_same_page = relationship
+            (
+                has_adjacent,
+                has_same_page,
+                separator_adjacent,
+                separator_count,
+                parenthesized,
+            ) = relationship
             if not has_adjacent:
                 raise ValueError("inline-icon requires adjacent visible text")
             if not has_same_page:
                 raise ValueError("inline-icon requires adjacent same-page visible text")
+            evidence = icons[element]
+            if evidence.reason == NAVIGATION_ROUTE_INLINE_ICON_REASON:
+                if not separator_adjacent:
+                    raise ValueError(
+                        "navigation icon requires adjacent separator"
+                    )
+                if separator_count != evidence.route_separator_count:
+                    raise ValueError(
+                        "navigation route-separator-count does not match flow"
+                    )
+                if parenthesized is not evidence.route_parenthesized:
+                    raise ValueError(
+                        "navigation route-parenthesized does not match flow"
+                    )
+
+    @classmethod
+    def _same_page_inline_segment(
+        cls,
+        flow: tuple[_SemanticInlineText | _SemanticInlineFigure, ...],
+        candidate_index: int,
+        page_index: int,
+    ) -> tuple[
+        tuple[_SemanticInlineText | _SemanticInlineFigure, ...],
+        int,
+    ]:
+        start = candidate_index
+        while (
+            start > 0
+            and cls._semantic_inline_item_page_index(flow[start - 1]) == page_index
+        ):
+            start -= 1
+        end = candidate_index + 1
+        while (
+            end < len(flow)
+            and cls._semantic_inline_item_page_index(flow[end]) == page_index
+        ):
+            end += 1
+        return flow[start:end], candidate_index - start
+
+    @classmethod
+    def _semantic_inline_item_page_index(
+        cls,
+        item: _SemanticInlineText | _SemanticInlineFigure,
+    ) -> int | None:
+        return cls._nonnegative_page_index(item.element)
+
+    @classmethod
+    def _semantic_navigation_route_evidence(
+        cls,
+        segment: tuple[_SemanticInlineText | _SemanticInlineFigure, ...],
+        candidate_index: int,
+    ) -> tuple[bool, int, bool]:
+        adjacent = tuple(
+            text
+            for text in (
+                cls._adjacent_inline_text(segment, candidate_index, -1),
+                cls._adjacent_inline_text(segment, candidate_index, 1),
+            )
+            if text is not None
+        )
+        separator_adjacent = any(
+            text.text.strip().startswith(">")
+            or text.text.strip().endswith(">")
+            for text in adjacent
+        )
+        separator_count = sum(
+            item.text.count(">")
+            for item in segment
+            if isinstance(item, _SemanticInlineText)
+        )
+        before = "".join(
+            item.text
+            for item in segment[:candidate_index]
+            if isinstance(item, _SemanticInlineText)
+        )
+        after = "".join(
+            item.text
+            for item in segment[candidate_index + 1 :]
+            if isinstance(item, _SemanticInlineText)
+        )
+        parenthesized = before.rfind("(") > before.rfind(")") and ")" in after
+        return separator_adjacent, separator_count, parenthesized
 
     @classmethod
     def _inline_icon_flows(

@@ -12,6 +12,10 @@ from xml.etree import ElementTree as ET
 from tagged_pdf_extractor.domain.heading_promotion_validation import (
     HeadingPromotionTracker,
 )
+from tagged_pdf_extractor.domain.inline_icon_policy import (
+    GENERIC_INLINE_ICON_REASON,
+    NAVIGATION_ROUTE_INLINE_ICON_REASON,
+)
 from tagged_pdf_extractor.domain.display_hint_validation import (
     validate_display_hints,
 )
@@ -469,7 +473,7 @@ class XmlDocumentWriter:
 
     @staticmethod
     def _inline_icon_attributes(hint: InlineIconHint) -> dict[str, str]:
-        return {
+        attributes = {
             "display-role": "inline-icon",
             "icon-reason": hint.reason,
             "reference-font-size": XmlDocumentWriter._format_number(
@@ -482,6 +486,28 @@ class XmlDocumentWriter:
                 hint.height_ratio
             ),
         }
+        if hint.reason == NAVIGATION_ROUTE_INLINE_ICON_REASON:
+            if (
+                type(hint.route_separator_count) is not int
+                or hint.route_separator_count < 2
+                or type(hint.route_parenthesized) is not bool
+            ):
+                raise ValueError("invalid navigation route icon evidence")
+            attributes["route-separator-count"] = str(
+                hint.route_separator_count
+            )
+            attributes["route-parenthesized"] = (
+                "true" if hint.route_parenthesized else "false"
+            )
+        elif hint.reason == GENERIC_INLINE_ICON_REASON:
+            if (
+                hint.route_separator_count is not None
+                or hint.route_parenthesized is not None
+            ):
+                raise ValueError("generic inline icon contains route evidence")
+        else:
+            raise ValueError(f"unknown inline icon reason: {hint.reason}")
+        return attributes
 
     @staticmethod
     def _assert_display_hints_consumed(

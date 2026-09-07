@@ -15,6 +15,11 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
     TextDisplayHint,
 )
+from tagged_pdf_extractor.domain.inline_icon_policy import (
+    GENERIC_INLINE_ICON_REASON,
+    NAVIGATION_ROUTE_INLINE_ICON_REASON,
+    inline_icon_ratio_limits,
+)
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_nonempty_inline_paragraph,
 )
@@ -138,6 +143,31 @@ def validate_review_formatting_hints(
             raise ValueError(f"invalid inline icon size or ratio at {path}")
         if not isinstance(hint.reason, str) or not hint.reason:
             raise ValueError(f"invalid inline icon reason at {path}")
+        try:
+            max_width_ratio, max_height_ratio = inline_icon_ratio_limits(
+                hint.reason
+            )
+        except ValueError as exc:
+            raise ValueError(f"invalid inline icon reason at {path}") from exc
+        if (
+            hint.width_ratio > max_width_ratio
+            or hint.height_ratio > max_height_ratio
+        ):
+            raise ValueError(f"inline icon ratio exceeds policy at {path}")
+        if hint.reason == NAVIGATION_ROUTE_INLINE_ICON_REASON:
+            if (
+                type(hint.route_separator_count) is not int
+                or hint.route_separator_count < 2
+                or type(hint.route_parenthesized) is not bool
+            ):
+                raise ValueError(
+                    f"invalid navigation route icon evidence at {path}"
+                )
+        elif hint.reason == GENERIC_INLINE_ICON_REASON and (
+            hint.route_separator_count is not None
+            or hint.route_parenthesized is not None
+        ):
+            raise ValueError(f"generic inline icon has route evidence at {path}")
         if detected_icon_by_path.get(path) != hint:
             raise ValueError(f"inline icon detector mismatch at {path}")
     if inline_icon_by_path != detected_icon_by_path:

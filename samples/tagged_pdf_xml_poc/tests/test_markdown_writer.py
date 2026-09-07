@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from html import escape
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -2145,15 +2146,25 @@ def _inline_icon_element(
     bbox: str | None = "[100, 200, 109.1, 209.1]",
     bbox_name: str = "/BBox",
     content: str = '<text page-index="0" />',
+    reason: str = "small_inline_figure_with_adjacent_text",
+    reference_font_size: str = "6.5",
+    width_ratio: str = "1.4",
+    height_ratio: str = "1.4",
+    route_separator_count: str | None = None,
+    route_parenthesized: str | None = None,
 ) -> str:
     attributes = {
         "display-role": "inline-icon",
         "page-index": "0",
-        "icon-reason": "small_inline_figure_with_adjacent_text",
-        "reference-font-size": "6.5",
-        "width-font-ratio": "1.4",
-        "height-font-ratio": "1.4",
+        "icon-reason": reason,
+        "reference-font-size": reference_font_size,
+        "width-font-ratio": width_ratio,
+        "height-font-ratio": height_ratio,
     }
+    if route_separator_count is not None:
+        attributes["route-separator-count"] = route_separator_count
+    if route_parenthesized is not None:
+        attributes["route-parenthesized"] = route_parenthesized
     if omit is not None:
         attributes.pop(omit)
     if override is not None:
@@ -2167,6 +2178,151 @@ def _inline_icon_element(
         "</attributes>"
     )
     return f"<{tag} {serialized}>{source_attributes}{content}</{tag}>"
+
+
+def test_navigation_route_icon_renders_neutral_icon_token(tmp_path: Path) -> None:
+    route_icon = _inline_icon_element(
+        reason="navigation_route_inline_figure",
+        bbox="[100, 200, 124, 209]",
+        reference_font_size="6.5",
+        width_ratio=str(24 / 6.5),
+        height_ratio=str(9 / 6.5),
+        route_separator_count="3",
+        route_parenthesized="true",
+    )
+
+    markdown = _render(
+        tmp_path,
+        '<paragraph><text page-index="0">(Open &gt; </text>'
+        + route_icon
+        + '<text page-index="0"> &gt; Down &gt; Close)</text></paragraph>',
+    )
+
+    assert "\u005b\uc544\uc774\ucf58\u005d" in markdown
+
+
+@pytest.mark.parametrize(
+    ("icon", "message"),
+    [
+        (
+            _inline_icon_element(
+                reason="navigation_route_inline_figure",
+                route_parenthesized="true",
+            ),
+            "missing navigation route-separator-count",
+        ),
+        (
+            _inline_icon_element(
+                reason="navigation_route_inline_figure",
+                route_separator_count="1",
+                route_parenthesized="true",
+            ),
+            "invalid navigation route-separator-count",
+        ),
+        (
+            _inline_icon_element(
+                reason="navigation_route_inline_figure",
+                route_separator_count="3",
+                route_parenthesized="yes",
+            ),
+            "invalid navigation route-parenthesized",
+        ),
+        (
+            _inline_icon_element(
+                route_separator_count="3",
+                route_parenthesized="true",
+            ),
+            "generic inline-icon contains route evidence",
+        ),
+        (
+            _inline_icon_element(
+                reason="navigation_route_inline_figure",
+                bbox="[100, 200, 132.5000065, 209]",
+                width_ratio="5.000001",
+                height_ratio=str(9 / 6.5),
+                route_separator_count="3",
+                route_parenthesized="false",
+            ),
+            "inline-icon width-font-ratio exceeds limit",
+        ),
+    ],
+)
+def test_navigation_route_icon_evidence_is_defensive(
+    tmp_path: Path,
+    icon: str,
+    message: str,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        '<paragraph><text page-index="0">Open &gt; </text>'
+        + icon
+        + '<text page-index="0"> &gt; Down &gt; Close</text></paragraph>',
+    )
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "separator_count", "parenthesized", "message"),
+    [
+        (
+            "(Open > ",
+            " > Down > Close)",
+            "4",
+            "true",
+            "navigation route-separator-count does not match flow",
+        ),
+        (
+            "Before ",
+            " After > Down > Close",
+            "2",
+            "false",
+            "navigation icon requires adjacent separator",
+        ),
+        (
+            "Open > ",
+            " > Down > Close",
+            "3",
+            "true",
+            "navigation route-parenthesized does not match flow",
+        ),
+    ],
+)
+def test_navigation_route_icon_evidence_matches_local_flow(
+    tmp_path: Path,
+    before: str,
+    after: str,
+    separator_count: str,
+    parenthesized: str,
+    message: str,
+) -> None:
+    icon = _inline_icon_element(
+        reason="navigation_route_inline_figure",
+        route_separator_count=separator_count,
+        route_parenthesized=parenthesized,
+    )
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<paragraph>"
+        f'<text page-index="0">{escape(before)}</text>'
+        + icon
+        + f'<text page-index="0">{escape(after)}</text>'
+        "</paragraph>",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
 
 
 @pytest.mark.parametrize(

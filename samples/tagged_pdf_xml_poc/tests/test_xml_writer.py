@@ -308,6 +308,56 @@ def test_semantic_writer_serializes_readability_evidence_without_raw_mutation(
     ]
 
 
+def test_semantic_writer_serializes_navigation_route_icon_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, sentence_hint, generic_hint = _readability_evidence_document()
+    route_hint = replace(
+        generic_hint,
+        reason="navigation_route_inline_figure",
+        route_separator_count=3,
+        route_parenthesized=True,
+    )
+    document = replace(document, inline_icon_hints=(route_hint,))
+    monkeypatch.setattr(
+        xml_writer_module,
+        "validate_display_hints",
+        lambda actual: _validated_readability_hints(sentence_hint, route_hint),
+    )
+    semantic_path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+
+    figure = ET.parse(semantic_path).getroot().find("./paragraph[2]/figure")
+    assert figure is not None
+    assert figure.attrib["icon-reason"] == "navigation_route_inline_figure"
+    assert figure.attrib["route-separator-count"] == "3"
+    assert figure.attrib["route-parenthesized"] == "true"
+    assert figure.attrib["reference-font-size"] == "6.5"
+
+
+def test_semantic_writer_rejects_generic_icon_with_route_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document, sentence_hint, generic_hint = _readability_evidence_document()
+    invalid_hint = replace(
+        generic_hint,
+        route_separator_count=3,
+        route_parenthesized=True,
+    )
+    document = replace(document, inline_icon_hints=(invalid_hint,))
+    monkeypatch.setattr(
+        xml_writer_module,
+        "validate_display_hints",
+        lambda actual: _validated_readability_hints(sentence_hint, invalid_hint),
+    )
+
+    with pytest.raises(ValueError, match="generic inline icon contains route evidence"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
+
+
 def test_semantic_writer_integrates_detector_validator_and_recursive_targets(
     tmp_path: Path,
 ) -> None:

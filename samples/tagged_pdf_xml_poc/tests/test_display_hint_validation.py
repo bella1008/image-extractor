@@ -1121,7 +1121,6 @@ def test_inline_icon_hint_rejects_invalid_value(field: str, value: Any) -> None:
         {"reference_font_size": 7.0},
         {"width_ratio": 1.0},
         {"height_ratio": 1.0},
-        {"reason": "manual override"},
     ],
 )
 def test_inline_icon_hint_rejects_detector_evidence_tampering(
@@ -1363,4 +1362,47 @@ def test_inline_icon_hint_rejects_overlapping_sentence_break_path(
     )
 
     with pytest.raises(ValueError, match=r"sentence break.*inline icon"):
+        validate_review_formatting_hints(document)
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        (
+            {
+                "route_separator_count": 3,
+                "route_parenthesized": True,
+            },
+            "generic inline icon has route evidence",
+        ),
+        (
+            {
+                "reason": "navigation_route_inline_figure",
+                "route_separator_count": None,
+                "route_parenthesized": None,
+            },
+            "invalid navigation route icon evidence",
+        ),
+        (
+            {"reason": "manual"},
+            "invalid inline icon reason",
+        ),
+    ],
+)
+def test_inline_icon_hint_rejects_invalid_reason_specific_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: dict[str, object],
+    message: str,
+) -> None:
+    document, _, _ = _readability_document()
+    hint = replace(document.inline_icon_hints[0], **replacement)
+    document = replace(document, inline_icon_hints=(hint,))
+    monkeypatch.setattr(
+        validation_module,
+        "detect_inline_icon_hints",
+        lambda actual: (hint,),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match=message):
         validate_review_formatting_hints(document)

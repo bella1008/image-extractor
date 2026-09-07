@@ -724,8 +724,10 @@ def test_readme_documents_semantic_markdown_readability_contract() -> None:
 
     assert "같은 원본 구조 단위 안의 표시용 문장 경계" in readme
     assert "이름을 판별한 결과가 아닙니다" in readme
-    assert "주변 문장, 페이지, BBox, 상대 크기" in readme
-    assert "standalone, 큰 그림 또는 판별이 불확실한 figure" in readme
+    assert "반복된 OSD 경로 구분자와 inline 구조" in readme
+    assert "판별 사유와 상대 크기 근거는 Semantic XML에 보존" in readme
+    assert "안전 심볼 표의 독립 셀" in readme
+    assert "큰 그림 또는 판별이 불확실한 figure" in readme
     assert "`※`는 PDF에 실제로 존재하는 의미 있는 source label" in readme
     assert "`Ł`, `Œ`" in readme
     assert "편집기의 구문 강조 색상" in readme

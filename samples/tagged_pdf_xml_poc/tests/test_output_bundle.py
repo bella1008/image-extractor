@@ -2556,7 +2556,7 @@ def test_extract_document_keeps_review_formatting_disabled_for_other_profiles(
     ("hint_kind", "error_pattern"),
     [
         ("sentence", r"sentence break detector mismatch"),
-        ("icon", r"inline icon detector mismatch"),
+        ("icon", r"invalid inline icon reason"),
     ],
 )
 def test_extract_document_rejects_tampered_readability_hint_before_publication(

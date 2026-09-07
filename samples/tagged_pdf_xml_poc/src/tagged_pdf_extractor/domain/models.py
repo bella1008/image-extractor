@@ -120,6 +120,8 @@ class InlineIconHint:
     width_ratio: float
     height_ratio: float
     reason: str = INLINE_ICON_REASON
+    route_separator_count: int | None = None
+    route_parenthesized: bool | None = None
 
 
 @dataclass(frozen=True)

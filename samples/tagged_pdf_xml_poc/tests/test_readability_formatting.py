@@ -5,6 +5,11 @@ import unicodedata
 
 import pytest
 
+from tagged_pdf_extractor.domain.inline_icon_policy import (
+    GENERIC_INLINE_ICON_REASON,
+    NAVIGATION_ROUTE_INLINE_ICON_REASON,
+    inline_icon_ratio_limits,
+)
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     InlineIconHint,
@@ -177,6 +182,36 @@ def test_readability_hints_are_frozen_and_document_defaults_are_empty() -> None:
     document = TaggedDocument(Path("manual.pdf"), True, None, (), ())
     assert document.sentence_break_hints == ()
     assert document.inline_icon_hints == ()
+
+
+def test_inline_icon_ratio_limits_are_reason_specific() -> None:
+    assert inline_icon_ratio_limits(GENERIC_INLINE_ICON_REASON) == (3.0, 2.0)
+    assert inline_icon_ratio_limits(NAVIGATION_ROUTE_INLINE_ICON_REASON) == (
+        5.0,
+        2.5,
+    )
+
+
+def test_inline_icon_ratio_limits_reject_unknown_reason() -> None:
+    with pytest.raises(ValueError, match="unknown inline icon reason"):
+        inline_icon_ratio_limits("manual")
+
+
+def test_navigation_icon_hint_retains_route_audit_evidence() -> None:
+    hint = InlineIconHint(
+        child_path=(1, 2),
+        page_index=0,
+        bbox=(0.0, 0.0, 9.0, 9.0),
+        reference_font_size=6.5,
+        width_ratio=9.0 / 6.5,
+        height_ratio=9.0 / 6.5,
+        reason=NAVIGATION_ROUTE_INLINE_ICON_REASON,
+        route_separator_count=4,
+        route_parenthesized=True,
+    )
+
+    assert hint.route_separator_count == 4
+    assert hint.route_parenthesized is True
 
 
 def test_detects_four_sentence_french_flow_in_direct_list_body_fragments() -> None:

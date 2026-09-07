@@ -5,9 +5,27 @@ from collections.abc import Iterable
 import math
 
 
-INLINE_ICON_REASON = "small_inline_figure_with_adjacent_text"
+GENERIC_INLINE_ICON_REASON = "small_inline_figure_with_adjacent_text"
+NAVIGATION_ROUTE_INLINE_ICON_REASON = "navigation_route_inline_figure"
+INLINE_ICON_REASON = GENERIC_INLINE_ICON_REASON
 MAX_INLINE_ICON_WIDTH_FONT_RATIO = 3.0
 MAX_INLINE_ICON_HEIGHT_FONT_RATIO = 2.0
+MAX_NAVIGATION_ICON_WIDTH_FONT_RATIO = 5.0
+MAX_NAVIGATION_ICON_HEIGHT_FONT_RATIO = 2.5
+
+
+def inline_icon_ratio_limits(reason: str) -> tuple[float, float]:
+    if reason == GENERIC_INLINE_ICON_REASON:
+        return (
+            MAX_INLINE_ICON_WIDTH_FONT_RATIO,
+            MAX_INLINE_ICON_HEIGHT_FONT_RATIO,
+        )
+    if reason == NAVIGATION_ROUTE_INLINE_ICON_REASON:
+        return (
+            MAX_NAVIGATION_ICON_WIDTH_FONT_RATIO,
+            MAX_NAVIGATION_ICON_HEIGHT_FONT_RATIO,
+        )
+    raise ValueError(f"unknown inline icon reason: {reason}")
 
 
 def parse_unambiguous_bbox(

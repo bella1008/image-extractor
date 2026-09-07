@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import math
 import re
+from statistics import median
 import unicodedata
 
 from tagged_pdf_extractor.domain.models import (
@@ -16,8 +17,8 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
     GENERIC_INLINE_ICON_REASON,
     NAVIGATION_ROUTE_INLINE_ICON_REASON,
     inline_icon_ratio_limits,
+    navigation_text_evidence,
     parse_unambiguous_bbox,
-    starts_with_balanced_parenthesized_label,
 )
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_nonempty_inline_paragraph,
@@ -313,75 +314,29 @@ def _navigation_route_evidence(
     segment: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
     candidate_index: int,
 ) -> _NavigationRouteEvidence | None:
-    nearest = tuple(
-        fragment
-        for fragment in (
-            _adjacent_visible_fragment(segment, candidate_index, -1),
-            _adjacent_visible_fragment(segment, candidate_index, 1),
-        )
-        if fragment is not None
-    )
-    separator_adjacent = bool(nearest) and any(
-        _is_navigation_separator_adjacent(item.fragment.text)
-        for item in nearest
-    )
-    parenthesized_label_follows = _parenthesized_label_follows_candidate(
-        segment,
+    text_evidence = navigation_text_evidence(
+        tuple(
+            item.fragment.text
+            if isinstance(item, _InlineFlowFragment)
+            else None
+            for item in segment
+        ),
         candidate_index,
     )
-    if not separator_adjacent and not parenthesized_label_follows:
+    if text_evidence is None:
         return None
 
-    separator_count = sum(
-        item.fragment.text.count(">")
-        for item in segment
-        if isinstance(item, _InlineFlowFragment)
+    reference_font_size = _flow_reference_font_size(
+        tuple(segment[index] for index in text_evidence.text_item_indices)
     )
-    if separator_count < 2:
-        return None
-
-    reference_font_size = _flow_reference_font_size(segment)
     if reference_font_size is None:
         return None
 
-    before = "".join(
-        item.fragment.text
-        for item in segment[:candidate_index]
-        if isinstance(item, _InlineFlowFragment)
-    )
-    after = "".join(
-        item.fragment.text
-        for item in segment[candidate_index + 1 :]
-        if isinstance(item, _InlineFlowFragment)
-    )
-    parenthesized = (
-        before.rfind("(") > before.rfind(")") and ")" in after
-    ) or parenthesized_label_follows
     return _NavigationRouteEvidence(
-        separator_count=separator_count,
-        parenthesized=parenthesized,
+        separator_count=text_evidence.separator_count,
+        parenthesized=text_evidence.parenthesized,
         reference_font_size=reference_font_size,
     )
-
-
-def _is_navigation_separator_adjacent(text: str) -> bool:
-    stripped = text.strip()
-    return stripped.startswith(">") or stripped.endswith(">")
-
-
-def _parenthesized_label_follows_candidate(
-    segment: tuple[_InlineFlowFragment | _InlineFlowFigure, ...],
-    candidate_index: int,
-) -> bool:
-    prefix_parts: list[str] = []
-    for item in segment[candidate_index + 1 :]:
-        if isinstance(item, _InlineFlowFigure):
-            break
-        before_separator, separator, _ = item.fragment.text.partition(">")
-        prefix_parts.append(before_separator)
-        if separator:
-            break
-    return starts_with_balanced_parenthesized_label("".join(prefix_parts))
 
 
 def _flow_reference_font_size(
@@ -399,14 +354,30 @@ def _flow_reference_font_size(
         weights.extend(fragment_weights)
     if not weights:
         return None
+    return _robust_weighted_median(tuple(weights))
 
-    largest_font_size = max(font_size for font_size, _ in weights)
-    credible_weights = tuple(
-        (font_size, weight)
-        for font_size, weight in weights
-        if font_size >= largest_font_size * 0.5
-    )
-    return _weighted_median(credible_weights)
+
+def _robust_weighted_median(
+    weights: tuple[tuple[float, int], ...],
+) -> float:
+    log_sizes = tuple(math.log(font_size) for font_size, _ in weights)
+    centre = median(log_sizes)
+    deviations = tuple(abs(value - centre) for value in log_sizes)
+    median_deviation = median(deviations)
+    if math.isclose(median_deviation, 0.0, abs_tol=1e-12):
+        credible = tuple(
+            item
+            for item, log_size in zip(weights, log_sizes, strict=True)
+            if math.isclose(log_size, centre, abs_tol=1e-12)
+        )
+    else:
+        maximum_deviation = 3.0 * 1.4826 * median_deviation
+        credible = tuple(
+            item
+            for item, deviation in zip(weights, deviations, strict=True)
+            if deviation <= maximum_deviation
+        )
+    return _weighted_median(credible or weights)
 
 
 def _adjacent_visible_fragment(

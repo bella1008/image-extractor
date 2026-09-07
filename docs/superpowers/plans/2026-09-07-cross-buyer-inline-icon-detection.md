@@ -313,9 +313,9 @@ def _is_separator_adjacent(text: str) -> bool:
 1. candidate 주변에서 구조적으로 연속된 same-page fragment/figure segment를 선택한다.
 2. candidate의 가장 가까운 visible 좌우 fragment 중 한쪽 이상에 `_is_separator_adjacent()`가 참인지 확인한다. 또는 후보 직후부터 첫 `>` 전까지 비어 있지 않은 균형 잡힌 괄호 라벨이 있으면 `그림 (조작 라벨) > 동작 > 동작` 구조의 인접 근거로 인정한다.
 3. 후보를 감싸는 가장 가까운 `(` … `)` 범위가 있으면 그 범위를 local window로 사용하고 `parenthesized=True`로 기록한다.
-4. 괄호 범위가 없으면 sentence terminator 또는 flow 끝까지의 candidate-local window를 사용한다.
+4. 괄호 범위가 없으면 sentence terminator 또는 flow 끝까지의 candidate-local window를 사용한다. 종결부호 다음의 공백·닫는 문장부호 뒤에 `>`가 이어지거나 짧은 약어의 마침표 뒤에 소문자 연속어가 이어지면 같은 경로로 유지한다.
 5. window의 ASCII `>` 개수가 2 미만이면 `None`을 반환한다.
-6. same-page visible fragment 전체의 `_visible_font_size_weights()`를 모아 `_weighted_median()`을 계산한다. 유효한 근거가 없거나 fragment style이 불완전하면 `None`을 반환한다.
+6. same-page visible fragment 전체의 `_visible_font_size_weights()`를 모아 로그 크기 중앙절대편차로 작은 값과 큰 값 이상치를 대칭 제거한 뒤 `_weighted_median()`을 계산한다. 유효한 근거가 없거나 fragment style이 불완전하면 `None`을 반환한다.
 
 문구 문자열이나 언어 코드는 검사하지 않는다.
 

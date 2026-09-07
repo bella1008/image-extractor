@@ -460,6 +460,11 @@ def _assert_zg_sentence_readability(
 
 
 def _assert_zg_inline_osd_icons(root: ET.Element, markdown: str) -> None:
+    route_icons = root.findall(
+        ".//figure[@icon-reason='navigation_route_inline_figure']"
+    )
+    assert len(route_icons) == 100
+
     osd_flows = [
         element
         for element in root.iter("paragraph")

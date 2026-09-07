@@ -256,6 +256,25 @@ def assert_generic_figure_fallback(semantic_root: ET.Element, markdown: str) -> 
         assert normalized_markdown.count(text) >= expected_count
 
 
+def assert_image_only_table_cells_remain_figures(
+    semantic_root: ET.Element,
+) -> None:
+    image_only_figures: list[ET.Element] = []
+    for cell in semantic_root.iter("table_cell"):
+        visible_text = "".join(
+            decode_data_element(text).strip() for text in cell.iter("text")
+        )
+        figures = list(cell.iter("figure"))
+        if figures and not visible_text:
+            image_only_figures.extend(figures)
+
+    assert image_only_figures
+    assert all(
+        figure.get("display-role") is None
+        for figure in image_only_figures
+    )
+
+
 def assert_profile_readability_controls(document, report, artifacts) -> None:
     assert verified_subtitle_linked_body_paths(document) == ()
     assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
@@ -270,3 +289,4 @@ def assert_profile_readability_controls(document, report, artifacts) -> None:
     )
     assert_navigation_flows_preserved(semantic_root, markdown)
     assert_generic_figure_fallback(semantic_root, markdown)
+    assert_image_only_table_cells_remain_figures(semantic_root)

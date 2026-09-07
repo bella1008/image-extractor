@@ -1123,6 +1123,53 @@ def test_distant_separator_does_not_classify_unrelated_figure_as_route() -> None
     assert hint.reason == GENERIC_INLINE_ICON_REASON
 
 
+def test_adjacent_separator_cannot_borrow_from_a_later_sentence() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Choice A > ", mcid=220),
+            _figure(),
+            _styled_fragment(" item. Compare B > C.", mcid=221),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.reason == GENERIC_INLINE_ICON_REASON
+    assert hint.route_separator_count is None
+
+
+def test_adjacent_separator_cannot_borrow_from_lowercase_later_sentence() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Choice A > ", mcid=229),
+            _figure(),
+            _styled_fragment(" item. compare B > C.", mcid=230),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.reason == GENERIC_INLINE_ICON_REASON
+
+
+def test_navigation_route_keeps_abbreviated_steps_in_one_window() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Open > ", mcid=227),
+            _figure(),
+            _styled_fragment("(Aum. vol.) > Down > Close", mcid=228),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.reason == NAVIGATION_ROUTE_INLINE_ICON_REASON
+    assert hint.route_separator_count == 3
+
+
 def test_parentheses_without_repeated_separator_do_not_enable_route() -> None:
     document = _document(
         _element(
@@ -1136,6 +1183,22 @@ def test_parentheses_without_repeated_separator_do_not_enable_route() -> None:
     hint = detect_inline_icon_hints(document)[0]
 
     assert hint.reason == GENERIC_INLINE_ICON_REASON
+
+
+def test_route_parenthesized_requires_balanced_enclosing_parentheses() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("(( Open > ", mcid=222),
+            _figure(),
+            _styled_fragment(" > Close)", mcid=223),
+        )
+    )
+
+    hint = detect_inline_icon_hints(document)[0]
+
+    assert hint.reason == NAVIGATION_ROUTE_INLINE_ICON_REASON
+    assert hint.route_parenthesized is False
 
 
 def test_navigation_route_rejects_figure_above_route_ratio_limit() -> None:
@@ -1169,6 +1232,20 @@ def test_generic_inline_icon_uses_contiguous_flow_median_font() -> None:
 
     assert hint.reason == GENERIC_INLINE_ICON_REASON
     assert hint.reference_font_size == 6.5
+
+
+def test_generic_inline_icon_ignores_single_large_font_outlier() -> None:
+    document = _document(
+        _element(
+            "paragraph",
+            _styled_fragment("Normal body text ", font_sizes=(6.5,), mcid=224),
+            _figure(bbox_value="[100.0, 200.0, 120.0, 209.0]"),
+            _styled_fragment("X", font_sizes=(40.0,), mcid=225),
+            _styled_fragment(" more body text", font_sizes=(6.5,), mcid=226),
+        )
+    )
+
+    assert detect_inline_icon_hints(document) == ()
 
 
 def test_inline_icon_ratio_boundaries_are_inclusive() -> None:

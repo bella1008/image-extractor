@@ -133,6 +133,44 @@ def _inline_children(
     return (_element("section", *section_children),)
 
 
+def _mixed_invalid_inline_children(
+    *,
+    title_text: str,
+    qualifier_text: str,
+    newline_count: int,
+) -> tuple[StructureElement | ContentFragment, ...]:
+    inline_children: list[StructureElement | ContentFragment] = []
+    if title_text:
+        inline_children.append(
+            _fragment(title_text, "SamsungOne-600", mcid=21)
+        )
+    for _ in range(newline_count):
+        inline_children.append(
+            StructureElement("Span", "span", actual_text="\n")
+        )
+    if qualifier_text:
+        inline_children.append(
+            _fragment(qualifier_text, "SamsungOne-600", mcid=22)
+        )
+    row = _element(
+        "table_row",
+        _element("table_cell", _element("figure")),
+        _element(
+            "table_cell",
+            _element("paragraph", *inline_children),
+            _element(
+                "paragraph",
+                _fragment("Legacy qualifier", "SamsungOne-600", mcid=23),
+            ),
+        ),
+    )
+    wrapper = _element("paragraph", _element("table", row))
+    body = _element(
+        "paragraph", _fragment("Following body", "SamsungOne-400", mcid=24)
+    )
+    return (_element("section", wrapper, body),)
+
+
 @pytest.mark.parametrize(
     ("font_name", "expected"),
     [
@@ -399,6 +437,36 @@ def test_mixed_text_cell_prefers_valid_inline_subtitle_before_legacy_fallback() 
             qualifier_start_offset=len("Arbitrary title\n"),
         ),
     )
+
+
+def test_mixed_text_cell_rejects_multiple_explicit_inline_boundaries() -> None:
+    assert detect_subtitle_hints(
+        _mixed_invalid_inline_children(
+            title_text="Arbitrary title",
+            qualifier_text="(Arbitrary qualifier)",
+            newline_count=2,
+        )
+    ) == ()
+
+
+def test_mixed_text_cell_rejects_explicit_inline_boundary_with_empty_title() -> None:
+    assert detect_subtitle_hints(
+        _mixed_invalid_inline_children(
+            title_text="",
+            qualifier_text="(Arbitrary qualifier)",
+            newline_count=1,
+        )
+    ) == ()
+
+
+def test_mixed_text_cell_rejects_explicit_inline_boundary_with_empty_qualifier() -> None:
+    assert detect_subtitle_hints(
+        _mixed_invalid_inline_children(
+            title_text="Arbitrary title",
+            qualifier_text="",
+            newline_count=1,
+        )
+    ) == ()
 
 
 def test_detect_table_subtitles_returns_replaced_immutable_document() -> None:

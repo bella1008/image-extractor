@@ -17,6 +17,7 @@ from tagged_pdf_extractor.domain.typography import (
 
 
 _SUBTITLE_INLINE_ROLES = frozenset({"span", "link"})
+_INVALID_INLINE_BOUNDARY = object()
 
 
 def detect_subtitle_hints(
@@ -91,7 +92,7 @@ def subtitle_target_rejection(
 
 def inline_subtitle_offsets(paragraph: StructureElement) -> tuple[int, int] | None:
     parts = _inline_subtitle_parts(paragraph)
-    return parts[2] if parts is not None else None
+    return parts[2] if isinstance(parts, tuple) else None
 
 
 def _single_wrapped_table(wrapper: StructureElement) -> StructureElement | None:
@@ -156,7 +157,9 @@ def _row_hint(
             continue
 
         inline = _inline_subtitle_parts(title)
-        if inline is not None:
+        if inline is _INVALID_INLINE_BOUNDARY:
+            continue
+        if isinstance(inline, tuple):
             title_text, title_fragments, inline_offsets = inline
             if not _has_consistent_weight(title_fragments):
                 continue
@@ -212,7 +215,7 @@ def _row_hint(
 
 def _inline_subtitle_parts(
     paragraph: StructureElement,
-) -> tuple[str, tuple[ContentFragment, ...], tuple[int, int]] | None:
+) -> tuple[str, tuple[ContentFragment, ...], tuple[int, int]] | object | None:
     segments: list[tuple[str, ContentFragment | None, bool]] = []
 
     def visit(children: tuple[StructureElement | ContentFragment, ...]) -> None:
@@ -228,13 +231,15 @@ def _inline_subtitle_parts(
 
     visit(paragraph.children)
     boundaries = [index for index, segment in enumerate(segments) if segment[2]]
-    if len(boundaries) != 1:
+    if not boundaries:
         return None
+    if len(boundaries) != 1:
+        return _INVALID_INLINE_BOUNDARY
     boundary = boundaries[0]
     title_text = "".join(segment[0] for segment in segments[:boundary])
     qualifier_text = "".join(segment[0] for segment in segments[boundary + 1 :])
     if not title_text.strip() or not qualifier_text.strip():
-        return None
+        return _INVALID_INLINE_BOUNDARY
     title_fragments = tuple(
         fragment
         for _, fragment, _ in segments[:boundary]

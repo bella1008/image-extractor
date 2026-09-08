@@ -68,11 +68,12 @@ def test_preserves_canonical_book_data_and_order() -> None:
     assert profile.language_count == 5
 
 
-def test_lookup_rejects_noncanonical_lowercase_source_token() -> None:
+def test_lookup_normalizes_lowercase_known_source_token() -> None:
     filename = "bn68-25100b-00_sug_y26 tv all_zc_l02_260122.12.PDF"
 
-    with pytest.raises(InvalidPdfFilenameError, match="zc_l02"):
-        JsonProfileRepository(CANONICAL_MAPPING).lookup(filename)
+    profile = JsonProfileRepository(CANONICAL_MAPPING).lookup(filename)
+
+    assert profile.source_token == "ZC_L02"
 
 
 def test_lookup_uses_only_filename_not_folder_or_pdf_language(tmp_path: Path) -> None:
@@ -102,7 +103,17 @@ def test_rejects_unknown_filename_token_with_typed_error() -> None:
         repository.lookup(filename)
 
 
-@pytest.mark.parametrize("source_token", ["ZC_ L02", "ZC_LXX"])
+def test_lowercase_valid_unknown_token_raises_unknown_source_token() -> None:
+    repository = JsonProfileRepository(CANONICAL_MAPPING)
+    filename = "bn68-00000a-00_sug_y26 tv all_unknown_l02_260101.0.pdf"
+
+    with pytest.raises(UnknownSourceTokenError, match="UNKNOWN_L02"):
+        repository.lookup(filename)
+
+
+@pytest.mark.parametrize(
+    "source_token", ["ZC_ L02", "ZC_LXX", "zc_ l02", "zc_lxx"]
+)
 def test_lookup_rejects_filename_shaped_malformed_source_tokens(
     source_token: str,
 ) -> None:

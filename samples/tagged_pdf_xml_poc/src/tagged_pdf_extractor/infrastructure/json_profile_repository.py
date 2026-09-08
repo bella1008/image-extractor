@@ -40,15 +40,20 @@ class JsonProfileRepository:
     def lookup(self, pdf_path: str | Path) -> PdfProfile:
         file_name = Path(pdf_path).name
         source_token = parse_source_token(file_name)
-        if source_token is None or _SOURCE_TOKEN.fullmatch(source_token) is None:
+        if source_token is None:
+            raise InvalidPdfFilenameError(
+                f"Cannot derive valid source_token from PDF filename {file_name!r}"
+            )
+        normalized_source_token = source_token.upper()
+        if _SOURCE_TOKEN.fullmatch(normalized_source_token) is None:
             raise InvalidPdfFilenameError(
                 f"Cannot derive valid source_token from PDF filename {file_name!r}"
             )
         try:
-            return self._profiles[source_token.casefold()]
+            return self._profiles[normalized_source_token.casefold()]
         except KeyError as exc:
             raise UnknownSourceTokenError(
-                f"No canonical PDF profile for source_token {source_token!r}"
+                f"No canonical PDF profile for source_token {normalized_source_token!r}"
             ) from exc
 
     def _load_profiles(self) -> dict[str, PdfProfile]:

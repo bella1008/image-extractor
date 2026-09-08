@@ -17,16 +17,19 @@ from tagged_pdf_extractor.ports.profile_repository import (
 )
 
 
-_FIELDS = (
+_REQUIRED_FIELDS = (
     "source_token",
-    "region",
-    "buyer_codes",
     "languages",
     "doc_type",
     "language_count",
 )
+_ALLOWED_FIELDS = frozenset((*_REQUIRED_FIELDS, "region", "buyer_codes"))
 _DOC_TYPES = frozenset(("A2", "A3", "BOOK"))
-_LANGUAGE_COUNT_TOKEN = re.compile(r"_L(?P<count>\d+)$", re.IGNORECASE)
+_LANGUAGE_CODE = re.compile(r"(?:[A-Z]{3}|[A-Z]-[A-Z]{3})")
+_SOURCE_TOKEN = re.compile(
+    r"[A-Z0-9]+(?: [A-Z0-9]+)*_(?:L\d{2}|[A-KM-Z][A-Z0-9]*)"
+)
+_LANGUAGE_COUNT_TOKEN = re.compile(r"_L(?P<count>\d{2})$")
 
 
 class JsonProfileRepository:
@@ -89,21 +92,24 @@ def _parse_profile_row(row: Any, row_index: int) -> PdfProfile:
     if not isinstance(row, dict):
         raise InvalidProfileRowError(f"Profile row {row_index} must be a JSON object")
 
-    missing_fields = [field for field in _FIELDS if field not in row]
+    missing_fields = [field for field in _REQUIRED_FIELDS if field not in row]
     if missing_fields:
         raise InvalidProfileRowError(
             f"Profile row {row_index} is missing required field {missing_fields[0]!r}"
         )
 
-    unexpected_fields = sorted(set(row) - set(_FIELDS))
+    unexpected_fields = sorted(set(row) - _ALLOWED_FIELDS)
     if unexpected_fields:
         raise InvalidProfileRowError(
             f"Profile row {row_index} has unexpected field {unexpected_fields[0]!r}"
         )
 
     source_token = _required_string(row, row_index, "source_token")
-    region = _required_string(row, row_index, "region")
-    buyer_codes_text = _required_string(row, row_index, "buyer_codes")
+    if _SOURCE_TOKEN.fullmatch(source_token) is None:
+        raise InvalidProfileRowError(
+            f"Profile row {row_index} field 'source_token' has invalid format: "
+            f"{source_token!r}"
+        )
     languages_text = _required_string(row, row_index, "languages")
     doc_type = _required_string(row, row_index, "doc_type")
     language_count = row["language_count"]
@@ -116,8 +122,7 @@ def _parse_profile_row(row: Any, row_index: int) -> PdfProfile:
             f"Profile row {row_index} language_count must be positive"
         )
 
-    buyer_codes = _ordered_values(buyer_codes_text, row_index, "buyer_codes")
-    languages = _ordered_values(languages_text, row_index, "languages")
+    languages = _ordered_language_codes(languages_text, row_index)
     if language_count != len(languages):
         raise InvalidProfileRowError(
             f"Profile row {row_index} language_count {language_count} does not match "
@@ -128,15 +133,11 @@ def _parse_profile_row(row: Any, row_index: int) -> PdfProfile:
             f"Profile row {row_index} field 'doc_type' must be A2, A3, or BOOK"
         )
 
-    _validate_source_token_consistency(
-        source_token, buyer_codes, languages, language_count, row_index
-    )
+    _validate_source_token_consistency(source_token, languages, language_count, row_index)
     return PdfProfile(
         source_token=source_token,
-        region=region,
-        buyer_codes=buyer_codes,
-        languages=languages,
         doc_type=doc_type,
+        languages=languages,
         language_count=language_count,
     )
 
@@ -154,41 +155,35 @@ def _required_string(row: dict[str, Any], row_index: int, field: str) -> str:
     return value
 
 
-def _ordered_values(value: str, row_index: int, field: str) -> tuple[str, ...]:
-    raw_items = value.split(";")
-    if any(not item.strip() for item in raw_items):
+def _ordered_language_codes(value: str, row_index: int) -> tuple[str, ...]:
+    items = tuple(value.split(";"))
+    if any(not item for item in items):
         raise InvalidProfileRowError(
-            f"Profile row {row_index} field {field!r} contains an empty item"
+            f"Profile row {row_index} field 'languages' contains an empty item"
         )
-    items = tuple(item.strip() for item in raw_items)
     seen: set[str] = set()
     for item in items:
-        if item in seen:
+        if _LANGUAGE_CODE.fullmatch(item) is None:
             raise InvalidProfileRowError(
-                f"Profile row {row_index} field {field!r} contains duplicate item {item}"
+                f"Profile row {row_index} field 'languages' contains invalid code "
+                f"{item!r}"
             )
-        seen.add(item)
+        normalized_item = item.casefold()
+        if normalized_item in seen:
+            raise InvalidProfileRowError(
+                f"Profile row {row_index} field 'languages' contains duplicate item {item}"
+            )
+        seen.add(normalized_item)
     return items
 
 
 def _validate_source_token_consistency(
     source_token: str,
-    buyer_codes: tuple[str, ...],
     languages: tuple[str, ...],
     language_count: int,
     row_index: int,
 ) -> None:
-    if "_" not in source_token:
-        raise InvalidProfileRowError(
-            f"Profile row {row_index} source_token {source_token!r} has no language token"
-        )
-    buyer_token, language_token = source_token.rsplit("_", 1)
-    if tuple(part.casefold() for part in buyer_token.split()) != tuple(
-        code.casefold() for code in buyer_codes
-    ):
-        raise InvalidProfileRowError(
-            f"Profile row {row_index} source_token {source_token!r} does not match buyer_codes"
-        )
+    _, language_token = source_token.rsplit("_", 1)
 
     count_match = _LANGUAGE_COUNT_TOKEN.search(source_token)
     if count_match:

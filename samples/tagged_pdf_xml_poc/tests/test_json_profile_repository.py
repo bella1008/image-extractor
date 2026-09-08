@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, fields
 from pathlib import Path
 
 import pytest
@@ -43,11 +43,15 @@ def test_loads_zc_profile_in_exact_canonical_language_order() -> None:
 
     assert profile == PdfProfile(
         source_token="ZC_L02",
-        region="ZC",
-        buyer_codes=("ZC",),
-        languages=("ENG", "C-FRA"),
         doc_type="A2",
+        languages=("ENG", "C-FRA"),
         language_count=2,
+    )
+    assert tuple(field.name for field in fields(PdfProfile)) == (
+        "source_token",
+        "doc_type",
+        "languages",
+        "language_count",
     )
     with pytest.raises(FrozenInstanceError):
         profile.doc_type = "BOOK"  # type: ignore[misc]
@@ -60,7 +64,6 @@ def test_preserves_canonical_book_data_and_order() -> None:
 
     assert profile.source_token == "ZG XN ZT_L05"
     assert profile.doc_type == "BOOK"
-    assert profile.buyer_codes == ("ZG", "XN", "ZT")
     assert profile.languages == ("ENG", "DEU", "FRA", "ITA", "DUT")
     assert profile.language_count == 5
 
@@ -103,8 +106,6 @@ def test_rejects_unknown_filename_token_with_typed_error() -> None:
 def _valid_row(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
         "source_token": "ZC_L02",
-        "region": "ZC",
-        "buyer_codes": "ZC",
         "languages": "ENG;C-FRA",
         "doc_type": "A2",
         "language_count": 2,
@@ -151,10 +152,10 @@ def test_rejects_invalid_utf8(tmp_path: Path) -> None:
                 {
                     key: value
                     for key, value in _valid_row().items()
-                    if key != "region"
+                    if key != "source_token"
                 }
             ],
-            "row 0.*region",
+            "row 0.*source_token",
         ),
         ([_valid_row(wording_rule="forbidden")], "unexpected field 'wording_rule'"),
     ],
@@ -175,29 +176,28 @@ def test_rejects_malformed_or_missing_rows(
 
 def test_rejects_duplicate_source_tokens(tmp_path: Path) -> None:
     mapping_path = _write_fixture(
-        tmp_path / "profiles.json", [_valid_row(), _valid_row(region="OTHER")]
+        tmp_path / "profiles.json", [_valid_row(), _valid_row()]
     )
 
     with pytest.raises(DuplicateSourceTokenError, match="ZC_L02.*rows 0 and 1"):
         JsonProfileRepository(mapping_path)
 
 
-def test_rejects_case_insensitive_duplicate_source_tokens(tmp_path: Path) -> None:
+def test_accepts_canonical_non_model_json_fields(tmp_path: Path) -> None:
     mapping_path = _write_fixture(
         tmp_path / "profiles.json",
-        [_valid_row(), _valid_row(source_token="zc_l02", buyer_codes="zc")],
+        [_valid_row(region="ZC", buyer_codes="ZC")],
     )
 
-    with pytest.raises(DuplicateSourceTokenError, match="zc_l02.*rows 0 and 1"):
-        JsonProfileRepository(mapping_path)
+    profile = JsonProfileRepository(mapping_path).lookup(ZC_FILENAME)
+
+    assert profile == PdfProfile("ZC_L02", "A2", ("ENG", "C-FRA"), 2)
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("source_token", 7),
-        ("region", ["ZC"]),
-        ("buyer_codes", ["ZC"]),
         ("languages", ["ENG", "C-FRA"]),
         ("doc_type", 2),
         ("language_count", "2"),
@@ -226,7 +226,6 @@ def test_rejects_invalid_field_types(
             {"source_token": "ZC_L05", "language_count": 2},
             "ZC_L05.*declares 5",
         ),
-        ({"buyer_codes": "ZX"}, "ZC_L02.*buyer_codes"),
         (
             {
                 "source_token": "ZA_ENG",
@@ -249,4 +248,54 @@ def test_rejects_internally_inconsistent_rows(
     )
 
     with pytest.raises(InvalidProfileRowError, match=message):
+        JsonProfileRepository(mapping_path)
+
+
+@pytest.mark.parametrize(
+    "languages",
+    [
+        "ENG;FRA!",
+        "ENG; FRA",
+        "ENG ;FRA",
+        " ENG;FRA",
+        "ENG;FRA ",
+        "ENG;FR A",
+        "ENG;fra",
+        "ENG;eng",
+    ],
+)
+def test_rejects_noncanonical_language_codes(
+    tmp_path: Path, languages: str
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json", [_valid_row(languages=languages)]
+    )
+
+    with pytest.raises(InvalidProfileRowError, match="languages"):
+        JsonProfileRepository(mapping_path)
+
+
+@pytest.mark.parametrize("localized_code", ["C-FRA", "M-SPA", "B-POR"])
+def test_accepts_required_hyphenated_language_codes(
+    tmp_path: Path, localized_code: str
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json",
+        [_valid_row(languages=f"ENG;{localized_code}")],
+    )
+
+    profile = JsonProfileRepository(mapping_path).lookup(ZC_FILENAME)
+
+    assert profile.languages == ("ENG", localized_code)
+
+
+@pytest.mark.parametrize("source_token", ["ZC_LXX", "ZC_ L02"])
+def test_rejects_malformed_source_token_rows_during_load(
+    tmp_path: Path, source_token: str
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json", [_valid_row(source_token=source_token)]
+    )
+
+    with pytest.raises(InvalidProfileRowError, match="source_token"):
         JsonProfileRepository(mapping_path)

@@ -14,10 +14,8 @@ BBox = tuple[float, float, float, float]
 @dataclass(frozen=True)
 class PdfProfile:
     source_token: str
-    region: str
-    buyer_codes: tuple[str, ...]
-    languages: tuple[str, ...]
     doc_type: str
+    languages: tuple[str, ...]
     language_count: int
 
 

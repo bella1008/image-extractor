@@ -40,9 +40,9 @@ class JsonProfileRepository:
     def lookup(self, pdf_path: str | Path) -> PdfProfile:
         file_name = Path(pdf_path).name
         source_token = parse_source_token(file_name)
-        if source_token is None:
+        if source_token is None or _SOURCE_TOKEN.fullmatch(source_token) is None:
             raise InvalidPdfFilenameError(
-                f"Cannot derive source_token from PDF filename {file_name!r}"
+                f"Cannot derive valid source_token from PDF filename {file_name!r}"
             )
         try:
             return self._profiles[source_token.casefold()]
@@ -103,6 +103,10 @@ def _parse_profile_row(row: Any, row_index: int) -> PdfProfile:
         raise InvalidProfileRowError(
             f"Profile row {row_index} has unexpected field {unexpected_fields[0]!r}"
         )
+
+    for metadata_field in ("region", "buyer_codes"):
+        if metadata_field in row:
+            _required_string(row, row_index, metadata_field)
 
     source_token = _required_string(row, row_index, "source_token")
     if _SOURCE_TOKEN.fullmatch(source_token) is None:

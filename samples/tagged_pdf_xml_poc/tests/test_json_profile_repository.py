@@ -68,12 +68,11 @@ def test_preserves_canonical_book_data_and_order() -> None:
     assert profile.language_count == 5
 
 
-def test_lookup_honors_existing_case_insensitive_filename_convention() -> None:
+def test_lookup_rejects_noncanonical_lowercase_source_token() -> None:
     filename = "bn68-25100b-00_sug_y26 tv all_zc_l02_260122.12.PDF"
 
-    profile = JsonProfileRepository(CANONICAL_MAPPING).lookup(filename)
-
-    assert profile.source_token == "ZC_L02"
+    with pytest.raises(InvalidPdfFilenameError, match="zc_l02"):
+        JsonProfileRepository(CANONICAL_MAPPING).lookup(filename)
 
 
 def test_lookup_uses_only_filename_not_folder_or_pdf_language(tmp_path: Path) -> None:
@@ -100,6 +99,17 @@ def test_rejects_unknown_filename_token_with_typed_error() -> None:
     filename = "BN68-00000A-00_SUG_Y26 TV ALL_UNKNOWN_L02_260101.0.pdf"
 
     with pytest.raises(UnknownSourceTokenError, match="UNKNOWN_L02"):
+        repository.lookup(filename)
+
+
+@pytest.mark.parametrize("source_token", ["ZC_ L02", "ZC_LXX"])
+def test_lookup_rejects_filename_shaped_malformed_source_tokens(
+    source_token: str,
+) -> None:
+    repository = JsonProfileRepository(CANONICAL_MAPPING)
+    filename = f"BN68-00000A-00_SUG_Y26 TV ALL_{source_token}_260101.0.pdf"
+
+    with pytest.raises(InvalidPdfFilenameError, match="source_token"):
         repository.lookup(filename)
 
 
@@ -192,6 +202,29 @@ def test_accepts_canonical_non_model_json_fields(tmp_path: Path) -> None:
     profile = JsonProfileRepository(mapping_path).lookup(ZC_FILENAME)
 
     assert profile == PdfProfile("ZC_L02", "A2", ("ENG", "C-FRA"), 2)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("region", ["ZC"]),
+        ("buyer_codes", ["ZC"]),
+        ("buyer_codes", 7),
+        ("region", ""),
+        ("buyer_codes", ""),
+        ("region", " ZC"),
+        ("buyer_codes", "ZC "),
+    ],
+)
+def test_rejects_invalid_canonical_metadata_fields_when_present(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json", [_valid_row(**{field: value})]
+    )
+
+    with pytest.raises(InvalidProfileRowError, match=f"row 0.*{field}"):
+        JsonProfileRepository(mapping_path)
 
 
 @pytest.mark.parametrize(

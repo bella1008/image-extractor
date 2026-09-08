@@ -446,7 +446,7 @@ class XmlDocumentWriter:
 
     @staticmethod
     def _subtitle_attributes(subtitle: SubtitleHint) -> dict[str, str]:
-        return {
+        attributes = {
             "display-role": "subtitle",
             "subtitle-reason": subtitle.reason,
             "font-weight": str(subtitle.font_weight),
@@ -455,6 +455,12 @@ class XmlDocumentWriter:
             ),
             "observed-line-count": str(subtitle.observed_line_count),
         }
+        if subtitle.title_end_offset is not None:
+            attributes["title-end-offset"] = str(subtitle.title_end_offset)
+            attributes["qualifier-start-offset"] = str(
+                subtitle.qualifier_start_offset
+            )
+        return attributes
 
     @staticmethod
     def _line_break_attributes(hint: LineBreakHint) -> dict[str, str]:

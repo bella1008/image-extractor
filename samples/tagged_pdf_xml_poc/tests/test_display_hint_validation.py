@@ -31,6 +31,7 @@ from tagged_pdf_extractor.domain.readability_formatting import (
     detect_inline_icon_hints,
     detect_sentence_break_hints,
 )
+from tagged_pdf_extractor.domain.subtitle_detection import detect_subtitle_hints
 from tagged_pdf_extractor.domain import display_hint_validation as validation_module
 
 
@@ -410,6 +411,101 @@ def _line_document() -> tuple[TaggedDocument, tuple[int, ...]]:
         0,
         1,
     )
+
+
+def _inline_subtitle_document() -> TaggedDocument:
+    title = ContentFragment(
+        0,
+        11,
+        ("Arbitrary title",),
+        text_styles=(TextStyle("Synthetic-600", 6.5),),
+    )
+    qualifier = ContentFragment(
+        0,
+        12,
+        ("(Arbitrary qualifier)",),
+        text_styles=(TextStyle("Synthetic-400", 6.5),),
+    )
+    body = ContentFragment(
+        0,
+        13,
+        ("Following body",),
+        text_styles=(TextStyle("Synthetic-400", 6.5),),
+    )
+    paragraph = _element(
+        "paragraph",
+        title,
+        _element("span", source_role="Span", actual_text="\n"),
+        qualifier,
+    )
+    document = _document(
+        _element(
+            "section",
+            _element(
+                "paragraph",
+                _element(
+                    "table",
+                    _element(
+                        "table_row",
+                        _element("table_cell", _element("figure")),
+                        _element("table_cell", paragraph),
+                    ),
+                    source_role="Table",
+                ),
+            ),
+            _element("paragraph", body),
+            source_role="Sect",
+        )
+    )
+    return replace(document, subtitle_hints=detect_subtitle_hints(document.children))
+
+
+def test_inline_subtitle_offsets_are_validated_from_source_boundary() -> None:
+    document = _inline_subtitle_document()
+
+    validate_review_formatting_hints(document)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"title_end_offset": None},
+        {"qualifier_start_offset": None},
+        {"title_end_offset": True},
+        {"qualifier_start_offset": 999},
+        {"title_end_offset": 1},
+    ],
+)
+def test_inline_subtitle_rejects_malformed_or_tampered_offsets(
+    changes: dict[str, object],
+) -> None:
+    document = _inline_subtitle_document()
+    hint = replace(document.subtitle_hints[0], **changes)
+
+    with pytest.raises(ValueError, match="invalid inline subtitle offsets"):
+        validate_review_formatting_hints(replace(document, subtitle_hints=(hint,)))
+
+
+def test_inline_subtitle_rejects_tampered_source_boundary() -> None:
+    document = _inline_subtitle_document()
+    paragraph_path = document.subtitle_hints[0].child_path
+    paragraph = cast(StructureElement, _resolve_path(document, paragraph_path))
+    newline = cast(StructureElement, paragraph.children[1])
+    changed = _replace_path(
+        document,
+        paragraph_path,
+        replace(
+            paragraph,
+            children=(
+                paragraph.children[0],
+                replace(newline, actual_text=None),
+                paragraph.children[2],
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="inline subtitle source boundary"):
+        validate_review_formatting_hints(changed)
 
 
 def _text_hint(

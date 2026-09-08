@@ -94,6 +94,45 @@ def _qualifying_row(title_text: str, mcid: int) -> StructureElement:
     )
 
 
+def _inline_children(
+    *,
+    title_text: str = "Arbitrary title",
+    qualifier_text: str = "(Arbitrary qualifier)",
+    newline_count: int = 1,
+    title_fonts: tuple[str, ...] = ("SamsungOne-600",),
+    include_body: bool = True,
+) -> tuple[StructureElement | ContentFragment, ...]:
+    source_parts = (
+        (title_text,)
+        if len(title_fonts) == 1
+        else (title_text[:1], title_text[1:])
+    )
+    title_parts = tuple(
+        _fragment(part, font, mcid=21)
+        for part, font in zip(source_parts, title_fonts, strict=True)
+        if part
+    )
+    inline_children: list[StructureElement | ContentFragment] = [*title_parts]
+    for _ in range(newline_count):
+        inline_children.append(
+            StructureElement("Span", "span", actual_text="\n")
+        )
+    inline_children.append(
+        _fragment(qualifier_text, "SamsungOne-400", mcid=22)
+    )
+    row = _element(
+        "table_row",
+        _element("table_cell", _element("figure")),
+        _element("table_cell", _element("paragraph", *inline_children)),
+    )
+    wrapper = _element("paragraph", _element("table", row))
+    body = _element(
+        "paragraph", _fragment("Following body", "SamsungOne-400", mcid=23)
+    )
+    section_children = (wrapper, body) if include_body else (wrapper,)
+    return (_element("section", *section_children),)
+
+
 @pytest.mark.parametrize(
     ("font_name", "expected"),
     [
@@ -147,6 +186,91 @@ def test_detects_language_independent_table_subtitle_from_following_body_weight(
             observed_line_count=1,
         ),
     )
+
+
+def test_detects_inline_table_subtitle_at_exact_source_newline_offsets() -> None:
+    title = "Arbitrary title"
+    qualifier = "(Arbitrary qualifier)"
+
+    assert detect_subtitle_hints(
+        _inline_children(title_text=title, qualifier_text=qualifier)
+    ) == (
+        SubtitleHint(
+            child_path=(0, 0, 0, 0, 1, 0),
+            font_weight=600,
+            comparison_body_font_weight=400,
+            observed_line_count=1,
+            title_end_offset=len(title),
+            qualifier_start_offset=len(title + "\n"),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "qualifier", "newline_count"),
+    [
+        ("Arbitrary title", "(Arbitrary qualifier)", 0),
+        ("", "(Arbitrary qualifier)", 1),
+        ("Arbitrary title", "", 1),
+        ("Arbitrary title", "(Arbitrary qualifier)", 2),
+    ],
+    ids=(
+        "no-source-newline",
+        "empty-title",
+        "empty-qualifier",
+        "multiple-boundaries",
+    ),
+)
+def test_rejects_non_unique_or_empty_inline_subtitle_boundary(
+    title: str, qualifier: str, newline_count: int
+) -> None:
+    assert (
+        detect_subtitle_hints(
+            _inline_children(
+                title_text=title,
+                qualifier_text=qualifier,
+                newline_count=newline_count,
+            )
+        )
+        == ()
+    )
+
+
+def test_does_not_infer_inline_subtitle_boundary_from_wording_or_visual_wrap() -> None:
+    paragraph = _element(
+        "paragraph",
+        _fragment("Arbitrary title,", "SamsungOne-600", mcid=21),
+        _fragment(" (Arbitrary qualifier)", "SamsungOne-400", mcid=22),
+    )
+    children = _inline_children()
+    section = children[0]
+    assert isinstance(section, StructureElement)
+    wrapper, body = section.children
+    assert isinstance(wrapper, StructureElement)
+    table = wrapper.children[0]
+    assert isinstance(table, StructureElement)
+    row = table.children[0]
+    assert isinstance(row, StructureElement)
+    text_cell = row.children[1]
+    assert isinstance(text_cell, StructureElement)
+    changed = replace(text_cell, children=(paragraph,))
+    changed_row = replace(row, children=(row.children[0], changed))
+    changed_table = replace(table, children=(changed_row,))
+    changed_wrapper = replace(wrapper, children=(changed_table,))
+
+    assert detect_subtitle_hints(
+        (replace(section, children=(changed_wrapper, body)),)
+    ) == ()
+
+
+def test_rejects_inline_subtitle_with_mixed_title_typography() -> None:
+    assert detect_subtitle_hints(
+        _inline_children(title_fonts=("SamsungOne-600", "SamsungOne-700"))
+    ) == ()
+
+
+def test_rejects_inline_subtitle_without_following_body() -> None:
+    assert detect_subtitle_hints(_inline_children(include_body=False)) == ()
 
 
 def test_detect_table_subtitles_returns_replaced_immutable_document() -> None:

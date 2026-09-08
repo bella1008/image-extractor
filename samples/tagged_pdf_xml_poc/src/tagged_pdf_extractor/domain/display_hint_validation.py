@@ -34,6 +34,7 @@ from tagged_pdf_extractor.domain.readability_formatting import (
     detect_sentence_break_hints,
 )
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
+from tagged_pdf_extractor.domain.subtitle_detection import inline_subtitle_offsets
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -76,8 +77,19 @@ def validate_review_formatting_hints(
         for bbox in target.text_bboxes:
             if bbox is not None and not _valid_bbox(bbox):
                 raise ValueError(f"invalid fragment bbox at {path}")
-    for path in subtitle_by_path:
-        _resolved_structure_element(elements, path, "subtitle hint")
+    for path, hint in subtitle_by_path.items():
+        target = _resolved_structure_element(elements, path, "subtitle hint")
+        title_end = hint.title_end_offset
+        qualifier_start = hint.qualifier_start_offset
+        if title_end is None and qualifier_start is None:
+            continue
+        if type(title_end) is not int or type(qualifier_start) is not int:
+            raise ValueError(f"invalid inline subtitle offsets at {path}")
+        detected_offsets = inline_subtitle_offsets(target)
+        if detected_offsets is None:
+            raise ValueError(f"inline subtitle source boundary is invalid at {path}")
+        if (title_end, qualifier_start) != detected_offsets:
+            raise ValueError(f"invalid inline subtitle offsets at {path}")
 
     detected_line_paths = {
         hint.child_path for hint in detect_rf_line_break_hints(document.children)

@@ -111,6 +111,8 @@ class SubtitleHint:
     comparison_body_font_weight: int
     observed_line_count: int
     reason: str = "figure_table_title_stronger_than_following_body"
+    title_end_offset: int | None = None
+    qualifier_start_offset: int | None = None
 
 
 @dataclass(frozen=True)

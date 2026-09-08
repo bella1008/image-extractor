@@ -419,6 +419,62 @@ def test_subtitle_escapes_only_emphasis_breaking_characters(tmp_path: Path) -> N
     assert "## Path" not in markdown
 
 
+def test_inline_subtitle_bolds_only_title_and_renders_qualifier_on_next_line(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <paragraph display-role="subtitle" title-end-offset="15" qualifier-start-offset="16">
+          <text>Arbitrary title</text><span actual-text="&#10;" /><text>(Arbitrary qualifier)</text>
+        </paragraph>
+        """,
+    )
+
+    assert "**Arbitrary title**\n(Arbitrary qualifier)" in markdown
+    assert "**Arbitrary title\n(Arbitrary qualifier)**" not in markdown
+
+
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        'title-end-offset="15"',
+        'title-end-offset="true" qualifier-start-offset="16"',
+        'title-end-offset="14" qualifier-start-offset="16"',
+        'title-end-offset="15" qualifier-start-offset="99"',
+    ],
+)
+def test_inline_subtitle_rejects_malformed_or_tampered_offsets(
+    tmp_path: Path, attributes: str
+) -> None:
+    body = (
+        f'<paragraph display-role="subtitle" {attributes}>'
+        '<text>Arbitrary title</text><span actual-text="&#10;" />'
+        '<text>(Arbitrary qualifier)</text></paragraph>'
+    )
+
+    with pytest.raises(ValueError, match="invalid inline subtitle offsets"):
+        _render(tmp_path, body)
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ("", '<span actual-text="&#10;" /><span actual-text="&#10;" />'),
+    ids=("missing", "multiple"),
+)
+def test_inline_subtitle_rejects_missing_or_multiple_source_boundaries(
+    tmp_path: Path, boundary: str
+) -> None:
+    body = (
+        '<paragraph display-role="subtitle" title-end-offset="15" qualifier-start-offset="16">'
+        f'<text>Arbitrary title</text>{boundary}'
+        '<text>(Arbitrary qualifier)</text></paragraph>'
+    )
+
+    with pytest.raises(ValueError, match="inline subtitle source boundary"):
+        _render(tmp_path, body)
+
+
 def test_renders_validated_section_heading_once_without_report_promotion(
     tmp_path: Path,
 ) -> None:

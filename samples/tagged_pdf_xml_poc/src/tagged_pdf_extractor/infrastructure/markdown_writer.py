@@ -62,6 +62,9 @@ _SENTENCE_BREAK_ATTRIBUTE_NAMES = frozenset(
     {"sentence-break-offsets", "sentence-break-reason"}
 )
 _SENTENCE_BREAK_REASON = "conservative_sentence_terminal_in_review_container"
+_INLINE_SUBTITLE_OFFSET_ATTRIBUTES = frozenset(
+    {"title-end-offset", "qualifier-start-offset"}
+)
 _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
     {
         "icon-reason",
@@ -322,6 +325,19 @@ class MarkdownDocumentWriter:
             element.tag == "paragraph"
             and element.get("display-role") == "subtitle"
         ):
+            if any(
+                name in element.attrib
+                for name in _INLINE_SUBTITLE_OFFSET_ATTRIBUTES
+            ):
+                source, title_end, qualifier_start = cls._inline_subtitle_source(
+                    element
+                )
+                title = cls._join_text_parts((source[:title_end],))
+                qualifier = cls._join_text_parts((source[qualifier_start:],))
+                return [
+                    f"**{cls._escape_emphasis_text(title)}**\n"
+                    f"{cls._escape_physical_lines(qualifier)}"
+                ]
             text = cls._element_text(element)
             return [f"**{cls._escape_emphasis_text(text)}**"] if text else []
 
@@ -1171,6 +1187,16 @@ class MarkdownDocumentWriter:
         continuation_elements: list[ET.Element] = []
         for element in root.iter():
             display_role = element.get("display-role")
+            has_inline_subtitle_offsets = any(
+                name in element.attrib
+                for name in _INLINE_SUBTITLE_OFFSET_ATTRIBUTES
+            )
+            if display_role == "subtitle" and has_inline_subtitle_offsets:
+                cls._inline_subtitle_source(element)
+            elif has_inline_subtitle_offsets:
+                raise ValueError(
+                    "inline subtitle offsets without subtitle display role"
+                )
             has_continuation_attributes = any(
                 name in element.attrib
                 for name in _CONTINUATION_UNIQUE_ATTRIBUTE_NAMES
@@ -1228,6 +1254,62 @@ class MarkdownDocumentWriter:
         )
         cls._validate_inline_icon_structures(root, inline_icons)
         cls._validate_continuation_structures(root, continuation_elements)
+
+    @classmethod
+    def _inline_subtitle_source(
+        cls, element: ET.Element
+    ) -> tuple[str, int, int]:
+        if element.tag != "paragraph":
+            raise ValueError("inline subtitle must target paragraph")
+        values = tuple(
+            element.get(name)
+            for name in ("title-end-offset", "qualifier-start-offset")
+        )
+        if any(
+            value is None or re.fullmatch(r"0|[1-9][0-9]*", value) is None
+            for value in values
+        ):
+            raise ValueError("invalid inline subtitle offsets")
+        title_end, qualifier_start = (
+            int(value) for value in values if value is not None
+        )
+        parts: list[str] = []
+        boundaries = 0
+
+        def visit(parent: ET.Element) -> None:
+            nonlocal boundaries
+            for child in cls._structural_children(parent):
+                if child.tag == "text":
+                    if child.get("display-role") is not None:
+                        raise ValueError("inline subtitle display role conflict")
+                    parts.append(decode_data_element(child))
+                elif child.tag in _SENTENCE_INLINE_TAGS:
+                    actual_text = child.get("actual-text")
+                    if child.get("display-role") is not None:
+                        raise ValueError("inline subtitle display role conflict")
+                    if actual_text is not None:
+                        parts.append(actual_text)
+                        if actual_text == "\n":
+                            boundaries += 1
+                    else:
+                        visit(child)
+                else:
+                    raise ValueError("inline subtitle role conflict")
+
+        visit(element)
+        source = "".join(parts)
+        if boundaries != 1:
+            raise ValueError("inline subtitle source boundary is invalid")
+        if (
+            qualifier_start != title_end + 1
+            or title_end <= 0
+            or qualifier_start >= len(source)
+            or source[title_end:qualifier_start] != "\n"
+            or not source[:title_end].strip()
+            or not source[qualifier_start:].strip()
+        ):
+            raise ValueError("invalid inline subtitle offsets")
+        return source, title_end, qualifier_start
 
     @staticmethod
     def _reject_sentence_continuation_overlaps(

@@ -1115,6 +1115,51 @@ def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(
     assert "".join(root.itertext()) == "Generic title(Qualifier)"
 
 
+def test_semantic_writer_serializes_inline_subtitle_offsets_without_changing_raw_xml(
+    tmp_path: Path,
+) -> None:
+    paragraph = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            ContentFragment(0, 11, ("Arbitrary title",)),
+            StructureElement("Span", "span", actual_text="\n"),
+            ContentFragment(0, 12, ("(Arbitrary qualifier)",)),
+        ),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (paragraph,),
+        subtitle_hints=(
+            SubtitleHint(
+                (0,),
+                600,
+                400,
+                1,
+                title_end_offset=15,
+                qualifier_start_offset=16,
+            ),
+        ),
+    )
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw = raw_path.read_text(encoding="utf-8")
+    subtitle = ET.parse(semantic_path).getroot().find("paragraph")
+    assert subtitle is not None
+    assert subtitle.get("title-end-offset") == "15"
+    assert subtitle.get("qualifier-start-offset") == "16"
+    assert "title-end-offset" not in raw
+    assert "qualifier-start-offset" not in raw
+
+
 @pytest.mark.parametrize(
     "block_role",
     (

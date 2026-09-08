@@ -48,6 +48,82 @@ def _render(
     return output.read_text(encoding="utf-8")
 
 
+def test_renders_evidenced_list_continuation_under_preceding_item(
+    tmp_path: Path,
+) -> None:
+    markdown = _render(
+        tmp_path,
+        """
+        <section>
+          <list><list_item><label><text>bullet</text></label><list_body><text>First item</text></list_body></list_item></list>
+          <paragraph display-role="list-continuation"
+            continuation-reason="sibling_list_paragraph_list_geometry_typography"
+            preceding-list-item-path="0/0/0" preceding-list-body-path="0/0/0/1"
+            page-index="0" paragraph-bbox="100,176,180,184"
+            list-body-bbox="100,188,180,208" left-delta="0" vertical-gap="4"
+            reference-font-size="8" continuation-source-role="LBody"
+            preceding-body-font-weight="400" preceding-body-font-size="8"
+            preceding-body-observed-lines="0:11,0:12" target-font-weight="400"
+            target-font-size="8" target-observed-lines="0:20"><text>Continuation text</text></paragraph>
+          <list><list_item><label><text>bullet</text></label><list_body><text>Second item</text></list_body></list_item></list>
+        </section>
+        """,
+    )
+
+    assert "- First item\n\n  Continuation text\n\n- Second item" in markdown
+
+
+def test_rejects_continuation_metadata_without_display_role(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="continuation attributes without list-continuation"):
+        _render(
+            tmp_path,
+            '<paragraph continuation-reason="sibling_list_paragraph_list_geometry_typography"><text>Detached</text></paragraph>',
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"preceding-list-item-path": None}, "missing continuation preceding-list-item-path"),
+        ({"continuation-reason": "manual"}, "invalid continuation reason"),
+        ({"preceding-list-item-path": "0//0"}, "invalid continuation preceding-list-item-path"),
+    ],
+)
+def test_malformed_list_continuation_xml_fails_closed(
+    tmp_path: Path, overrides: dict[str, str | None], message: str
+) -> None:
+    attributes: dict[str, str | None] = {
+        "display-role": "list-continuation",
+        "continuation-reason": "sibling_list_paragraph_list_geometry_typography",
+        "preceding-list-item-path": "0/0/0",
+        "preceding-list-body-path": "0/0/0/1",
+        "page-index": "0",
+        "paragraph-bbox": "100,176,180,184",
+        "list-body-bbox": "100,188,180,208",
+        "left-delta": "0",
+        "vertical-gap": "4",
+        "reference-font-size": "8",
+        "continuation-source-role": "LBody",
+        "preceding-body-font-weight": "400",
+        "preceding-body-font-size": "8",
+        "preceding-body-observed-lines": "0:11,0:12",
+        "target-font-weight": "400",
+        "target-font-size": "8",
+        "target-observed-lines": "0:20",
+    }
+    attributes.update(overrides)
+    serialized = " ".join(
+        f'{name}="{escape(value)}"'
+        for name, value in attributes.items()
+        if value is not None
+    )
+    with pytest.raises(ValueError, match=message):
+        _render(
+            tmp_path,
+            f'<paragraph {serialized}><text>Detached</text></paragraph>',
+        )
+
+
 def test_renders_subtitle_hint_as_bold_without_heading_promotion(
     tmp_path: Path,
 ) -> None:

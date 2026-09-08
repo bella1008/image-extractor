@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from types import MappingProxyType
 from typing import Mapping, TypeVar
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    ContinuationHint,
+    ContinuationTypographyEvidence,
     InlineIconHint,
     LineBreakHint,
     SentenceBreakHint,
@@ -14,6 +16,9 @@ from tagged_pdf_extractor.domain.models import (
     SubtitleHint,
     TaggedDocument,
     TextDisplayHint,
+)
+from tagged_pdf_extractor.domain.list_continuation_detection import (
+    detect_list_continuation_hints,
 )
 from tagged_pdf_extractor.domain.inline_icon_policy import (
     GENERIC_INLINE_ICON_REASON,
@@ -42,6 +47,9 @@ class ValidatedReviewFormattingHints:
     text_display_by_path: Mapping[tuple[int, ...], TextDisplayHint]
     sentence_break_by_path: Mapping[tuple[int, ...], SentenceBreakHint]
     inline_icon_by_path: Mapping[tuple[int, ...], InlineIconHint]
+    continuation_by_path: Mapping[tuple[int, ...], ContinuationHint] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
 
 def validate_review_formatting_hints(
@@ -57,6 +65,9 @@ def validate_review_formatting_hints(
     )
     inline_icon_by_path = _unique_hints(
         document.inline_icon_hints, "inline icon hint"
+    )
+    continuation_by_path = _unique_hints(
+        document.continuation_hints, "continuation hint"
     )
     elements, ancestors = _index_document(document.children)
     for path, target in elements.items():
@@ -101,6 +112,84 @@ def validate_review_formatting_hints(
     text_paths = tuple(text_display_by_path)
     sentence_paths = tuple(sentence_break_by_path)
     icon_paths = tuple(inline_icon_by_path)
+    continuation_paths = tuple(continuation_by_path)
+
+    strong_label_paths = tuple(
+        path
+        for path, hint in text_display_by_path.items()
+        if hint.display_role == "strong_label"
+    )
+    heading_paths = tuple(
+        sorted(
+            {
+                *source_heading_paths,
+                *(
+                    path
+                    for path, hint in text_display_by_path.items()
+                    if hint.display_role == "section_heading"
+                ),
+            }
+        )
+    )
+    for index, path in enumerate(continuation_paths):
+        target = _resolved_structure_element(elements, path, "continuation hint")
+        hint = continuation_by_path[path]
+        if target.semantic_role != "paragraph":
+            raise ValueError(f"continuation hint must target a paragraph at {path}")
+        predecessor = _resolved_structure_element(
+            elements, hint.preceding_list_item_path, "continuation predecessor"
+        )
+        if predecessor.semantic_role != "list_item":
+            raise ValueError(
+                f"continuation predecessor must resolve to list_item at {path}"
+            )
+        predecessor_body = _resolved_structure_element(
+            elements, hint.preceding_list_body_path, "continuation predecessor body"
+        )
+        if predecessor_body.semantic_role != "list_body":
+            raise ValueError(
+                f"continuation predecessor body must resolve to list_body at {path}"
+            )
+        if (
+            hint.preceding_list_body_path[: len(hint.preceding_list_item_path)]
+            != hint.preceding_list_item_path
+        ):
+            raise ValueError(
+                f"continuation predecessor body is outside list_item at {path}"
+            )
+        _validate_continuation_evidence(hint, target, predecessor, predecessor_body)
+        for other_path in continuation_paths[index + 1 :]:
+            _reject_hint_path_conflict(
+                path, (other_path,), "other continuation", "continuation"
+            )
+        for candidates, name in (
+            (heading_paths, "heading"),
+            (promotion_paths, "promotion"),
+            (subtitle_paths, "subtitle"),
+            (strong_label_paths, "strong label"),
+            (sentence_paths, "sentence break"),
+        ):
+            _reject_hint_path_conflict(path, candidates, name, "continuation")
+
+    if continuation_by_path:
+        try:
+            detected_continuation_by_path = {
+                hint.child_path: hint
+                for hint in detect_list_continuation_hints(
+                    document,
+                    heading_paths=heading_paths,
+                    promotion_paths=promotion_paths,
+                    subtitle_paths=subtitle_paths,
+                    strong_label_paths=strong_label_paths,
+                )
+            }
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("continuation hint redetection failed") from exc
+        for path, hint in continuation_by_path.items():
+            if detected_continuation_by_path.get(path) != hint:
+                raise ValueError(f"continuation hint detector mismatch at {path}")
+        if continuation_by_path != detected_continuation_by_path:
+            raise ValueError("continuation hint mapping mismatch")
 
     for sentence_path in sentence_paths:
         _reject_hint_path_conflict(
@@ -277,6 +366,7 @@ def validate_review_formatting_hints(
         text_display_by_path=MappingProxyType(text_display_by_path),
         sentence_break_by_path=MappingProxyType(sentence_break_by_path),
         inline_icon_by_path=MappingProxyType(inline_icon_by_path),
+        continuation_by_path=MappingProxyType(continuation_by_path),
     )
 
 
@@ -295,6 +385,7 @@ _Hint = TypeVar(
     TextDisplayHint,
     SentenceBreakHint,
     InlineIconHint,
+    ContinuationHint,
 )
 
 
@@ -371,8 +462,16 @@ def _detected_sentence_hints(
     document: TaggedDocument,
 ) -> dict[tuple[int, ...], SentenceBreakHint]:
     try:
+        continuation_paths = tuple(
+            hint.child_path for hint in document.continuation_hints
+        )
         return {
-            hint.child_path: hint for hint in detect_sentence_break_hints(document)
+            hint.child_path: hint
+            for hint in detect_sentence_break_hints(document)
+            if not any(
+                _paths_overlap(hint.child_path, path)
+                for path in continuation_paths
+            )
         }
     except (OverflowError, TypeError, ValueError) as exc:
         raise ValueError("sentence break hint redetection failed") from exc
@@ -403,6 +502,88 @@ def _valid_bbox(value: object) -> bool:
     if not all(_is_finite_number(coordinate) for coordinate in value):
         return False
     return value[2] > value[0] and value[3] > value[1]
+
+
+def _validate_continuation_evidence(
+    hint: ContinuationHint,
+    target: StructureElement,
+    predecessor: StructureElement,
+    predecessor_body: StructureElement,
+) -> None:
+    path = hint.child_path
+    if (
+        type(hint.page_index) is not int
+        or hint.page_index < 0
+        or not _valid_bbox(hint.paragraph_bbox)
+        or not _valid_bbox(hint.list_body_bbox)
+        or not _is_finite_number(hint.left_delta)
+        or not _is_finite_number(hint.vertical_gap)
+        or hint.vertical_gap < 0
+        or not _is_finite_number(hint.reference_font_size, positive=True)
+        or not isinstance(hint.source_role, str)
+        or not hint.source_role
+        or hint.source_role != target.source_role
+        or hint.reason != "sibling_list_paragraph_list_geometry_typography"
+    ):
+        raise ValueError(f"invalid continuation evidence at {path}")
+    evidence = hint.typography_evidence
+    if not isinstance(evidence, ContinuationTypographyEvidence):
+        raise ValueError(f"invalid continuation typography evidence at {path}")
+    weights = (
+        evidence.preceding_body_font_weight,
+        evidence.target_font_weight,
+    )
+    sizes = (
+        evidence.preceding_body_font_size,
+        evidence.target_font_size,
+    )
+    observed = (
+        evidence.preceding_body_observed_lines,
+        evidence.target_observed_lines,
+    )
+    if (
+        any(type(value) is not int or value <= 0 for value in weights)
+        or any(not _is_finite_number(value, positive=True) for value in sizes)
+        or any(
+            type(lines) is not tuple
+            or not lines
+            or any(
+                type(line) is not tuple
+                or len(line) != 2
+                or any(type(value) is not int or value < 0 for value in line)
+                or line[0] != hint.page_index
+                for line in lines
+            )
+            for lines in observed
+        )
+    ):
+        raise ValueError(f"invalid continuation typography evidence at {path}")
+    pages = (
+        _structure_page_indices(target),
+        _structure_page_indices(predecessor),
+        _structure_page_indices(predecessor_body),
+    )
+    if any(page_indices != {hint.page_index} for page_indices in pages):
+        raise ValueError(f"cross-page continuation evidence at {path}")
+
+
+def _structure_page_indices(element: StructureElement) -> set[int]:
+    pages: set[int] = set()
+    stack = [element]
+    while stack:
+        current = stack.pop()
+        if current.page_index is not None:
+            if type(current.page_index) is not int or current.page_index < 0:
+                return set()
+            pages.add(current.page_index)
+        for child in current.children:
+            if isinstance(child, StructureElement):
+                stack.append(child)
+            else:
+                if type(child.page_index) is not int or child.page_index < 0:
+                    return set()
+                pages.add(child.page_index)
+    return pages
 
 
 def _valid_typography(hint: TextDisplayHint) -> bool:

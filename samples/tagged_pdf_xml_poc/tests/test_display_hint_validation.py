@@ -12,6 +12,8 @@ from tagged_pdf_extractor.domain.display_hint_validation import (
 )
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    ContinuationHint,
+    ContinuationTypographyEvidence,
     HeadingPromotion,
     InlineIconHint,
     LineBreakHint,
@@ -21,6 +23,9 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
     TextDisplayHint,
     TextStyle,
+)
+from tagged_pdf_extractor.domain.list_continuation_detection import (
+    detect_list_continuation_hints,
 )
 from tagged_pdf_extractor.domain.readability_formatting import (
     detect_inline_icon_hints,
@@ -45,6 +50,237 @@ def _element(
 
 def _fragment(text: str) -> ContentFragment:
     return ContentFragment(page_index=0, mcid=1, text_parts=(text,))
+
+
+def _continuation_document() -> TaggedDocument:
+    def styled(text: str, mcid: int, bbox: tuple[float, float, float, float]) -> ContentFragment:
+        return ContentFragment(
+            0,
+            mcid,
+            (text,),
+            text_styles=(TextStyle("Body-Regular", 8.0),),
+            text_bboxes=(bbox,),
+        )
+
+    def list_element(marker_mcid: int, body_mcid: int, top: float) -> StructureElement:
+        label = _element(
+            "label",
+            styled("bullet", marker_mcid, (88.0, top, 96.0, top + 8.0)),
+            source_role="Lbl",
+        )
+        body = _element(
+            "list_body",
+            styled("Body one", body_mcid, (100.0, top, 180.0, top + 8.0)),
+            styled("Body two", body_mcid + 1, (100.0, top - 12.0, 180.0, top - 4.0)),
+            source_role="LBody",
+        )
+        return _element(
+            "list",
+            _element("list_item", label, body, source_role="LI"),
+            source_role="L",
+        )
+
+    section = _element(
+        "section",
+        list_element(10, 11, 200.0),
+        _element(
+            "paragraph",
+            styled("Continuation text", 20, (100.0, 176.0, 180.0, 184.0)),
+            source_role="LBody",
+        ),
+        list_element(30, 31, 164.0),
+        source_role="Sect",
+    )
+    source = TaggedDocument(Path("manual.pdf"), True, "en", (), (section,))
+    return replace(source, continuation_hints=detect_list_continuation_hints(source))
+
+
+def test_continuation_hints_are_redetected_and_exposed_as_immutable_mapping() -> None:
+    document = _continuation_document()
+
+    validated = validate_review_formatting_hints(document)
+
+    hint = document.continuation_hints[0]
+    assert validated.continuation_by_path == {hint.child_path: hint}
+    with pytest.raises(TypeError):
+        validated.continuation_by_path[hint.child_path] = hint  # type: ignore[index]
+
+
+def test_continuation_hint_tampering_is_rejected() -> None:
+    document = _continuation_document()
+    hint = replace(document.continuation_hints[0], vertical_gap=3.0)
+
+    with pytest.raises(ValueError, match="continuation hint detector mismatch"):
+        validate_review_formatting_hints(
+            replace(document, continuation_hints=(hint,))
+        )
+
+
+def test_duplicate_continuation_targets_are_rejected() -> None:
+    document = _continuation_document()
+    hint = document.continuation_hints[0]
+
+    with pytest.raises(ValueError, match="duplicate continuation hint path"):
+        validate_review_formatting_hints(
+            replace(document, continuation_hints=(hint, hint))
+        )
+
+
+@pytest.mark.parametrize(
+    ("child_path", "message"),
+    [
+        ((9,), "unresolved continuation hint path"),
+        ((0, 1, 0), "continuation hint must target a StructureElement"),
+    ],
+)
+def test_continuation_target_path_must_resolve_to_element(
+    child_path: tuple[int, ...], message: str
+) -> None:
+    document = _continuation_document()
+    hint = replace(document.continuation_hints[0], child_path=child_path)
+
+    with pytest.raises(ValueError, match=message):
+        validate_review_formatting_hints(replace(document, continuation_hints=(hint,)))
+
+
+@pytest.mark.parametrize(
+    ("field_name", "path", "message"),
+    [
+        ("preceding_list_item_path", (0, 0), "predecessor must resolve to list_item"),
+        ("preceding_list_body_path", (0, 0, 0, 0), "predecessor body must resolve to list_body"),
+        ("preceding_list_body_path", (9,), "unresolved continuation predecessor body path"),
+    ],
+)
+def test_continuation_predecessor_paths_must_resolve_to_expected_roles(
+    field_name: str, path: tuple[int, ...], message: str
+) -> None:
+    document = _continuation_document()
+    hint = replace(document.continuation_hints[0], **{field_name: path})
+
+    with pytest.raises(ValueError, match=message):
+        validate_review_formatting_hints(replace(document, continuation_hints=(hint,)))
+
+
+def test_continuation_cross_page_evidence_is_rejected() -> None:
+    document = _continuation_document()
+    section = document.children[0]
+    assert isinstance(section, StructureElement)
+    preceding = section.children[0]
+    assert isinstance(preceding, StructureElement)
+    item = preceding.children[0]
+    assert isinstance(item, StructureElement)
+    body = item.children[1]
+    assert isinstance(body, StructureElement)
+    changed_body = replace(
+        body,
+        children=tuple(
+            replace(child, page_index=1)
+            if isinstance(child, ContentFragment)
+            else child
+            for child in body.children
+        ),
+    )
+    changed = replace(
+        document,
+        children=(
+            replace(
+                section,
+                children=(
+                    replace(preceding, children=(replace(item, children=(item.children[0], changed_body)),)),
+                    section.children[1],
+                    section.children[2],
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="cross-page continuation evidence"):
+        validate_review_formatting_hints(changed)
+
+
+def test_continuation_malformed_typography_evidence_is_rejected() -> None:
+    document = _continuation_document()
+    hint = document.continuation_hints[0]
+    malformed = replace(
+        hint,
+        typography_evidence=replace(
+            hint.typography_evidence,
+            target_observed_lines=((True, 20),),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invalid continuation typography evidence"):
+        validate_review_formatting_hints(
+            replace(document, continuation_hints=(malformed,))
+        )
+
+
+@pytest.mark.parametrize(
+    "conflict",
+    ["heading", "promotion", "subtitle", "strong_label", "sentence_break"],
+)
+def test_continuation_conflicts_with_other_display_hints_are_rejected(
+    conflict: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = _continuation_document()
+    target_path = document.continuation_hints[0].child_path
+    if conflict == "heading":
+        section = document.children[0]
+        assert isinstance(section, StructureElement)
+        target = section.children[1]
+        assert isinstance(target, StructureElement)
+        changed_target = replace(target, source_role="Heading2")
+        document = replace(
+            document,
+            children=(
+                replace(
+                    section,
+                    children=(section.children[0], changed_target, section.children[2]),
+                ),
+            ),
+            continuation_hints=(
+                replace(document.continuation_hints[0], source_role="Heading2"),
+            ),
+        )
+    elif conflict == "promotion":
+        document = replace(
+            document,
+            heading_promotions=(
+                HeadingPromotion(
+                    target_path,
+                    2,
+                    "01",
+                    "Title",
+                    0,
+                    9.0,
+                    8.0,
+                    1.125,
+                    "numbered_chapter_structure_sequence_typography",
+                ),
+            ),
+        )
+    elif conflict == "subtitle":
+        document = replace(document, subtitle_hints=(SubtitleHint(target_path, 600, 400, 1),))
+    elif conflict == "strong_label":
+        document = replace(
+            document,
+            text_display_hints=(
+                TextDisplayHint(target_path, "strong_label", 600, 9.0, 400, 8.0, "test"),
+            ),
+        )
+    else:
+        fragment_path = (*target_path, 0)
+        sentence = SentenceBreakHint(fragment_path, (0,))
+        document = replace(document, sentence_break_hints=(sentence,))
+        monkeypatch.setattr(
+            validation_module,
+            "detect_sentence_break_hints",
+            lambda actual: (sentence,),
+        )
+
+    with pytest.raises(ValueError, match=f"{conflict.replace('_', ' ')} conflict for continuation hint"):
+        validate_review_formatting_hints(document)
 
 
 @pytest.mark.parametrize(

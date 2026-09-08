@@ -21,6 +21,7 @@ from tagged_pdf_extractor.domain.display_hint_validation import (
 )
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    ContinuationHint,
     HeadingPromotion,
     InlineIconHint,
     LineBreakHint,
@@ -213,6 +214,7 @@ class XmlDocumentWriter:
         consumed_text_display_paths: set[tuple[int, ...]] = set()
         consumed_sentence_break_paths: set[tuple[int, ...]] = set()
         consumed_inline_icon_paths: set[tuple[int, ...]] = set()
+        consumed_continuation_paths: set[tuple[int, ...]] = set()
 
         for index, child in enumerate(document.children):
             self._append_semantic_child(
@@ -234,6 +236,8 @@ class XmlDocumentWriter:
                 consumed_sentence_break_paths=consumed_sentence_break_paths,
                 inline_icon_by_path=validated_display_hints.inline_icon_by_path,
                 consumed_inline_icon_paths=consumed_inline_icon_paths,
+                continuation_by_path=validated_display_hints.continuation_by_path,
+                consumed_continuation_paths=consumed_continuation_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -262,6 +266,11 @@ class XmlDocumentWriter:
             validated_display_hints.inline_icon_by_path,
             consumed_inline_icon_paths,
             "inline icon hint",
+        )
+        self._assert_display_hints_consumed(
+            validated_display_hints.continuation_by_path,
+            consumed_continuation_paths,
+            "continuation hint",
         )
         self._write_and_verify(
             root,
@@ -315,6 +324,8 @@ class XmlDocumentWriter:
         consumed_sentence_break_paths: set[tuple[int, ...]],
         inline_icon_by_path: Mapping[tuple[int, ...], InlineIconHint],
         consumed_inline_icon_paths: set[tuple[int, ...]],
+        continuation_by_path: Mapping[tuple[int, ...], ContinuationHint],
+        consumed_continuation_paths: set[tuple[int, ...]],
         expected_parts: list[str],
         decisions: list[dict[str, object]],
     ) -> None:
@@ -325,6 +336,7 @@ class XmlDocumentWriter:
         text_display = text_display_by_path.get(child_path)
         sentence_break = sentence_break_by_path.get(child_path)
         inline_icon = inline_icon_by_path.get(child_path)
+        continuation = continuation_by_path.get(child_path)
         if subtitle is not None:
             rejection = subtitle_target_rejection(
                 child, promoted=promotion is not None
@@ -399,6 +411,9 @@ class XmlDocumentWriter:
         if inline_icon is not None:
             attributes.update(self._inline_icon_attributes(inline_icon))
             consumed_inline_icon_paths.add(child_path)
+        if continuation is not None:
+            attributes.update(self._continuation_attributes(continuation))
+            consumed_continuation_paths.add(child_path)
         element = ET.SubElement(
             parent,
             tag,
@@ -423,6 +438,8 @@ class XmlDocumentWriter:
                 consumed_sentence_break_paths=consumed_sentence_break_paths,
                 inline_icon_by_path=inline_icon_by_path,
                 consumed_inline_icon_paths=consumed_inline_icon_paths,
+                continuation_by_path=continuation_by_path,
+                consumed_continuation_paths=consumed_continuation_paths,
                 expected_parts=expected_parts,
                 decisions=decisions,
             )
@@ -509,6 +526,52 @@ class XmlDocumentWriter:
         else:
             raise ValueError(f"unknown inline icon reason: {hint.reason}")
         return attributes
+
+    @staticmethod
+    def _continuation_attributes(hint: ContinuationHint) -> dict[str, str]:
+        evidence = hint.typography_evidence
+
+        def path(value: tuple[int, ...]) -> str:
+            return "/".join(str(component) for component in value)
+
+        def bbox(value: tuple[float, float, float, float]) -> str:
+            return ",".join(
+                XmlDocumentWriter._format_bbox_number(component)
+                for component in value
+            )
+
+        def lines(value: tuple[tuple[int, int], ...]) -> str:
+            return ",".join(f"{page}:{mcid}" for page, mcid in value)
+
+        return {
+            "display-role": "list-continuation",
+            "continuation-reason": hint.reason,
+            "page-index": str(hint.page_index),
+            "preceding-list-item-path": path(hint.preceding_list_item_path),
+            "preceding-list-body-path": path(hint.preceding_list_body_path),
+            "paragraph-bbox": bbox(hint.paragraph_bbox),
+            "list-body-bbox": bbox(hint.list_body_bbox),
+            "left-delta": XmlDocumentWriter._format_number(hint.left_delta),
+            "vertical-gap": XmlDocumentWriter._format_number(hint.vertical_gap),
+            "reference-font-size": XmlDocumentWriter._format_number(
+                hint.reference_font_size
+            ),
+            "continuation-source-role": hint.source_role,
+            "preceding-body-font-weight": str(
+                evidence.preceding_body_font_weight
+            ),
+            "preceding-body-font-size": XmlDocumentWriter._format_number(
+                evidence.preceding_body_font_size
+            ),
+            "preceding-body-observed-lines": lines(
+                evidence.preceding_body_observed_lines
+            ),
+            "target-font-weight": str(evidence.target_font_weight),
+            "target-font-size": XmlDocumentWriter._format_number(
+                evidence.target_font_size
+            ),
+            "target-observed-lines": lines(evidence.target_observed_lines),
+        }
 
     @staticmethod
     def _assert_display_hints_consumed(

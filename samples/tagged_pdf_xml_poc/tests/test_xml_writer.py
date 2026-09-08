@@ -10,6 +10,8 @@ import pytest
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    ContinuationHint,
+    ContinuationTypographyEvidence,
     HeadingPromotion,
     InlineIconHint,
     LineBreakHint,
@@ -79,6 +81,83 @@ def _text_display_hint(
         comparison_body_font_size=6.5,
         reason="form_cluster_relative_typography",
     )
+
+
+def _continuation_hint(child_path: tuple[int, ...]) -> ContinuationHint:
+    return ContinuationHint(
+        child_path=child_path,
+        preceding_list_item_path=(0, 0, 0),
+        preceding_list_body_path=(0, 0, 0, 1),
+        page_index=0,
+        paragraph_bbox=(100.0, 176.0, 180.0, 184.0),
+        list_body_bbox=(100.0, 188.0, 180.0, 208.0),
+        left_delta=0.0,
+        vertical_gap=4.0,
+        reference_font_size=8.0,
+        source_role="LBody",
+        typography_evidence=ContinuationTypographyEvidence(
+            preceding_body_font_weight=400,
+            preceding_body_font_size=8.0,
+            preceding_body_observed_lines=((0, 11), (0, 12)),
+            target_font_weight=400,
+            target_font_size=8.0,
+            target_observed_lines=((0, 20),),
+        ),
+    )
+
+
+def test_semantic_writer_serializes_continuation_evidence_without_raw_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = StructureElement(
+        "LBody",
+        "paragraph",
+        children=(ContentFragment(0, 20, ("Continuation text",)),),
+    )
+    hint = _continuation_hint((0,))
+    document = TaggedDocument(
+        Path("manual.pdf"), True, "en", (), (target,), continuation_hints=(hint,)
+    )
+    validated = ValidatedReviewFormattingHints(
+        line_break_by_path=MappingProxyType({}),
+        text_display_by_path=MappingProxyType({}),
+        sentence_break_by_path=MappingProxyType({}),
+        inline_icon_by_path=MappingProxyType({}),
+        continuation_by_path=MappingProxyType({hint.child_path: hint}),
+    )
+    monkeypatch.setattr(xml_writer_module, "validate_display_hints", lambda actual: validated)
+    raw_path = tmp_path / "raw.xml"
+    raw_without_hint_path = tmp_path / "raw-without-hint.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_raw(replace(document, continuation_hints=()), raw_without_hint_path)
+    writer.write_semantic(document, semantic_path)
+
+    assert raw_path.read_bytes() == raw_without_hint_path.read_bytes()
+    paragraph = ET.parse(semantic_path).getroot().find("paragraph")
+    assert paragraph is not None
+    assert paragraph.attrib == {
+        "page-index": "0",
+        "display-role": "list-continuation",
+        "continuation-reason": "sibling_list_paragraph_list_geometry_typography",
+        "preceding-list-item-path": "0/0/0",
+        "preceding-list-body-path": "0/0/0/1",
+        "paragraph-bbox": "100,176,180,184",
+        "list-body-bbox": "100,188,180,208",
+        "left-delta": "0",
+        "vertical-gap": "4",
+        "reference-font-size": "8",
+        "continuation-source-role": "LBody",
+        "preceding-body-font-weight": "400",
+        "preceding-body-font-size": "8",
+        "preceding-body-observed-lines": "0:11,0:12",
+        "target-font-weight": "400",
+        "target-font-size": "8",
+        "target-observed-lines": "0:20",
+    }
 
 
 def _review_formatting_document() -> TaggedDocument:

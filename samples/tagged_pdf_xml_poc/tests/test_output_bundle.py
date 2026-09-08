@@ -13,6 +13,8 @@ from tagged_pdf_extractor.application.extract_document import ExtractDocument
 from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    ContinuationHint,
+    ContinuationTypographyEvidence,
     Diagnostic,
     ExtractionArtifacts,
     HeadingPromotion,
@@ -2309,7 +2311,55 @@ def test_extract_document_applies_formatting_in_required_pipeline_order(
     source_document = _document(tmp_path)
     numbered_document = replace(source_document, language="numbered")
     subtitle_document = replace(source_document, language="subtitle")
-    profile_document = replace(source_document, language="profile")
+    existing_hint = ContinuationHint(
+        child_path=(2,),
+        preceding_list_item_path=(3,),
+        preceding_list_body_path=(3, 0),
+        page_index=0,
+        paragraph_bbox=(30.0, 10.0, 40.0, 20.0),
+        list_body_bbox=(30.0, 20.0, 40.0, 30.0),
+        left_delta=0.0,
+        vertical_gap=1.0,
+        reference_font_size=8.0,
+        source_role="LBody",
+        typography_evidence=ContinuationTypographyEvidence(
+            preceding_body_font_weight=400,
+            preceding_body_font_size=8.0,
+            preceding_body_observed_lines=((0, 3),),
+            target_font_weight=400,
+            target_font_size=8.0,
+            target_observed_lines=((0, 4),),
+        ),
+    )
+    profile_document = replace(
+        source_document,
+        language="profile",
+        continuation_hints=(existing_hint,),
+    )
+    continuation_hint = ContinuationHint(
+        child_path=(0,),
+        preceding_list_item_path=(1,),
+        preceding_list_body_path=(1, 0),
+        page_index=0,
+        paragraph_bbox=(10.0, 10.0, 20.0, 20.0),
+        list_body_bbox=(10.0, 20.0, 20.0, 30.0),
+        left_delta=0.0,
+        vertical_gap=1.0,
+        reference_font_size=8.0,
+        source_role="LBody",
+        typography_evidence=ContinuationTypographyEvidence(
+            preceding_body_font_weight=400,
+            preceding_body_font_size=8.0,
+            preceding_body_observed_lines=((0, 1),),
+            target_font_weight=400,
+            target_font_size=8.0,
+            target_observed_lines=((0, 2),),
+        ),
+    )
+    continuation_document = replace(
+        profile_document,
+        continuation_hints=(existing_hint, continuation_hint),
+    )
     readability_document = replace(source_document, language="readability")
     report = _report(readability_document)
 
@@ -2330,8 +2380,23 @@ def test_extract_document_applies_formatting_in_required_pipeline_order(
 
     def readability_formatting(document: TaggedDocument) -> TaggedDocument:
         calls.append(("generic readability", document))
-        assert document is profile_document
+        assert document == continuation_document
         return readability_document
+
+    def continuations(
+        document: TaggedDocument,
+        **conflicts: object,
+    ) -> tuple[ContinuationHint, ...]:
+        calls.append(("list continuation", (document, conflicts)))
+        assert document is profile_document
+        assert conflicts == {
+            "heading_paths": ((0,),),
+            "promotion_paths": (),
+            "subtitle_paths": (),
+            "strong_label_paths": (),
+            "existing_continuation_paths": ((2,),),
+        }
+        return (continuation_hint,)
 
     monkeypatch.setattr(
         extract_document_module,
@@ -2348,6 +2413,12 @@ def test_extract_document_applies_formatting_in_required_pipeline_order(
         extract_document_module,
         "apply_profile_review_formatting",
         profile_formatting,
+    )
+    monkeypatch.setattr(
+        extract_document_module,
+        "detect_list_continuation_hints",
+        continuations,
+        raising=False,
     )
     monkeypatch.setattr(
         extract_document_module,
@@ -2402,6 +2473,7 @@ def test_extract_document_applies_formatting_in_required_pipeline_order(
         "numbered promotion",
         "subtitle",
         "profile review formatting",
+        "list continuation",
         "generic readability",
         "baseline",
         "validate",
@@ -2411,6 +2483,139 @@ def test_extract_document_applies_formatting_in_required_pipeline_order(
     for name, value in calls:
         if name in {"validate", "evaluator", "writer"}:
             assert value is readability_document
+
+
+def test_extract_document_renders_detected_list_continuation_end_to_end(
+    tmp_path: Path,
+) -> None:
+    from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
+
+    def fragment(
+        text: str, mcid: int, bbox: tuple[float, float, float, float]
+    ) -> ContentFragment:
+        return ContentFragment(
+            0,
+            mcid,
+            (text,),
+            text_styles=(TextStyle("Body-Regular", 8.0),),
+            text_bboxes=(bbox,),
+        )
+
+    def list_element(marker_mcid: int, body_mcid: int, top: float) -> StructureElement:
+        label = StructureElement(
+            "Lbl",
+            "label",
+            children=(fragment("bullet", marker_mcid, (88.0, top, 96.0, top + 8.0)),),
+        )
+        body = StructureElement(
+            "LBody",
+            "list_body",
+            children=(
+                fragment("List body one", body_mcid, (100.0, top, 180.0, top + 8.0)),
+                fragment("List body two", body_mcid + 1, (100.0, top - 12.0, 180.0, top - 4.0)),
+            ),
+        )
+        return StructureElement(
+            "L",
+            "list",
+            children=(StructureElement("LI", "list_item", children=(label, body)),),
+        )
+
+    source_document = TaggedDocument(
+        tmp_path / "source.pdf",
+        True,
+        "en",
+        (),
+        (
+            StructureElement(
+                "Sect",
+                "section",
+                children=(
+                    list_element(10, 11, 200.0),
+                    ContentFragment(0, None, (" \t",)),
+                    StructureElement(
+                        "LBody",
+                        "paragraph",
+                        page_index=0,
+                        children=(
+                            fragment(
+                                "Continuation first. Continuation second.",
+                                20,
+                                (100.0, 176.0, 180.0, 184.0),
+                            ),
+                        ),
+                    ),
+                    list_element(30, 31, 164.0),
+                ),
+            ),
+        ),
+    )
+
+    class Reader:
+        def read(self, path: Path) -> TaggedDocument:
+            return source_document
+
+    class Baseline:
+        def read_text(self, path: Path) -> str:
+            return "baseline"
+
+    class Evaluator:
+        def evaluate(
+            self,
+            document: TaggedDocument,
+            baseline: str,
+            xml_round_trip_ok: bool,
+        ) -> QualityReport:
+            return _report(document)
+
+    source_document.source_path.write_bytes(b"pdf")
+    geometry_only_raw = tmp_path / "geometry-only-raw.xml"
+    document, _, artifacts = ExtractDocument(
+        Reader(), Baseline(), Evaluator(), OutputBundleWriter()
+    ).run(source_document.source_path, tmp_path / "continuation-output")
+
+    assert len(document.continuation_hints) == 1
+    assert document.sentence_break_hints == ()
+    section = source_document.children[0]
+    assert isinstance(section, StructureElement)
+    target_element = section.children[2]
+    assert isinstance(target_element, StructureElement)
+    target_fragment = target_element.children[0]
+    assert isinstance(target_fragment, ContentFragment)
+    geometry_only_document = replace(
+        source_document,
+        children=(
+            replace(
+                section,
+                children=(
+                    section.children[0],
+                    section.children[1],
+                    replace(
+                        target_element,
+                        children=(
+                            replace(
+                                target_fragment,
+                                text_parts=("Continuation text",),
+                            ),
+                        ),
+                    ),
+                    section.children[3],
+                ),
+            ),
+        ),
+    )
+    XmlDocumentWriter().write_raw(geometry_only_document, geometry_only_raw)
+    assert "continuation" not in geometry_only_raw.read_text(encoding="utf-8")
+    assert "continuation" not in artifacts.raw_xml.read_text(encoding="utf-8")
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    target = semantic.find(".//paragraph[@display-role='list-continuation']")
+    assert target is not None
+    assert document.continuation_hints[0].child_path == (0, 2)
+    assert target.attrib["preceding-list-item-path"] == "0/0/0"
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert "- List body one List body two\n\n  Continuation first. Continuation second." in markdown
+    assert markdown.count("\n- List body one List body two") == 2
+    assert "\n- Continuation first" not in markdown
 
 
 def _review_formatting_document(source: Path) -> TaggedDocument:

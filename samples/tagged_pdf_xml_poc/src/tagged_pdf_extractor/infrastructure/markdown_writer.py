@@ -72,6 +72,32 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
         "route-parenthesized",
     }
 )
+_CONTINUATION_REASON = "sibling_list_paragraph_list_geometry_typography"
+_CONTINUATION_ATTRIBUTES = (
+    "continuation-reason",
+    "preceding-list-item-path",
+    "preceding-list-body-path",
+    "paragraph-bbox",
+    "list-body-bbox",
+    "left-delta",
+    "vertical-gap",
+    "reference-font-size",
+    "continuation-source-role",
+    "preceding-body-font-weight",
+    "preceding-body-font-size",
+    "preceding-body-observed-lines",
+    "target-font-weight",
+    "target-font-size",
+    "target-observed-lines",
+)
+_CONTINUATION_ATTRIBUTE_NAMES = frozenset(_CONTINUATION_ATTRIBUTES)
+_CONTINUATION_UNIQUE_ATTRIBUTE_NAMES = _CONTINUATION_ATTRIBUTE_NAMES - {
+    "reference-font-size"
+}
+_CONTINUATION_PATH = re.compile(r"(?:0|[1-9][0-9]*)(?:/(?:0|[1-9][0-9]*))*")
+_CONTINUATION_LINES = re.compile(
+    r"(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*)(?:,(?:0|[1-9][0-9]*):(?:0|[1-9][0-9]*))*"
+)
 _INLINE_ICON_TOKEN = "[아이콘]"
 _SEMANTIC_NOTE_MARKERS = frozenset({"※"})
 _SENTENCE_INLINE_TAGS = frozenset({"span", "link"})
@@ -233,6 +259,19 @@ class MarkdownDocumentWriter:
         blocks: list[str] = []
         for child in parent:
             if child.tag == "attributes":
+                continue
+            if child.get("display-role") == "list-continuation":
+                text = cls._element_text(child)
+                if text:
+                    if not blocks:
+                        raise ValueError(
+                            "list-continuation has no preceding list block"
+                        )
+                    continuation = "\n".join(
+                        f"  {line}"
+                        for line in cls._escape_physical_lines(text).splitlines()
+                    )
+                    blocks[-1] = f"{blocks[-1]}\n\n{continuation}"
                 continue
             blocks.extend(cls._render_element(child, promoted))
         return blocks
@@ -1081,8 +1120,20 @@ class MarkdownDocumentWriter:
     ) -> None:
         sentence_offsets_by_element: dict[ET.Element, tuple[int, ...]] = {}
         inline_icons: dict[ET.Element, _SemanticInlineIconEvidence] = {}
+        continuation_elements: list[ET.Element] = []
         for element in root.iter():
             display_role = element.get("display-role")
+            has_continuation_attributes = any(
+                name in element.attrib
+                for name in _CONTINUATION_UNIQUE_ATTRIBUTE_NAMES
+            )
+            if display_role == "list-continuation":
+                cls._validate_continuation_evidence(element)
+                continuation_elements.append(element)
+            elif has_continuation_attributes:
+                raise ValueError(
+                    "continuation attributes without list-continuation"
+                )
             has_sentence_attributes = any(
                 name in element.attrib for name in _SENTENCE_BREAK_ATTRIBUTE_NAMES
             )
@@ -1103,7 +1154,7 @@ class MarkdownDocumentWriter:
             )
             if display_role == "inline-icon":
                 inline_icons[element] = cls._validate_inline_icon_evidence(element)
-            elif has_icon_attributes:
+            elif has_icon_attributes and display_role != "list-continuation":
                 raise ValueError(
                     "inline-icon attributes without inline-icon display role"
                 )
@@ -1113,6 +1164,148 @@ class MarkdownDocumentWriter:
             promoted,
         )
         cls._validate_inline_icon_structures(root, inline_icons)
+        cls._validate_continuation_structures(root, continuation_elements)
+
+    @classmethod
+    def _validate_continuation_evidence(cls, element: ET.Element) -> None:
+        if element.tag != "paragraph":
+            raise ValueError("list-continuation must target paragraph")
+        for name in _CONTINUATION_ATTRIBUTES:
+            if element.get(name) is None:
+                raise ValueError(f"missing continuation {name}")
+        if element.get("continuation-reason") != _CONTINUATION_REASON:
+            raise ValueError("invalid continuation reason")
+        for name in ("preceding-list-item-path", "preceding-list-body-path"):
+            value = element.get(name)
+            if value is None or _CONTINUATION_PATH.fullmatch(value) is None:
+                raise ValueError(f"invalid continuation {name}")
+        page_index = element.get("page-index")
+        if page_index is None or re.fullmatch(r"0|[1-9][0-9]*", page_index) is None:
+            raise ValueError("invalid continuation page-index")
+        boxes: dict[str, tuple[float, float, float, float]] = {}
+        for name in ("paragraph-bbox", "list-body-bbox"):
+            value = element.get(name)
+            try:
+                parts = tuple(float(part) for part in (value or "").split(","))
+            except ValueError as exc:
+                raise ValueError(f"invalid continuation {name}") from exc
+            if (
+                len(parts) != 4
+                or any(not math.isfinite(number) for number in parts)
+                or parts[2] <= parts[0]
+                or parts[3] <= parts[1]
+            ):
+                raise ValueError(f"invalid continuation {name}")
+            boxes[name] = parts
+        numbers: dict[str, float] = {}
+        for name in (
+            "left-delta",
+            "vertical-gap",
+            "reference-font-size",
+            "preceding-body-font-size",
+            "target-font-size",
+        ):
+            try:
+                number = float(element.get(name, ""))
+            except ValueError as exc:
+                raise ValueError(f"invalid continuation {name}") from exc
+            if not math.isfinite(number) or (
+                name not in {"left-delta", "vertical-gap"} and number <= 0
+            ):
+                raise ValueError(f"invalid continuation {name}")
+            numbers[name] = number
+        for name in ("preceding-body-font-weight", "target-font-weight"):
+            value = element.get(name)
+            if value is None or re.fullmatch(r"[1-9][0-9]*", value) is None:
+                raise ValueError(f"invalid continuation {name}")
+        for name in (
+            "preceding-body-observed-lines",
+            "target-observed-lines",
+        ):
+            value = element.get(name)
+            if value is None or _CONTINUATION_LINES.fullmatch(value) is None:
+                raise ValueError(f"invalid continuation {name}")
+            if any(item.split(":", 1)[0] != page_index for item in value.split(",")):
+                raise ValueError(f"cross-page continuation {name}")
+        if not element.get("continuation-source-role", "").strip():
+            raise ValueError("invalid continuation continuation-source-role")
+        if not math.isclose(
+            boxes["paragraph-bbox"][0] - boxes["list-body-bbox"][0],
+            numbers["left-delta"],
+            abs_tol=5e-7,
+        ):
+            raise ValueError("continuation left-delta does not match BBoxes")
+        if not math.isclose(
+            boxes["list-body-bbox"][1] - boxes["paragraph-bbox"][3],
+            numbers["vertical-gap"],
+            abs_tol=5e-7,
+        ):
+            raise ValueError("continuation vertical-gap does not match BBoxes")
+        if not (
+            numbers["reference-font-size"]
+            == numbers["preceding-body-font-size"]
+            == numbers["target-font-size"]
+            and element.get("preceding-body-font-weight")
+            == element.get("target-font-weight")
+        ):
+            raise ValueError("continuation typography evidence mismatch")
+
+    @classmethod
+    def _validate_continuation_structures(
+        cls, root: ET.Element, continuations: list[ET.Element]
+    ) -> None:
+        if not continuations:
+            return
+        indexed: dict[tuple[int, ...], ET.Element] = {}
+
+        def visit(parent: ET.Element, parent_path: tuple[int, ...]) -> None:
+            for index, child in enumerate(cls._structural_children(parent)):
+                path = (*parent_path, index)
+                indexed[path] = child
+                visit(child, path)
+
+        visit(root, ())
+        target_paths = {element: path for path, element in indexed.items()}
+        for element in continuations:
+            target_path = target_paths[element]
+            item_path = tuple(
+                int(part)
+                for part in element.attrib["preceding-list-item-path"].split("/")
+            )
+            body_path = tuple(
+                int(part)
+                for part in element.attrib["preceding-list-body-path"].split("/")
+            )
+            item = indexed.get(item_path)
+            body = indexed.get(body_path)
+            if item is None or item.tag != "list_item":
+                raise ValueError("continuation predecessor path is not list_item")
+            if (
+                body is None
+                or body.tag != "list_body"
+                or body_path[: len(item_path)] != item_path
+            ):
+                raise ValueError("continuation predecessor body path is not list_body")
+            if len(target_path) < 1 or target_path[-1] == 0:
+                raise ValueError("list-continuation has no preceding sibling list")
+            preceding_index = target_path[-1] - 1
+            preceding_path = (*target_path[:-1], preceding_index)
+            preceding = indexed.get(preceding_path)
+            while (
+                preceding_index >= 0
+                and preceding is not None
+                and preceding.tag == "text"
+                and not decode_data_element(preceding).strip()
+            ):
+                preceding_index -= 1
+                preceding_path = (*target_path[:-1], preceding_index)
+                preceding = indexed.get(preceding_path)
+            if (
+                preceding is None
+                or preceding.tag != "list"
+                or item_path[: len(preceding_path)] != preceding_path
+            ):
+                raise ValueError("list-continuation predecessor is not preceding list")
 
     @classmethod
     def _validate_sentence_boundaries(

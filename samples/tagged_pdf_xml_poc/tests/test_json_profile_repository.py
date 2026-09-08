@@ -141,6 +141,14 @@ def test_lookup_rejects_filename_shaped_malformed_source_tokens(
         repository.lookup(filename)
 
 
+def test_lookup_rejects_zero_language_count_source_token() -> None:
+    repository = JsonProfileRepository(CANONICAL_MAPPING)
+    filename = "BN68-00000A-00_SUG_Y26 TV ALL_ZC_L00_260101.0.pdf"
+
+    with pytest.raises(InvalidPdfFilenameError, match="source_token"):
+        repository.lookup(filename)
+
+
 def _valid_row(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
         "source_token": "ZC_L02",
@@ -383,6 +391,21 @@ def test_rejects_malformed_source_token_rows_during_load(
     )
 
     with pytest.raises(InvalidProfileRowError, match="source_token"):
+        JsonProfileRepository(mapping_path)
+
+
+def test_rejects_zero_language_count_source_token_during_load(
+    tmp_path: Path,
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json",
+        [_valid_row(source_token="ZC_L00", languages="ENG", language_count=1)],
+    )
+
+    with pytest.raises(
+        InvalidProfileRowError,
+        match=r"field 'source_token' has invalid format.*ZC_L00",
+    ):
         JsonProfileRepository(mapping_path)
 
 

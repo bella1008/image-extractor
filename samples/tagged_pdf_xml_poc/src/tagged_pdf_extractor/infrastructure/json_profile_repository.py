@@ -232,7 +232,8 @@ def _classify_language_token(
         return None
     count_match = _LANGUAGE_COUNT_TOKEN.fullmatch(language_token)
     if count_match is not None:
-        return int(count_match.group("count"))
+        language_count = int(count_match.group("count"))
+        return language_count if language_count > 0 else None
     if _LANGUAGE_CODE.fullmatch(language_token) is not None:
         return (language_token,)
     return _NAMED_COMBINATION_LANGUAGES.get(language_token)

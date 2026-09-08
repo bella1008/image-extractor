@@ -431,7 +431,7 @@ def test_inline_subtitle_bolds_only_title_and_renders_qualifier_on_next_line(
         """,
     )
 
-    assert "**Arbitrary title**\n(Arbitrary qualifier)" in markdown
+    assert "**Arbitrary title**<br>\n(Arbitrary qualifier)" in markdown
     assert "**Arbitrary title\n(Arbitrary qualifier)**" not in markdown
 
 

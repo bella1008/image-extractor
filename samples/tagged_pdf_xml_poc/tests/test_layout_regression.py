@@ -163,6 +163,8 @@ _ZG_SUBTITLE_COUNTS = Counter(
         "Correct disposal of batteries in this product": 1,
         "Ordnungsgemäße Entsorgung der Batterien in diesem Gerät": 1,
         "Elimination des batteries de ce produit": 1,
+        "Corretto smaltimento del prodotto "
+        "(rifiuti elettrici ed elettronici)": 1,
         "Corretto smaltimento delle batterie del prodotto": 1,
         "Correcte verwijdering van dit product "
         "(elektrische & elektronische afvalapparatuur)": 1,
@@ -174,6 +176,7 @@ _ZG_SUBTITLE_LINKED_BODY_PATHS = {
     (0, 0, 6, 5),
     (0, 0, 12, 7),
     (0, 0, 18, 5),
+    (0, 0, 24, 1),  # Italian product-disposal body linked by source newline.
     (0, 0, 24, 7),
     (0, 0, 30, 1),
     (0, 0, 30, 5),
@@ -539,20 +542,38 @@ def _assert_zg_note_markers_and_plain_model_labels(
 
 
 def _assert_zg_subtitles(root: ET.Element, markdown: str) -> None:
+    def subtitle_title_text(element: ET.Element) -> str:
+        if "title-end-offset" not in element.attrib:
+            return _element_text(element)
+        boundary_index = next(
+            index
+            for index, child in enumerate(element)
+            if child.attrib.get("actual-text") == "\n"
+        )
+        return re.sub(
+            r"\s+",
+            " ",
+            "".join(
+                decode_data_element(text)
+                for child in list(element)[:boundary_index]
+                for text in child.iter("text")
+            ),
+        ).strip()
+
     semantic_subtitles = Counter(
-        _element_text(element)
+        subtitle_title_text(element)
         for element in root.findall(".//*[@display-role='subtitle']")
     )
     assert semantic_subtitles == _ZG_SUBTITLE_COUNTS, (
-        "semantic subtitle evidence must preserve all seven reviewed ZG subtitles"
+        "semantic subtitle evidence must preserve all eight reviewed ZG subtitles"
     )
 
     markdown_subtitles = Counter(
-        line.strip()[2:-2]
+        line.strip().removesuffix("<br>")[2:-2]
         for line in markdown.splitlines()
-        if line.strip().startswith("**")
-        and line.strip().endswith("**")
-        and line.strip()[2:-2] in _ZG_SUBTITLE_COUNTS
+        if line.strip().removesuffix("<br>").startswith("**")
+        and line.strip().removesuffix("<br>").endswith("**")
+        and line.strip().removesuffix("<br>")[2:-2] in _ZG_SUBTITLE_COUNTS
     )
     assert markdown_subtitles == _ZG_SUBTITLE_COUNTS, (
         "Markdown must render every reviewed ZG subtitle exactly once"
@@ -895,7 +916,7 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         len(hint.offsets)
         for hints in subtitle_body_hints.values()
         for hint in hints
-    ) == 11
+    ) == 12  # Includes the linked body after the source-newline Italian subtitle.
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
     assert len(
         semantic_root.findall(".//*[@display-role='preserved-line-break']")

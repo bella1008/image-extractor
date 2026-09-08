@@ -335,8 +335,10 @@ class MarkdownDocumentWriter:
                 title = cls._join_text_parts((source[:title_end],))
                 qualifier = cls._join_text_parts((source[qualifier_start:],))
                 return [
-                    f"**{cls._escape_emphasis_text(title)}**\n"
-                    f"{cls._escape_physical_lines(qualifier)}"
+                    cls._escape_physical_lines(
+                        f"**{cls._escape_emphasis_text(title)}**"
+                        f"{_SENTENCE_BREAK}{qualifier}"
+                    )
                 ]
             text = cls._element_text(element)
             return [f"**{cls._escape_emphasis_text(text)}**"] if text else []

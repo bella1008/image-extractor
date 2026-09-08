@@ -466,6 +466,79 @@ def test_inline_subtitle_offsets_are_validated_from_source_boundary() -> None:
     validate_review_formatting_hints(document)
 
 
+def test_inline_subtitle_requires_exact_detector_match() -> None:
+    paragraph = _element(
+        "paragraph",
+        ContentFragment(
+            0,
+            11,
+            ("Arbitrary title",),
+            text_styles=(TextStyle("Synthetic-600", 6.5),),
+        ),
+        _element("span", source_role="Span", actual_text="\n"),
+        ContentFragment(
+            0,
+            12,
+            ("(Arbitrary qualifier)",),
+            text_styles=(TextStyle("Synthetic-400", 6.5),),
+        ),
+    )
+    document = replace(
+        _document(paragraph),
+        subtitle_hints=(SubtitleHint((0,), 600, 400, 1, title_end_offset=15, qualifier_start_offset=16),),
+    )
+
+    with pytest.raises(ValueError, match="inline subtitle detector mismatch"):
+        validate_review_formatting_hints(document)
+
+
+def test_forged_inline_subtitle_without_following_body_is_rejected() -> None:
+    document = _inline_subtitle_document()
+    section = document.children[0]
+    assert isinstance(section, StructureElement)
+    forged = replace(
+        document,
+        children=(replace(section, children=section.children[:1]),),
+    )
+
+    with pytest.raises(ValueError, match="inline subtitle detector mismatch"):
+        validate_review_formatting_hints(forged)
+
+
+def test_forged_inline_subtitle_without_relative_typography_is_rejected() -> None:
+    document = _inline_subtitle_document()
+    title_path = (0, 0, 0, 0, 1, 0, 0)
+    title = _resolve_path(document, title_path)
+    assert isinstance(title, ContentFragment)
+    forged = _replace_path(
+        document,
+        title_path,
+        replace(title, text_styles=(TextStyle("Synthetic-400", 6.5),)),
+    )
+
+    with pytest.raises(ValueError, match="inline subtitle detector mismatch"):
+        validate_review_formatting_hints(forged)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"font_weight": 700},
+        {"comparison_body_font_weight": 300},
+        {"observed_line_count": 2},
+        {"reason": "manual"},
+    ),
+)
+def test_inline_subtitle_rejects_tampered_detector_evidence(
+    changes: dict[str, object],
+) -> None:
+    document = _inline_subtitle_document()
+    hint = replace(document.subtitle_hints[0], **changes)
+
+    with pytest.raises(ValueError, match="inline subtitle detector mismatch"):
+        validate_review_formatting_hints(replace(document, subtitle_hints=(hint,)))
+
+
 @pytest.mark.parametrize(
     "changes",
     [

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 from types import MappingProxyType
 from typing import Mapping, TypeVar
@@ -34,7 +34,10 @@ from tagged_pdf_extractor.domain.readability_formatting import (
     detect_sentence_break_hints,
 )
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
-from tagged_pdf_extractor.domain.subtitle_detection import inline_subtitle_offsets
+from tagged_pdf_extractor.domain.subtitle_detection import (
+    detect_table_subtitles,
+    inline_subtitle_offsets,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -90,6 +93,28 @@ def validate_review_formatting_hints(
             raise ValueError(f"inline subtitle source boundary is invalid at {path}")
         if (title_end, qualifier_start) != detected_offsets:
             raise ValueError(f"invalid inline subtitle offsets at {path}")
+
+    inline_subtitle_by_path = {
+        path: hint
+        for path, hint in subtitle_by_path.items()
+        if hint.title_end_offset is not None
+        or hint.qualifier_start_offset is not None
+    }
+    if inline_subtitle_by_path:
+        try:
+            redetected = detect_table_subtitles(
+                replace(document, subtitle_hints=())
+            )
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("inline subtitle redetection failed") from exc
+        detected_inline_by_path = {
+            hint.child_path: hint
+            for hint in redetected.subtitle_hints
+            if hint.title_end_offset is not None
+            or hint.qualifier_start_offset is not None
+        }
+        if inline_subtitle_by_path != detected_inline_by_path:
+            raise ValueError("inline subtitle detector mismatch")
 
     detected_line_paths = {
         hint.child_path for hint in detect_rf_line_break_hints(document.children)

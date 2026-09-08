@@ -29,6 +29,7 @@ from tagged_pdf_extractor.domain.display_hint_validation import (
 from tagged_pdf_extractor.domain.readability_formatting import (
     apply_readability_formatting,
 )
+from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitles
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
@@ -1118,31 +1119,49 @@ def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(
 def test_semantic_writer_serializes_inline_subtitle_offsets_without_changing_raw_xml(
     tmp_path: Path,
 ) -> None:
-    paragraph = StructureElement(
+    title = "Arbitrary title"
+    qualifier = "(Arbitrary qualifier)"
+    subtitle = StructureElement(
         "P",
         "paragraph",
         children=(
-            ContentFragment(0, 11, ("Arbitrary title",)),
+            ContentFragment(
+                0,
+                11,
+                (title,),
+                text_styles=(TextStyle("SamsungOne-600", 6.5),),
+            ),
             StructureElement("Span", "span", actual_text="\n"),
-            ContentFragment(0, 12, ("(Arbitrary qualifier)",)),
-        ),
-    )
-    document = TaggedDocument(
-        Path("manual.pdf"),
-        True,
-        "en",
-        (),
-        (paragraph,),
-        subtitle_hints=(
-            SubtitleHint(
-                (0,),
-                600,
-                400,
-                1,
-                title_end_offset=15,
-                qualifier_start_offset=16,
+            ContentFragment(
+                0,
+                12,
+                (qualifier,),
+                text_styles=(TextStyle("SamsungOne-400", 6.5),),
             ),
         ),
+    )
+    figure_cell = StructureElement(
+        "TD", "table_cell", children=(StructureElement("Figure", "figure"),)
+    )
+    text_cell = StructureElement("TD", "table_cell", children=(subtitle,))
+    row = StructureElement("TR", "table_row", children=(figure_cell, text_cell))
+    table = StructureElement("Table", "table", children=(row,))
+    wrapper = StructureElement("P", "paragraph", children=(table,))
+    body = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            ContentFragment(
+                0,
+                13,
+                ("Following body",),
+                text_styles=(TextStyle("SamsungOne-400", 6.5),),
+            ),
+        ),
+    )
+    section = StructureElement("Sect", "section", children=(wrapper, body))
+    document = detect_table_subtitles(
+        TaggedDocument(Path("manual.pdf"), True, "en", (), (section,))
     )
     raw_path = tmp_path / "raw.xml"
     semantic_path = tmp_path / "semantic.xml"
@@ -1152,10 +1171,12 @@ def test_semantic_writer_serializes_inline_subtitle_offsets_without_changing_raw
     writer.write_semantic(document, semantic_path)
 
     raw = raw_path.read_text(encoding="utf-8")
-    subtitle = ET.parse(semantic_path).getroot().find("paragraph")
-    assert subtitle is not None
-    assert subtitle.get("title-end-offset") == "15"
-    assert subtitle.get("qualifier-start-offset") == "16"
+    subtitle_xml = ET.parse(semantic_path).getroot().find(
+        ".//*[@display-role='subtitle']"
+    )
+    assert subtitle_xml is not None
+    assert subtitle_xml.get("title-end-offset") == str(len(title))
+    assert subtitle_xml.get("qualifier-start-offset") == str(len(title + "\n"))
     assert "title-end-offset" not in raw
     assert "qualifier-start-offset" not in raw
 

@@ -463,7 +463,15 @@ def _inline_subtitle_document() -> TaggedDocument:
 def test_inline_subtitle_offsets_are_validated_from_source_boundary() -> None:
     document = _inline_subtitle_document()
 
+    assert document.subtitle_hints[0].observed_line_count == 2
     validate_review_formatting_hints(document)
+
+
+def test_omitted_detectable_inline_subtitle_hint_is_rejected() -> None:
+    document = replace(_inline_subtitle_document(), subtitle_hints=())
+
+    with pytest.raises(ValueError, match="inline subtitle detector mismatch"):
+        validate_review_formatting_hints(document)
 
 
 def test_inline_subtitle_requires_exact_detector_match() -> None:
@@ -525,7 +533,7 @@ def test_forged_inline_subtitle_without_relative_typography_is_rejected() -> Non
     (
         {"font_weight": 700},
         {"comparison_body_font_weight": 300},
-        {"observed_line_count": 2},
+        {"observed_line_count": 1},
         {"reason": "manual"},
     ),
 )

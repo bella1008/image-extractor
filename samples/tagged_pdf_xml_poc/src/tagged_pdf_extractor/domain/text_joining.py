@@ -1,8 +1,16 @@
 import re
+import unicodedata
 
 
 _WORD_OR_CLOSING = re.compile(r"[\w\)\]\}]$", re.UNICODE)
 _WORD_OR_OPENING = re.compile(r"^[\w\(\[\{]", re.UNICODE)
+
+
+def _is_east_asian_word_boundary(character: str) -> bool:
+    return character.isalnum() and unicodedata.east_asian_width(character) in {
+        "W",
+        "F",
+    }
 
 
 def join_text_parts(
@@ -24,6 +32,10 @@ def join_text_parts(
         elif (
             _WORD_OR_CLOSING.search(result) is not None
             and _WORD_OR_OPENING.search(next_part) is not None
+            and not (
+                _is_east_asian_word_boundary(result[-1])
+                and _is_east_asian_word_boundary(next_part[0])
+            )
         ):
             result = result + " " + next_part
             action = "insert_space"

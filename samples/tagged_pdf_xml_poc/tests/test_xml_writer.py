@@ -1116,10 +1116,21 @@ def test_semantic_writer_serializes_subtitle_hint_on_exact_paragraph_path(
     assert "".join(root.itertext()) == "Generic title(Qualifier)"
 
 
-def test_semantic_writer_serializes_inline_subtitle_offsets_without_changing_raw_xml(
+@pytest.mark.parametrize(
+    ("title_parts", "expected_title"),
+    (
+        (("Arbitrary", "title"), "Arbitrary title"),
+        (("正確", "處理"), "正確處理"),
+        (("Cafe", "\u0301 title"), "Cafe\u0301 title"),
+        (("Repeated  ", "  whitespace"), "Repeated whitespace"),
+    ),
+    ids=("english-space", "cjk-adjacent", "combining-mark", "repeated-space"),
+)
+def test_inline_subtitle_offsets_round_trip_through_xml_and_markdown(
     tmp_path: Path,
+    title_parts: tuple[str, ...],
+    expected_title: str,
 ) -> None:
-    title = "Arbitrary title"
     qualifier = "(Arbitrary qualifier)"
     subtitle = StructureElement(
         "P",
@@ -1128,8 +1139,10 @@ def test_semantic_writer_serializes_inline_subtitle_offsets_without_changing_raw
             ContentFragment(
                 0,
                 11,
-                (title,),
-                text_styles=(TextStyle("SamsungOne-600", 6.5),),
+                title_parts,
+                text_styles=tuple(
+                    TextStyle("SamsungOne-600", 6.5) for _ in title_parts
+                ),
             ),
             StructureElement("Span", "span", actual_text="\n"),
             ContentFragment(
@@ -1165,18 +1178,36 @@ def test_semantic_writer_serializes_inline_subtitle_offsets_without_changing_raw
     )
     raw_path = tmp_path / "raw.xml"
     semantic_path = tmp_path / "semantic.xml"
+    markdown_path = tmp_path / "semantic.md"
 
     writer = XmlDocumentWriter()
     writer.write_raw(document, raw_path)
     writer.write_semantic(document, semantic_path)
+    MarkdownDocumentWriter().write(
+        semantic_path,
+        QualityReport("pass", {}, {}, ()),
+        markdown_path,
+        source_name="manual.pdf",
+    )
 
     raw = raw_path.read_text(encoding="utf-8")
     subtitle_xml = ET.parse(semantic_path).getroot().find(
         ".//*[@display-role='subtitle']"
     )
     assert subtitle_xml is not None
-    assert subtitle_xml.get("title-end-offset") == str(len(title))
-    assert subtitle_xml.get("qualifier-start-offset") == str(len(title + "\n"))
+    assert subtitle_xml.get("title-end-offset") == str(len(expected_title))
+    assert subtitle_xml.get("qualifier-start-offset") == str(
+        len(expected_title + "\n")
+    )
+    assert subtitle_xml.get("observed-line-count") == "2"
+    markdown = markdown_path.read_text(encoding="utf-8")
+    markdown_lines = markdown.splitlines()
+    title_line_index = next(
+        index
+        for index, line in enumerate(markdown_lines)
+        if line.strip() == f"**{expected_title}**<br>"
+    )
+    assert markdown_lines[title_line_index + 1].strip() == qualifier
     assert "title-end-offset" not in raw
     assert "qualifier-start-offset" not in raw
 

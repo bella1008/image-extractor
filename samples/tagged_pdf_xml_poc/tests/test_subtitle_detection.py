@@ -199,9 +199,66 @@ def test_detects_inline_table_subtitle_at_exact_source_newline_offsets() -> None
             child_path=(0, 0, 0, 0, 1, 0),
             font_weight=600,
             comparison_body_font_weight=400,
-            observed_line_count=1,
+            observed_line_count=2,
             title_end_offset=len(title),
             qualifier_start_offset=len(title + "\n"),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("title_parts", "expected_title"),
+    (
+        (("Arbitrary", "title"), "Arbitrary title"),
+        (("正確", "處理"), "正確處理"),
+        (("Cafe", "\u0301 title"), "Cafe\u0301 title"),
+        (("Repeated  ", "  whitespace"), "Repeated whitespace"),
+    ),
+    ids=("english-space", "cjk-adjacent", "combining-mark", "repeated-space"),
+)
+def test_inline_subtitle_offsets_use_canonical_multi_part_text(
+    title_parts: tuple[str, ...], expected_title: str
+) -> None:
+    title = ContentFragment(
+        0,
+        21,
+        title_parts,
+        text_styles=tuple(
+            TextStyle("SamsungOne-600", 6.5) for _ in title_parts
+        ),
+    )
+    paragraph = _element(
+        "paragraph",
+        title,
+        StructureElement("Span", "span", actual_text="\n"),
+        _fragment("(Qualifier)", "SamsungOne-400", mcid=22),
+    )
+    children = _inline_children()
+    section = children[0]
+    assert isinstance(section, StructureElement)
+    wrapper, body = section.children
+    assert isinstance(wrapper, StructureElement)
+    table = wrapper.children[0]
+    assert isinstance(table, StructureElement)
+    row = table.children[0]
+    assert isinstance(row, StructureElement)
+    text_cell = row.children[1]
+    assert isinstance(text_cell, StructureElement)
+    changed_cell = replace(text_cell, children=(paragraph,))
+    changed_row = replace(row, children=(row.children[0], changed_cell))
+    changed_table = replace(table, children=(changed_row,))
+    changed_wrapper = replace(wrapper, children=(changed_table,))
+
+    assert detect_subtitle_hints(
+        (replace(section, children=(changed_wrapper, body)),)
+    ) == (
+        SubtitleHint(
+            (0, 0, 0, 0, 1, 0),
+            600,
+            400,
+            2,
+            title_end_offset=len(expected_title),
+            qualifier_start_offset=len(expected_title + "\n"),
         ),
     )
 
@@ -271,6 +328,77 @@ def test_rejects_inline_subtitle_with_mixed_title_typography() -> None:
 
 def test_rejects_inline_subtitle_without_following_body() -> None:
     assert detect_subtitle_hints(_inline_children(include_body=False)) == ()
+
+
+def test_inline_line_limit_uses_title_only_and_audits_qualifier_lines() -> None:
+    children = _inline_children()
+    section = children[0]
+    assert isinstance(section, StructureElement)
+    wrapper, body = section.children
+    assert isinstance(wrapper, StructureElement)
+    table = wrapper.children[0]
+    assert isinstance(table, StructureElement)
+    row = table.children[0]
+    assert isinstance(row, StructureElement)
+    text_cell = row.children[1]
+    assert isinstance(text_cell, StructureElement)
+    paragraph = text_cell.children[0]
+    assert isinstance(paragraph, StructureElement)
+    changed_paragraph = replace(
+        paragraph,
+        children=(
+            paragraph.children[0],
+            paragraph.children[1],
+            _fragment("(Qualifier", "SamsungOne-400", mcid=22),
+            _fragment("continued)", "SamsungOne-400", mcid=23),
+        ),
+    )
+    changed_cell = replace(text_cell, children=(changed_paragraph,))
+    changed_row = replace(row, children=(row.children[0], changed_cell))
+    changed_table = replace(table, children=(changed_row,))
+    changed_wrapper = replace(wrapper, children=(changed_table,))
+
+    hints = detect_subtitle_hints(
+        (replace(section, children=(changed_wrapper, body)),)
+    )
+
+    assert len(hints) == 1
+    assert hints[0].observed_line_count == 3
+
+
+def test_mixed_text_cell_prefers_valid_inline_subtitle_before_legacy_fallback() -> None:
+    children = _inline_children()
+    section = children[0]
+    assert isinstance(section, StructureElement)
+    wrapper, following_body = section.children
+    assert isinstance(wrapper, StructureElement)
+    table = wrapper.children[0]
+    assert isinstance(table, StructureElement)
+    row = table.children[0]
+    assert isinstance(row, StructureElement)
+    text_cell = row.children[1]
+    assert isinstance(text_cell, StructureElement)
+    cell_body = _element(
+        "paragraph",
+        _fragment("Additional cell body", "SamsungOne-400", mcid=24),
+    )
+    changed_cell = replace(text_cell, children=(*text_cell.children, cell_body))
+    changed_row = replace(row, children=(row.children[0], changed_cell))
+    changed_table = replace(table, children=(changed_row,))
+    changed_wrapper = replace(wrapper, children=(changed_table,))
+
+    assert detect_subtitle_hints(
+        (replace(section, children=(changed_wrapper, following_body)),)
+    ) == (
+        SubtitleHint(
+            (0, 0, 0, 0, 1, 0),
+            600,
+            400,
+            2,
+            title_end_offset=len("Arbitrary title"),
+            qualifier_start_offset=len("Arbitrary title\n"),
+        ),
+    )
 
 
 def test_detect_table_subtitles_returns_replaced_immutable_document() -> None:

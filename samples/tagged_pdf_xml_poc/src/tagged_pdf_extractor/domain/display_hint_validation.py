@@ -100,21 +100,18 @@ def validate_review_formatting_hints(
         if hint.title_end_offset is not None
         or hint.qualifier_start_offset is not None
     }
-    if inline_subtitle_by_path:
-        try:
-            redetected = detect_table_subtitles(
-                replace(document, subtitle_hints=())
-            )
-        except (OverflowError, TypeError, ValueError) as exc:
-            raise ValueError("inline subtitle redetection failed") from exc
-        detected_inline_by_path = {
-            hint.child_path: hint
-            for hint in redetected.subtitle_hints
-            if hint.title_end_offset is not None
-            or hint.qualifier_start_offset is not None
-        }
-        if inline_subtitle_by_path != detected_inline_by_path:
-            raise ValueError("inline subtitle detector mismatch")
+    try:
+        redetected = detect_table_subtitles(replace(document, subtitle_hints=()))
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError("inline subtitle redetection failed") from exc
+    detected_inline_by_path = {
+        hint.child_path: hint
+        for hint in redetected.subtitle_hints
+        if hint.title_end_offset is not None
+        or hint.qualifier_start_offset is not None
+    }
+    if inline_subtitle_by_path != detected_inline_by_path:
+        raise ValueError("inline subtitle detector mismatch")
 
     detected_line_paths = {
         hint.child_path for hint in detect_rf_line_break_hints(document.children)

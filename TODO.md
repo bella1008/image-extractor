@@ -216,6 +216,14 @@ Notes
 
 ### Tagged PDF XML/Markdown Review Follow-ups
 
+- Implement the approved cross-profile readability and multilingual-heading
+  parity design. Capture optional MCID text BBoxes, protect spaced
+  abbreviations, split eligible leaf-body sentences, recover only fully
+  evidenced list-continuation paragraphs, support single-paragraph table
+  subtitles, and apply heading parity to every canonical profile with
+  `language_count >= 2`.
+  - Design: `docs/superpowers/specs/2026-09-08-cross-profile-readability-and-heading-parity-design.md`
+  - Korean review copy: `docs/superpowers/specs/2026-09-08-cross-profile-readability-and-heading-parity-design_kr.md`
 - [x] Preserve complex table structure in `samples/tagged_pdf_xml_poc` Markdown output instead of flattening nested paragraphs and lists into a single `- 행 N:` line.
 - [x] Add typography-backed subtitle display hints. Do not hardcode `Correct Disposal...` wording; use verified structure plus relative PDF font weight and keep uncertain cases as separate plain paragraphs.
 - Add a conservative verified-icon catalog for recurring icon-only figures. Name only verified matches, retain evidence, and leave unknown icons for human review.

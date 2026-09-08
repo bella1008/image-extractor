@@ -83,11 +83,31 @@ def test_runner_reports_font_name_and_size_with_text() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
     assert captured == [("Heading", "Helvetica", 12.0)]
+
+
+def test_runner_reports_bbox_for_scaled_axis_aligned_horizontal_text() -> None:
+    page = _in_memory_page(
+        b"2 0 0 3 5 7 cm "
+        b"BT /F1 10 Tf 50 Tz 1 0 0 1 10 20 Tm (Hi) Tj ET"
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert len(captured) == 1
+    assert captured[0][0] == "Hi"
+    assert captured[0][1] == pytest.approx((25.0, 67.0, 34.44, 97.0))
 
 
 def test_runner_reports_effective_font_size_from_text_matrix() -> None:
@@ -99,7 +119,7 @@ def test_runner_reports_effective_font_size_from_text_matrix() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -116,7 +136,7 @@ def test_runner_reports_effective_font_size_from_current_transform() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -133,7 +153,7 @@ def test_runner_splits_text_at_graphics_state_restore() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -153,7 +173,7 @@ def test_runner_splits_text_at_graphics_state_save() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -177,7 +197,7 @@ def test_runner_splits_nested_graphics_states_with_each_effective_size() -> None
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -199,7 +219,7 @@ def test_runner_restores_font_size_after_graphics_state_restore() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -230,7 +250,7 @@ def test_runner_uses_vertical_basis_for_effective_font_size(
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, font_name, font_size: captured.append(
+        on_text=lambda value, font_name, font_size, _bbox: captured.append(
             (value, font_name, font_size)
         ),
     )
@@ -238,6 +258,95 @@ def test_runner_uses_vertical_basis_for_effective_font_size(
     assert len(captured) == 1
     assert captured[0][:2] == ("X", "Helvetica")
     assert captured[0][2] == pytest.approx(expected_size)
+
+
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        b"0 1 -1 0 10 20",
+        b"1 0.25 0 1 10 20",
+        b"1 0 0.25 1 10 20",
+        b"-1 0 0 1 10 20",
+    ],
+    ids=["rotation", "x_skew", "y_skew", "reflection"],
+)
+def test_runner_returns_none_bbox_for_unsupported_text_transform(
+    matrix: bytes,
+) -> None:
+    page = _in_memory_page(
+        b"BT /F1 10 Tf " + matrix + b" Tm (Hi) Tj ET"
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert captured == [("Hi", None)]
+
+
+@pytest.mark.parametrize(
+    "width_behavior",
+    ["missing", "zero", "nonfinite", "raises"],
+)
+def test_runner_keeps_text_when_font_geometry_is_unavailable(
+    monkeypatch, width_behavior: str
+) -> None:
+    page = _in_memory_page(b"BT /F1 10 Tf (Heading) Tj ET")
+    Font, _, ContentStream, NullObject = operation_module._load_pypdf_text_helpers()
+
+    class ControlledTextExtraction:
+        def initialize_extraction(
+            self, _orientations, visitor, _font_resources, _fonts
+        ) -> None:
+            self.visitor = visitor
+            self.font = SimpleNamespace(name="Helvetica")
+            if width_behavior != "missing":
+                self.font.get_text_width = self.get_text_width
+            self.text = ""
+
+        def get_text_width(self, _value: str) -> float:
+            if width_behavior == "raises":
+                raise ValueError("missing width")
+            if width_behavior == "nonfinite":
+                return float("inf")
+            return 0.0
+
+        def process_operation(self, operator, _operands) -> None:
+            if operator == b"Tj":
+                self.text = "Heading"
+
+        def _flush_text(self) -> None:
+            if self.text:
+                self.visitor(
+                    self.text,
+                    [1, 0, 0, 1, 0, 0],
+                    [1, 0, 0, 1, 10, 20],
+                    None,
+                    10,
+                )
+                self.text = ""
+
+    monkeypatch.setattr(
+        operation_module,
+        "_load_pypdf_text_helpers",
+        lambda: (Font, ControlledTextExtraction, ContentStream, NullObject),
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert captured == [("Heading", None)]
 
 
 def _run_with_controlled_font_metadata(
@@ -272,7 +381,7 @@ def _run_with_controlled_font_metadata(
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, normalized_name, normalized_size: captured.append(
+        on_text=lambda value, normalized_name, normalized_size, _bbox: captured.append(
             (value, normalized_name, normalized_size)
         ),
     )
@@ -333,7 +442,7 @@ def test_runner_constructs_forced_bytes_content_stream_from_direct_raw_stream(
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda _value, _font_name, _font_size: None,
+        on_text=lambda _value, _font_name, _font_size, _bbox: None,
     )
 
     assert constructions == [(source, page.pdf, "bytes")]
@@ -385,7 +494,7 @@ def test_runner_constructs_forced_bytes_content_stream_from_stream_array(
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, _font_name, _font_size: captured.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: captured.append(value),
     )
 
     assert constructions == [(source, page.pdf, "bytes")]
@@ -417,7 +526,7 @@ def test_runner_reuses_existing_content_stream_without_mutating_cached_state() -
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, _font_name, _font_size: captured.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: captured.append(value),
     )
 
     assert existing.operation_reads == 1
@@ -436,7 +545,7 @@ def test_runner_treats_an_empty_content_stream_as_no_text() -> None:
         on_boundary=lambda operator, operands: boundaries.append(
             (operator, operands)
         ),
-        on_text=lambda value, _font_name, _font_size: text.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: text.append(value),
     )
 
     assert boundaries == []
@@ -462,7 +571,7 @@ def test_runner_treats_page_without_contents_or_resources_as_no_text() -> None:
         on_boundary=lambda operator, operands: boundaries.append(
             (operator, operands)
         ),
-        on_text=lambda value, _font_name, _font_size: text.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: text.append(value),
     )
 
     assert boundaries == []
@@ -485,7 +594,7 @@ def test_runner_rejects_non_empty_page_without_resources() -> None:
         PypdfOperationTextRunner().run(
             page,
             on_boundary=lambda _operator, _operands: None,
-            on_text=lambda _value, _font_name, _font_size: None,
+            on_text=lambda _value, _font_name, _font_size, _bbox: None,
         )
 
     assert isinstance(raised.value.__cause__, KeyError)
@@ -504,7 +613,7 @@ def test_runner_treats_absent_or_null_content_as_no_text(
         on_boundary=lambda operator, operands: boundaries.append(
             (operator, operands)
         ),
-        on_text=lambda value, _font_name, _font_size: text.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: text.append(value),
     )
 
     assert boundaries == []
@@ -530,7 +639,7 @@ def test_runner_treats_indirect_null_content_as_no_text() -> None:
         on_boundary=lambda operator, operands: boundaries.append(
             (operator, operands)
         ),
-        on_text=lambda value, _font_name, _font_size: text.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: text.append(value),
     )
 
     assert boundaries == []
@@ -545,7 +654,7 @@ def test_runner_wraps_malformed_content_with_the_original_cause() -> None:
         PypdfOperationTextRunner().run(
             page,
             on_boundary=lambda _operator, _operands: None,
-            on_text=lambda _value, _font_name, _font_size: None,
+            on_text=lambda _value, _font_name, _font_size, _bbox: None,
         )
 
     assert raised.value.__cause__ is not None
@@ -587,7 +696,10 @@ def test_runner_flushes_before_mcid_boundaries_without_synthetic_cm(
             active.pop()
 
     def text(
-        value: str, _font_name: str | None, _font_size: float | None
+        value: str,
+        _font_name: str | None,
+        _font_size: float | None,
+        _bbox: tuple[float, float, float, float] | None,
     ) -> None:
         if value and active and active[-1] is not None:
             captured.setdefault(active[-1], []).append(value)
@@ -614,7 +726,7 @@ def test_runner_preserves_explicit_word_spacing_from_tj_array() -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, _font_name, _font_size: captured.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: captured.append(value),
     )
 
     assert "".join(captured) == "First Second"
@@ -629,7 +741,7 @@ def test_runner_uses_pypdf_space_width_fallback_for_font_without_widths() -> Non
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, _font_name, _font_size: captured.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: captured.append(value),
     )
 
     assert "".join(captured) == "First Second"
@@ -650,7 +762,10 @@ def test_runner_flushes_font_change_text_under_current_mcid() -> None:
             active.pop()
 
     def text(
-        value: str, _font_name: str | None, _font_size: float | None
+        value: str,
+        _font_name: str | None,
+        _font_size: float | None,
+        _bbox: tuple[float, float, float, float] | None,
     ) -> None:
         if value and active:
             captured.setdefault(active[-1], []).append(value)
@@ -677,7 +792,10 @@ def test_runner_preserves_text_across_bt_and_et() -> None:
             active.pop()
 
     def text(
-        value: str, _font_name: str | None, _font_size: float | None
+        value: str,
+        _font_name: str | None,
+        _font_size: float | None,
+        _bbox: tuple[float, float, float, float] | None,
     ) -> None:
         if value and active:
             captured.setdefault(active[-1], []).append(value)
@@ -708,7 +826,10 @@ def test_runner_reports_do_without_recursing_into_form_xobject() -> None:
         events.append(("xobject", str(operand)))
 
     def text(
-        value: str, _font_name: str | None, _font_size: float | None
+        value: str,
+        _font_name: str | None,
+        _font_size: float | None,
+        _bbox: tuple[float, float, float, float] | None,
     ) -> None:
         captured.append(value)
         events.append(("text", value))
@@ -754,7 +875,7 @@ def test_runner_resolves_inherited_resources_with_indirect_font() -> None:
     PypdfOperationTextRunner().run(
         inherited_page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, _font_name, _font_size: captured.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: captured.append(value),
     )
 
     assert "".join(captured) == "Inherited"
@@ -777,7 +898,7 @@ def test_runner_shorthand_expansion_matches_pypdf(content_data: bytes) -> None:
     PypdfOperationTextRunner().run(
         page,
         on_boundary=lambda _operator, _operands: None,
-        on_text=lambda value, _font_name, _font_size: captured.append(value),
+        on_text=lambda value, _font_name, _font_size, _bbox: captured.append(value),
     )
 
     assert "".join(captured) == expected
@@ -822,7 +943,10 @@ def test_runner_preserves_explicit_callback_exception_chain() -> None:
     expected = CallbackError("explicit callback failure")
 
     def on_text(
-        _value: str, _font_name: str | None, _font_size: float | None
+        _value: str,
+        _font_name: str | None,
+        _font_size: float | None,
+        _bbox: tuple[float, float, float, float] | None,
     ) -> None:
         try:
             raise original_cause
@@ -863,7 +987,7 @@ def test_runner_preserves_implicit_callback_exception_context() -> None:
         PypdfOperationTextRunner().run(
             page,
             on_boundary=on_boundary,
-            on_text=lambda _value, _font_name, _font_size: None,
+            on_text=lambda _value, _font_name, _font_size, _bbox: None,
         )
 
     assert raised.value is expected
@@ -893,7 +1017,7 @@ def test_runner_propagates_callback_base_exception_unchanged(
         PypdfOperationTextRunner().run(
             page,
             on_boundary=interrupt,
-            on_text=lambda _value, _font_name, _font_size: None,
+            on_text=lambda _value, _font_name, _font_size, _bbox: None,
         )
 
     assert raised.value is expected
@@ -913,7 +1037,7 @@ def test_runner_wraps_missing_private_pypdf_helper_at_run_time(monkeypatch) -> N
         PypdfOperationTextRunner().run(
             page,
             on_boundary=lambda _operator, _operands: None,
-            on_text=lambda _value, _font_name, _font_size: None,
+            on_text=lambda _value, _font_name, _font_size, _bbox: None,
         )
 
     assert raised.value.__cause__ is missing

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 from typing import Any, Literal
 
 from tagged_pdf_extractor.domain.inline_icon_policy import INLINE_ICON_REASON
+
+
+BBox = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ class ContentFragment:
     text_parts: tuple[str, ...]
     object_ref: str | None = None
     text_styles: tuple[TextStyle, ...] = ()
+    text_bboxes: tuple[BBox | None, ...] = ()
 
     def __post_init__(self) -> None:
         if self.text_styles and len(self.text_parts) != len(self.text_styles):
@@ -35,10 +40,31 @@ class ContentFragment:
                 f"ContentFragment has {len(self.text_parts)} text parts but "
                 f"{len(self.text_styles)} text styles"
             )
+        if self.text_bboxes and len(self.text_parts) != len(self.text_bboxes):
+            raise ValueError(
+                f"ContentFragment has {len(self.text_parts)} text parts but "
+                f"{len(self.text_bboxes)} text bboxes"
+            )
 
     @property
     def text(self) -> str:
         return "".join(self.text_parts)
+
+    @property
+    def bbox(self) -> BBox | None:
+        finite_boxes = tuple(
+            bbox
+            for bbox in self.text_bboxes
+            if bbox is not None and all(math.isfinite(value) for value in bbox)
+        )
+        if not finite_boxes:
+            return None
+        return (
+            min(bbox[0] for bbox in finite_boxes),
+            min(bbox[1] for bbox in finite_boxes),
+            max(bbox[2] for bbox in finite_boxes),
+            max(bbox[3] for bbox in finite_boxes),
+        )
 
 
 @dataclass(frozen=True)

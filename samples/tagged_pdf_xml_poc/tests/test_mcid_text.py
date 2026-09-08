@@ -28,8 +28,9 @@ class FakeRunner:
                 operator, operands = value
                 on_boundary(operator, operands)
             elif kind == "text":
-                text, font_name, font_size = value
-                on_text(text, font_name, font_size)
+                text, font_name, font_size, *geometry = value
+                bbox = geometry[0] if geometry else None
+                on_text(text, font_name, font_size, bbox)
             elif kind == "xobject" and on_xobject is not None:
                 on_xobject(value)
 
@@ -495,11 +496,12 @@ def test_synthetic_marked_content_flush_helper_is_not_exposed() -> None:
 
 
 def test_collects_font_styles_aligned_with_each_mcid_text_part() -> None:
+    first_bbox = (10.0, 20.0, 20.0, 36.0)
     runner = FakeRunner(
         [
             ("text", ("Outside", "IgnoredFont", 10.0)),
             ("boundary", (b"BDC", ["/P", {"/MCID": 7}])),
-            ("text", ("03", "SamsungOne-600", 16.0)),
+            ("text", ("03", "SamsungOne-600", 16.0, first_bbox)),
             ("text", ("Title", "SamsungOne-600", 16.0)),
             ("boundary", (b"EMC", [])),
         ]
@@ -514,6 +516,7 @@ def test_collects_font_styles_aligned_with_each_mcid_text_part() -> None:
             TextStyle("SamsungOne-600", 16.0),
         )
     }
+    assert result.bboxes_by_mcid == {7: (first_bbox, None)}
 
 
 def test_mcid_text_result_rejects_missing_style_mcid_key() -> None:
@@ -521,6 +524,7 @@ def test_mcid_text_result_rejects_missing_style_mcid_key() -> None:
         McidTextResult(
             parts_by_mcid={7: ("Title",)},
             styles_by_mcid={},
+            bboxes_by_mcid={7: (None,)},
             seen_mcids=frozenset({7}),
             diagnostics=(),
         )
@@ -531,6 +535,7 @@ def test_mcid_text_result_rejects_extra_style_mcid_key() -> None:
         McidTextResult(
             parts_by_mcid={},
             styles_by_mcid={8: (TextStyle("SamsungOne-600", 16.0),)},
+            bboxes_by_mcid={},
             seen_mcids=frozenset({8}),
             diagnostics=(),
         )
@@ -544,6 +549,48 @@ def test_mcid_text_result_rejects_unequal_part_and_style_lengths() -> None:
         McidTextResult(
             parts_by_mcid={7: ("03", "Title")},
             styles_by_mcid={7: (TextStyle("SamsungOne-600", 16.0),)},
+            bboxes_by_mcid={7: (None, None)},
+            seen_mcids=frozenset({7}),
+            diagnostics=(),
+        )
+
+
+def test_mcid_text_result_rejects_missing_bbox_mcid_key() -> None:
+    with pytest.raises(ValueError, match=r"missing bbox MCIDs: \[7\]"):
+        McidTextResult(
+            parts_by_mcid={7: ("Title",)},
+            styles_by_mcid={7: (TextStyle("SamsungOne-600", 16.0),)},
+            bboxes_by_mcid={},
+            seen_mcids=frozenset({7}),
+            diagnostics=(),
+        )
+
+
+def test_mcid_text_result_rejects_extra_bbox_mcid_key() -> None:
+    with pytest.raises(ValueError, match=r"extra bbox MCIDs: \[8\]"):
+        McidTextResult(
+            parts_by_mcid={},
+            styles_by_mcid={},
+            bboxes_by_mcid={8: (None,)},
+            seen_mcids=frozenset({8}),
+            diagnostics=(),
+        )
+
+
+def test_mcid_text_result_rejects_unequal_part_and_bbox_lengths() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"MCID 7 has 2 text parts but 1 text bboxes",
+    ):
+        McidTextResult(
+            parts_by_mcid={7: ("03", "Title")},
+            styles_by_mcid={
+                7: (
+                    TextStyle("SamsungOne-600", 16.0),
+                    TextStyle("SamsungOne-600", 16.0),
+                )
+            },
+            bboxes_by_mcid={7: (None,)},
             seen_mcids=frozenset({7}),
             diagnostics=(),
         )

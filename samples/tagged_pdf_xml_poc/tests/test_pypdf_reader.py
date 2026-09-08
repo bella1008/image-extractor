@@ -46,11 +46,17 @@ class RecordingCollector:
         diagnostics_by_page: dict[int, tuple[Diagnostic, ...]] | None = None,
         seen_mcids_by_page: dict[int, frozenset[int]] | None = None,
         styles_by_page: dict[int, dict[int, tuple[TextStyle, ...]]] | None = None,
+        bboxes_by_page: dict[
+            int,
+            dict[int, tuple[tuple[float, float, float, float] | None, ...]],
+        ]
+        | None = None,
     ) -> None:
         self.parts_by_page = parts_by_page or {}
         self.diagnostics_by_page = diagnostics_by_page or {}
         self.seen_mcids_by_page = seen_mcids_by_page or {}
         self.styles_by_page = styles_by_page or {}
+        self.bboxes_by_page = bboxes_by_page or {}
         self.calls: list[int] = []
 
     def collect(self, _page: Any, page_index: int) -> McidTextResult:
@@ -62,9 +68,16 @@ class RecordingCollector:
                 mcid: tuple(TextStyle(None, None) for _part in parts)
                 for mcid, parts in parts_by_mcid.items()
             }
+        bboxes_by_mcid = self.bboxes_by_page.get(page_index)
+        if bboxes_by_mcid is None:
+            bboxes_by_mcid = {
+                mcid: tuple(None for _part in parts)
+                for mcid, parts in parts_by_mcid.items()
+            }
         return McidTextResult(
             parts_by_mcid=parts_by_mcid,
             styles_by_mcid=styles_by_mcid,
+            bboxes_by_mcid=bboxes_by_mcid,
             seen_mcids=self.seen_mcids_by_page.get(
                 page_index, frozenset(parts_by_mcid)
             ),
@@ -106,6 +119,37 @@ def test_content_fragment_preserves_four_argument_positional_construction() -> N
 
     assert fragment.object_ref == "12 0 R"
     assert fragment.text_styles == ()
+    assert fragment.text_bboxes == ()
+    assert fragment.bbox is None
+
+
+def test_content_fragment_unions_only_finite_optional_text_bboxes() -> None:
+    fragment = ContentFragment(
+        page_index=2,
+        mcid=7,
+        text_parts=("03", "Title", "Body", "Ignored"),
+        text_bboxes=(
+            (10.0, 20.0, 20.0, 30.0),
+            None,
+            (5.0, 25.0, 25.0, 35.0),
+            (float("nan"), 0.0, 1.0, 1.0),
+        ),
+    )
+
+    assert fragment.bbox == (5.0, 20.0, 25.0, 35.0)
+
+
+def test_content_fragment_rejects_non_empty_mismatched_text_bboxes() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"ContentFragment has 2 text parts but 1 text bboxes",
+    ):
+        ContentFragment(
+            page_index=2,
+            mcid=7,
+            text_parts=("03", "Title"),
+            text_bboxes=((10.0, 20.0, 20.0, 36.0),),
+        )
 
 
 def test_content_fragment_rejects_non_empty_mismatched_text_styles() -> None:
@@ -440,6 +484,9 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
         styles_by_page={
             1: {9: (TextStyle("SamsungOne-600", 16.0),)},
         },
+        bboxes_by_page={
+            1: {9: ((10.0, 20.0, 90.0, 36.0),)},
+        },
     )
 
     result = TaggedPdfReader(collector).read(pdf_path)
@@ -483,6 +530,7 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
         3,
         ("Heading",),
         text_styles=(TextStyle(None, None),),
+        text_bboxes=(None,),
     )
     assert isinstance(unknown, StructureElement)
     assert unknown.source_role == "Mystery"
@@ -494,6 +542,7 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
             6,
             ("Unknown child",),
             text_styles=(TextStyle(None, None),),
+            text_bboxes=(None,),
         ),
     )
 
@@ -502,6 +551,7 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
         4,
         ("After heading",),
         text_styles=(TextStyle(None, None),),
+        text_bboxes=(None,),
     )
     assert isinstance(mcr_fragment, ContentFragment)
     assert (mcr_fragment.page_index, mcr_fragment.mcid, mcr_fragment.text_parts) == (
@@ -511,6 +561,8 @@ def test_reads_nested_structure_in_logical_order_and_merges_diagnostics(
     )
     assert mcr_fragment.object_ref is not None
     assert mcr_fragment.text_styles == (TextStyle("SamsungOne-600", 16.0),)
+    assert mcr_fragment.text_bboxes == ((10.0, 20.0, 90.0, 36.0),)
+    assert mcr_fragment.bbox == (10.0, 20.0, 90.0, 36.0)
 
     assert result.diagnostics[0] == collector_diagnostic
     assert [item.code for item in result.diagnostics[1:]] == [
@@ -818,9 +870,10 @@ def test_direct_null_page_value_inherits_parent_page(tmp_path: Path) -> None:
             0,
             7,
             ("Inherited",),
-            None,
-            (TextStyle(None, None),),
-        ),
+                None,
+                (TextStyle(None, None),),
+                (None,),
+            ),
     )
     assert result.diagnostics == ()
 

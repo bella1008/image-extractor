@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from numbers import Integral
 from typing import Any
 
-from tagged_pdf_extractor.domain.models import Diagnostic, TextStyle
+from tagged_pdf_extractor.domain.models import BBox, Diagnostic, TextStyle
 from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
     PypdfOperationTextError,
     PypdfOperationTextRunner,
@@ -86,6 +86,7 @@ def _safe_repr(value: Any) -> str:
 class McidTextResult:
     parts_by_mcid: dict[int, tuple[str, ...]]
     styles_by_mcid: dict[int, tuple[TextStyle, ...]]
+    bboxes_by_mcid: dict[int, tuple[BBox | None, ...]]
     seen_mcids: frozenset[int]
     diagnostics: tuple[Diagnostic, ...]
 
@@ -100,6 +101,15 @@ class McidTextResult:
                 f"missing style MCIDs: {missing_style_mcids}; "
                 f"extra style MCIDs: {extra_style_mcids}"
             )
+        bbox_mcids = set(self.bboxes_by_mcid)
+        if part_mcids != bbox_mcids:
+            missing_bbox_mcids = sorted(part_mcids - bbox_mcids)
+            extra_bbox_mcids = sorted(bbox_mcids - part_mcids)
+            raise ValueError(
+                "MCID text/bbox keys differ; "
+                f"missing bbox MCIDs: {missing_bbox_mcids}; "
+                f"extra bbox MCIDs: {extra_bbox_mcids}"
+            )
         for mcid in sorted(part_mcids):
             part_count = len(self.parts_by_mcid[mcid])
             style_count = len(self.styles_by_mcid[mcid])
@@ -107,6 +117,12 @@ class McidTextResult:
                 raise ValueError(
                     f"MCID {mcid} has {part_count} text parts but "
                     f"{style_count} text styles"
+                )
+            bbox_count = len(self.bboxes_by_mcid[mcid])
+            if part_count != bbox_count:
+                raise ValueError(
+                    f"MCID {mcid} has {part_count} text parts but "
+                    f"{bbox_count} text bboxes"
                 )
 
 
@@ -118,6 +134,7 @@ class McidTextCollector:
         stack: list[int | None] = []
         parts: dict[int, list[str]] = {}
         styles: dict[int, list[TextStyle]] = {}
+        bboxes: dict[int, list[BBox | None]] = {}
         seen_mcids: set[int] = set()
         diagnostics: list[Diagnostic] = []
 
@@ -161,12 +178,16 @@ class McidTextCollector:
                     )
 
         def on_text(
-            value: str, font_name: str | None, font_size: float | None
+            value: str,
+            font_name: str | None,
+            font_size: float | None,
+            bbox: BBox | None,
         ) -> None:
             if value and stack and stack[-1] is not None:
                 mcid = stack[-1]
                 parts.setdefault(mcid, []).append(value)
                 styles.setdefault(mcid, []).append(TextStyle(font_name, font_size))
+                bboxes.setdefault(mcid, []).append(bbox)
 
         def on_xobject(operand: Any) -> None:
             if not stack or stack[-1] is None:
@@ -247,6 +268,7 @@ class McidTextCollector:
         return McidTextResult(
             parts_by_mcid={mcid: tuple(values) for mcid, values in parts.items()},
             styles_by_mcid={mcid: tuple(values) for mcid, values in styles.items()},
+            bboxes_by_mcid={mcid: tuple(values) for mcid, values in bboxes.items()},
             seen_mcids=frozenset(seen_mcids),
             diagnostics=tuple(diagnostics),
         )

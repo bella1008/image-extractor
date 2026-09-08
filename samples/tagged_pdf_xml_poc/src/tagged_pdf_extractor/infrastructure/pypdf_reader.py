@@ -9,6 +9,7 @@ from pypdf import PdfReader
 from pypdf.generic import NullObject
 
 from tagged_pdf_extractor.domain.models import (
+    BBox,
     ContentFragment,
     Diagnostic,
     StructureElement,
@@ -96,6 +97,7 @@ class TaggedPdfReader:
         }
         mcid_text: dict[int, dict[int, tuple[str, ...]]] = {}
         mcid_styles: dict[int, dict[int, tuple[TextStyle, ...]]] = {}
+        mcid_bboxes: dict[int, dict[int, tuple[BBox | None, ...]]] = {}
         seen_mcids: dict[int, frozenset[int]] = {}
         diagnostics: list[Diagnostic] = []
         for index, page in enumerate(pages):
@@ -107,6 +109,7 @@ class TaggedPdfReader:
                 ) from exc
             mcid_text[index] = result.parts_by_mcid
             mcid_styles[index] = result.styles_by_mcid
+            mcid_bboxes[index] = result.bboxes_by_mcid
             seen_mcids[index] = result.seen_mcids
             diagnostics.extend(result.diagnostics)
 
@@ -117,6 +120,7 @@ class TaggedPdfReader:
             page_indexes=page_indexes,
             mcid_text=mcid_text,
             mcid_styles=mcid_styles,
+            mcid_bboxes=mcid_bboxes,
             seen_mcids=seen_mcids,
             role_map=role_map,
             diagnostics=diagnostics,
@@ -148,6 +152,7 @@ class TaggedPdfReader:
         page_indexes: dict[str, int],
         mcid_text: dict[int, dict[int, tuple[str, ...]]],
         mcid_styles: dict[int, dict[int, tuple[TextStyle, ...]]],
+        mcid_bboxes: dict[int, dict[int, tuple[BBox | None, ...]]],
         seen_mcids: dict[int, frozenset[int]],
         role_map: dict[str, str],
         diagnostics: list[Diagnostic],
@@ -172,6 +177,7 @@ class TaggedPdfReader:
                             page_indexes,
                             mcid_text,
                             mcid_styles,
+                            mcid_bboxes,
                             seen_mcids,
                             role_map,
                             diagnostics,
@@ -188,6 +194,7 @@ class TaggedPdfReader:
             page_indexes,
             mcid_text,
             mcid_styles,
+            mcid_bboxes,
             seen_mcids,
             role_map,
             diagnostics,
@@ -201,6 +208,7 @@ class TaggedPdfReader:
         page_indexes: dict[str, int],
         mcid_text: dict[int, dict[int, tuple[str, ...]]],
         mcid_styles: dict[int, dict[int, tuple[TextStyle, ...]]],
+        mcid_bboxes: dict[int, dict[int, tuple[BBox | None, ...]]],
         seen_mcids: dict[int, frozenset[int]],
         role_map: dict[str, str],
         diagnostics: list[Diagnostic],
@@ -221,6 +229,7 @@ class TaggedPdfReader:
                             page_indexes,
                             mcid_text,
                             mcid_styles,
+                            mcid_bboxes,
                             seen_mcids,
                             role_map,
                             diagnostics,
@@ -237,6 +246,7 @@ class TaggedPdfReader:
                         reference,
                         mcid_text,
                         mcid_styles,
+                        mcid_bboxes,
                         seen_mcids,
                         diagnostics,
                     )
@@ -304,6 +314,7 @@ class TaggedPdfReader:
                             reference,
                             mcid_text,
                             mcid_styles,
+                            mcid_bboxes,
                             seen_mcids,
                             diagnostics,
                         )
@@ -325,6 +336,7 @@ class TaggedPdfReader:
                         page_indexes,
                         mcid_text,
                         mcid_styles,
+                        mcid_bboxes,
                         seen_mcids,
                         role_map,
                         diagnostics,
@@ -374,6 +386,7 @@ class TaggedPdfReader:
         reference: str | None,
         mcid_text: dict[int, dict[int, tuple[str, ...]]],
         mcid_styles: dict[int, dict[int, tuple[TextStyle, ...]]],
+        mcid_bboxes: dict[int, dict[int, tuple[BBox | None, ...]]],
         seen_mcids: dict[int, frozenset[int]],
         diagnostics: list[Diagnostic],
     ) -> ContentFragment:
@@ -382,6 +395,7 @@ class TaggedPdfReader:
         if mcid is not None and mcid in page_parts:
             text_parts = page_parts[mcid]
             text_styles = mcid_styles[page_index][mcid]
+            text_bboxes = mcid_bboxes[page_index][mcid]
         elif (
             page_index is not None
             and mcid is not None
@@ -389,9 +403,11 @@ class TaggedPdfReader:
         ):
             text_parts = ()
             text_styles = ()
+            text_bboxes = ()
         else:
             text_parts = ()
             text_styles = ()
+            text_bboxes = ()
             diagnostics.append(
                 Diagnostic(
                     severity="warning",
@@ -410,6 +426,7 @@ class TaggedPdfReader:
             text_parts=tuple(text_parts),
             object_ref=reference,
             text_styles=tuple(text_styles),
+            text_bboxes=tuple(text_bboxes),
         )
 
     def _page_index(

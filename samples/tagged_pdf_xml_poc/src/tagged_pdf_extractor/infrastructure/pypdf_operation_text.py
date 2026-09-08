@@ -3,6 +3,8 @@ from importlib import import_module
 import math
 from typing import Any
 
+from tagged_pdf_extractor.domain.models import BBox
+
 
 class PypdfOperationTextError(RuntimeError):
     pass
@@ -68,6 +70,62 @@ def _effective_font_size(
     return effective_size
 
 
+def _text_run_bbox(
+    value: str,
+    font: Any,
+    font_size: Any,
+    text_scale: Any,
+    text_matrix: Any,
+    current_matrix: Any,
+) -> BBox | None:
+    try:
+        normalized_size = float(font_size)
+        normalized_text_scale = float(text_scale)
+        tm = [float(item) for item in text_matrix[:6]]
+        cm = [float(item) for item in current_matrix[:6]]
+        if len(tm) != 6 or len(cm) != 6:
+            return None
+        if not all(
+            math.isfinite(item)
+            for item in (normalized_size, normalized_text_scale, *tm, *cm)
+        ):
+            return None
+        if normalized_size <= 0 or normalized_text_scale <= 0:
+            return None
+
+        scale_x = tm[0] * cm[0] + tm[1] * cm[2]
+        rotate_x = tm[0] * cm[1] + tm[1] * cm[3]
+        rotate_y = tm[2] * cm[0] + tm[3] * cm[2]
+        scale_y = tm[2] * cm[1] + tm[3] * cm[3]
+        left = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+        bottom = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+        if rotate_x != 0 or rotate_y != 0 or scale_x <= 0 or scale_y <= 0:
+            return None
+
+        get_text_width = getattr(font, "get_text_width", None)
+        if not callable(get_text_width):
+            return None
+        glyph_width = float(get_text_width(value))
+        width = (
+            glyph_width
+            / 1000.0
+            * normalized_size
+            * normalized_text_scale
+            * scale_x
+        )
+        height = normalized_size * scale_y
+        right = left + width
+        top = bottom + height
+        bbox = (left, bottom, right, top)
+        if not all(math.isfinite(item) for item in bbox):
+            return None
+        if right <= left or top <= bottom:
+            return None
+        return bbox
+    except Exception:
+        return None
+
+
 class PypdfOperationTextRunner:
     """Run pypdf text state over original page operations."""
 
@@ -76,7 +134,7 @@ class PypdfOperationTextRunner:
         page: Any,
         *,
         on_boundary: Callable[[bytes, list[Any]], None],
-        on_text: Callable[[str, str | None, float | None], None],
+        on_text: Callable[[str, str | None, float | None, BBox | None], None],
         on_xobject: Callable[[Any], None] | None = None,
     ) -> None:
         callback_failure: _CallbackRaised | None = None
@@ -136,8 +194,16 @@ class PypdfOperationTextRunner:
                     normalized_font_size = _effective_font_size(
                         font_size, text_matrix, current_matrix
                     )
+                    bbox = _text_run_bbox(
+                        value,
+                        font,
+                        font_size,
+                        getattr(extractor, "char_scale", 1.0),
+                        text_matrix,
+                        current_matrix,
+                    )
                     _invoke_callback(
-                        on_text, value, font_name, normalized_font_size
+                        on_text, value, font_name, normalized_font_size, bbox
                     )
 
             extractor.initialize_extraction(

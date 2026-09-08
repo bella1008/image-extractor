@@ -713,10 +713,11 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         package.index(item) for item in package_items
     )
 
-    microphone_body = (
+    microphone_sentences = (
         "You can turn on or off the microphone by using the switch at the bottom "
-        "or rear bottom of the TV. If microphone is turned off, All voice and sound "
-        "features using microphone are not available."
+        "or rear bottom of the TV.",
+        "If microphone is turned off, All voice and sound features using "
+        "microphone are not available.",
     )
     microphone_items = (
         "This function is supported only in R9*H/R8*H/QN1EH/ QN7*H/QN8*H/"
@@ -725,13 +726,17 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
         "on the model.",
         "During analysis using data from the microphone, the data is not saved.",
     )
+    microphone_body = "<br>\n".join(microphone_sentences)
     microphone_start = markdown.index(microphone_body)
     microphone_end = markdown.index(
         "## 03 Troubleshooting and Maintenance", microphone_start
     )
     microphone = markdown[microphone_start:microphone_end]
     microphone_lines = [line.strip() for line in microphone.splitlines()]
-    assert microphone_lines[0] == microphone_body
+    assert microphone_lines[:2] == [
+        f"{microphone_sentences[0]}<br>",
+        microphone_sentences[1],
+    ]
     for item in microphone_items:
         assert f"- {item}" in microphone_lines
     assert [microphone.index(item) for item in microphone_items] == sorted(

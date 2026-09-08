@@ -40,7 +40,7 @@ class JsonProfileRepository:
     def lookup(self, pdf_path: str | Path) -> PdfProfile:
         file_name = Path(pdf_path).name
         source_token = parse_source_token(file_name)
-        if source_token is None:
+        if source_token is None or not source_token.isascii():
             raise InvalidPdfFilenameError(
                 f"Cannot derive valid source_token from PDF filename {file_name!r}"
             )

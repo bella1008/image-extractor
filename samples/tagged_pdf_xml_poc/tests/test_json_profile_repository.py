@@ -112,6 +112,23 @@ def test_lowercase_valid_unknown_token_raises_unknown_source_token() -> None:
 
 
 @pytest.mark.parametrize(
+    "source_token",
+    [
+        "xd_ıns",  # U+0131 uppercases to ASCII I.
+        "aſia_eng",  # U+017F uppercases to ASCII S.
+    ],
+)
+def test_lookup_rejects_non_ascii_tokens_before_unicode_uppercase_expansion(
+    source_token: str,
+) -> None:
+    repository = JsonProfileRepository(CANONICAL_MAPPING)
+    filename = f"bn68-00000a-00_sug_y26 tv all_{source_token}_260101.0.pdf"
+
+    with pytest.raises(InvalidPdfFilenameError, match="source_token"):
+        repository.lookup(filename)
+
+
+@pytest.mark.parametrize(
     "source_token", ["ZC_ L02", "ZC_LXX", "zc_ l02", "zc_lxx"]
 )
 def test_lookup_rejects_filename_shaped_malformed_source_tokens(

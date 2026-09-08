@@ -20,9 +20,12 @@ from tagged_pdf_extractor.domain.paragraph_eligibility import (
 from tagged_pdf_extractor.domain.typography import TypographyEvidence, typography_evidence
 
 
+_LETTER_OR_ROMAN_TOKEN = r"(?:[a-z]|(?=[ivx])x{0,2}(?:ix|iv|v?i{0,3}))"
 _VISIBLE_MARKER = re.compile(
     r"^\s*(?:[-*+](?=\s|$)|[•◦▪▫‣⁃●○■□]|#{1,6}(?=\s)|"
-    r"\d{1,3}(?=\s)|\(?\d{1,3}(?:[.)]|(?:\.\d+)+))"
+    r"\d{1,3}(?=\s)|\(?\d{1,3}(?:[.)]|(?:\.\d+)+)|"
+    rf"(?:\({_LETTER_OR_ROMAN_TOKEN}\)|{_LETTER_OR_ROMAN_TOKEN}[.)])(?=\s|$))",
+    re.IGNORECASE,
 )
 _LIST_BODY_ROLE = "LBody"
 _LEFT_TOLERANCE_FONT_RATIO = 0.25
@@ -69,7 +72,12 @@ def detect_list_continuation_hints(
         inherited_language: str | None,
         section_path: tuple[int, ...] | None,
     ) -> None:
-        for index, child in enumerate(siblings):
+        meaningful_siblings = tuple(
+            (index, child)
+            for index, child in enumerate(siblings)
+            if isinstance(child, StructureElement) or child.text.strip()
+        )
+        for meaningful_index, (index, child) in enumerate(meaningful_siblings):
             if not isinstance(child, StructureElement):
                 continue
             child_path = (*parent_path, index)
@@ -77,13 +85,15 @@ def detect_list_continuation_hints(
             child_section_path = (
                 child_path if child.semantic_role == "section" else section_path
             )
-            if 0 < index < len(siblings) - 1:
+            if 0 < meaningful_index < len(meaningful_siblings) - 1:
+                preceding_index, preceding = meaningful_siblings[meaningful_index - 1]
+                _, following = meaningful_siblings[meaningful_index + 1]
                 hint = _candidate_hint(
-                    siblings[index - 1],
+                    preceding,
                     child,
-                    siblings[index + 1],
+                    following,
                     target_path=child_path,
-                    preceding_path=(*parent_path, index - 1),
+                    preceding_path=(*parent_path, preceding_index),
                     inherited_language=inherited_language,
                     section_path=section_path,
                     conflicts=conflicts,
@@ -373,9 +383,9 @@ def _local_line_spacing(line_bboxes: tuple[BBox, ...]) -> float | None:
     return float(median(gaps))
 
 
-def _valid_bbox(value: BBox | None) -> bool:
+def _valid_bbox(value: object) -> bool:
     return bool(
-        value is not None
+        isinstance(value, tuple)
         and len(value) == 4
         and all(
             not isinstance(coordinate, bool)

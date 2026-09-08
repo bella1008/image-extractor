@@ -217,6 +217,38 @@ def test_visible_marker_returns_no_hint(target_text: str) -> None:
     assert detect_list_continuation_hints(_document(target_text=target_text)) == ()
 
 
+@pytest.mark.parametrize(
+    "target_text",
+    (
+        "a. Letter item",
+        "a) Letter item",
+        "(a) Letter item",
+        "A. Letter item",
+        "ii. Roman item",
+        "iv) Roman item",
+        "(xii) Roman item",
+        "XX. Roman item",
+    ),
+)
+def test_letter_or_common_roman_marker_returns_no_hint(target_text: str) -> None:
+    assert detect_list_continuation_hints(_document(target_text=target_text)) == ()
+
+
+@pytest.mark.parametrize(
+    "target_text",
+    (
+        "a normal sentence",
+        "important guidance",
+        "I understand the warning",
+        "mix. ingredients carefully",
+    ),
+)
+def test_ordinary_leading_letters_without_marker_punctuation_remain_eligible(
+    target_text: str,
+) -> None:
+    assert len(detect_list_continuation_hints(_document(target_text=target_text))) == 1
+
+
 def test_wrong_sibling_topology_returns_no_hint() -> None:
     source = _document()
     section = source.children[0]
@@ -244,6 +276,42 @@ def test_wrong_sibling_topology_returns_no_hint() -> None:
     )
 
     assert detect_list_continuation_hints(wrong_topology) == ()
+
+
+@pytest.mark.parametrize(
+    ("before_text", "after_text"),
+    (("", ""), (" \t", "\r\n")),
+    ids=("empty", "whitespace"),
+)
+def test_ignorable_fragments_preserve_meaningful_adjacency_and_raw_paths(
+    before_text: str,
+    after_text: str,
+) -> None:
+    source = _document()
+    section = source.children[0]
+    assert isinstance(section, StructureElement)
+    with_ignorable_fragments = replace(
+        source,
+        children=(
+            replace(
+                section,
+                children=(
+                    section.children[0],
+                    ContentFragment(0, None, (before_text,)),
+                    section.children[1],
+                    ContentFragment(0, None, (after_text,)),
+                    section.children[2],
+                ),
+            ),
+        ),
+    )
+
+    hints = detect_list_continuation_hints(with_ignorable_fragments)
+
+    assert len(hints) == 1
+    assert hints[0].child_path == (0, 2)
+    assert hints[0].preceding_list_item_path == (0, 0, 0)
+    assert hints[0].preceding_list_body_path == (0, 0, 0, 1)
 
 
 def test_non_list_associated_target_source_role_returns_no_hint() -> None:
@@ -276,8 +344,14 @@ def test_missing_section_context_returns_no_hint() -> None:
     assert detect_list_continuation_hints(_document(section=False)) == ()
 
 
-def test_typography_tier_mismatch_returns_no_hint() -> None:
-    source = _document(target_font_name="Body-Bold", target_font_size=9.0)
+def test_font_weight_only_mismatch_returns_no_hint() -> None:
+    source = _document(target_font_name="Body-Bold")
+
+    assert detect_list_continuation_hints(source) == ()
+
+
+def test_font_size_only_mismatch_returns_no_hint() -> None:
+    source = _document(target_font_size=9.0)
 
     assert detect_list_continuation_hints(source) == ()
 
@@ -320,6 +394,31 @@ def test_invalid_geometry_returns_no_hint(
     target_bbox: tuple[float, float, float, float],
 ) -> None:
     assert detect_list_continuation_hints(_document(target_bbox=target_bbox)) == ()
+
+
+def test_non_tuple_bbox_fails_closed() -> None:
+    source = _document()
+    section = source.children[0]
+    assert isinstance(section, StructureElement)
+    target = section.children[1]
+    assert isinstance(target, StructureElement)
+    fragment = target.children[0]
+    assert isinstance(fragment, ContentFragment)
+    malformed_target = replace(
+        target,
+        children=(replace(fragment, text_bboxes=(1.0,)),),  # type: ignore[arg-type]
+    )
+    malformed = replace(
+        source,
+        children=(
+            replace(
+                section,
+                children=(section.children[0], malformed_target, section.children[2]),
+            ),
+        ),
+    )
+
+    assert detect_list_continuation_hints(malformed) == ()
 
 
 def test_multi_page_geometry_returns_no_hint() -> None:
@@ -369,3 +468,17 @@ def test_conflict_path_returns_no_hint(conflict_name: str) -> None:
     conflicts = {conflict_name: ((0, 1),)}
 
     assert detect_list_continuation_hints(_document(), **conflicts) == ()
+
+
+@pytest.mark.parametrize(
+    "conflict_path",
+    ((0,), (0, 1, 0)),
+    ids=("ancestor", "descendant"),
+)
+def test_overlapping_conflict_path_returns_no_hint(
+    conflict_path: tuple[int, ...],
+) -> None:
+    assert detect_list_continuation_hints(
+        _document(),
+        heading_paths=(conflict_path,),
+    ) == ()

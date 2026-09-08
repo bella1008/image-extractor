@@ -1055,18 +1055,18 @@ def test_sentence_hint_rejects_offset_inside_protected_token() -> None:
         validate_review_formatting_hints(document)
 
 
-def test_sentence_hint_rejects_structurally_ineligible_flow() -> None:
+def test_sentence_hint_accepts_ordinary_top_level_leaf_body() -> None:
     text = "First sentence. Next sentence."
     fragment = _styled_fragment(text)
+    document = _document(_element("paragraph", fragment))
     document = replace(
-        _document(_element("paragraph", fragment)),
-        sentence_break_hints=(
-            SentenceBreakHint((0, 0), (text.index("Next"),)),
-        ),
+        document, sentence_break_hints=detect_sentence_break_hints(document)
     )
+    validated = validate_review_formatting_hints(document)
 
-    with pytest.raises(ValueError, match=r"sentence break detector mismatch"):
-        validate_review_formatting_hints(document)
+    assert validated.sentence_break_by_path[(0, 0)].offsets == (
+        text.index("Next"),
+    )
 
 
 def test_sentence_hint_rejects_manually_altered_reason() -> None:
@@ -1213,11 +1213,14 @@ def test_malformed_inline_icon_values_raise_clear_value_error(
 def test_sentence_hint_rejects_existing_target_subtree_conflicts(
     conflict_kind: str,
 ) -> None:
-    document, _ = _sentence_document(
-        paragraph_source_role="Heading2" if conflict_kind == "source heading" else "P"
-    )
+    document, _ = _sentence_document()
     paragraph_path = (0, 0, 1, 0)
-    if conflict_kind == "promotion":
+    if conflict_kind == "source heading":
+        paragraph = cast(StructureElement, _resolve_path(document, paragraph_path))
+        document = _replace_path(
+            document, paragraph_path, replace(paragraph, source_role="Heading2")
+        )
+    elif conflict_kind == "promotion":
         document = replace(document, heading_promotions=(_promotion(paragraph_path),))
     elif conflict_kind == "subtitle":
         document = replace(document, subtitle_hints=(_subtitle(paragraph_path),))

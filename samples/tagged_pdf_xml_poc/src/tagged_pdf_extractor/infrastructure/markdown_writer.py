@@ -11,6 +11,9 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.domain.models import QualityReport
+from tagged_pdf_extractor.domain.paragraph_eligibility import (
+    is_sentence_break_eligible_paragraph,
+)
 from tagged_pdf_extractor.domain.inline_icon_policy import (
     GENERIC_INLINE_ICON_REASON,
     NAVIGATION_ROUTE_INLINE_ICON_REASON,
@@ -74,7 +77,6 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
 _INLINE_ICON_TOKEN = "[아이콘]"
 _SEMANTIC_NOTE_MARKERS = frozenset({"※"})
 _SENTENCE_INLINE_TAGS = frozenset({"span", "link"})
-_SENTENCE_FLOW_CONTAINERS = frozenset({"list_body", "table_cell"})
 _SENTENCE_FLOW_BARRIERS = frozenset(
     {"list", "table", "heading", "caption", "label", "figure"}
 )
@@ -1134,7 +1136,7 @@ class MarkdownDocumentWriter:
             offsets_by_element,
             promoted,
         )
-        eligible_offsets = cls._eligible_sentence_offsets(root)
+        eligible_offsets = cls._eligible_sentence_offsets(root, promoted)
         for element, offsets in offsets_by_element.items():
             expected = eligible_offsets.get(element)
             if expected is None:
@@ -1177,23 +1179,32 @@ class MarkdownDocumentWriter:
     def _eligible_sentence_offsets(
         cls,
         root: ET.Element,
+        promoted: dict[ET.Element, dict[str, object]],
     ) -> dict[ET.Element, frozenset[int]]:
         flows: list[tuple[_SemanticTextFragment, ...]] = []
-        subtitle_linked_bodies = cls._subtitle_linked_sentence_bodies(root)
 
-        def visit(parent: ET.Element, ancestors: tuple[str, ...]) -> None:
+        def visit(
+            parent: ET.Element,
+            ancestors: tuple[ET.Element, ...],
+        ) -> None:
             for child in cls._structural_children(parent):
                 if child.tag == "list_body":
                     flows.extend(cls._direct_sentence_flows(child))
-                if (
-                    child.tag == "paragraph"
-                    and (
-                        cls._eligible_sentence_paragraph_context(ancestors)
-                        or child in subtitle_linked_bodies
-                    )
+                if is_sentence_break_eligible_paragraph(
+                    semantic_role=child.tag,
+                    source_role=child.get("source-role"),
+                    ancestor_roles=tuple(element.tag for element in ancestors),
+                    is_nonempty_inline_leaf=(
+                        cls._is_nonempty_inline_sentence_paragraph(child)
+                    ),
+                    display_role=child.get("display-role"),
+                    heading_conflict=any(
+                        element in promoted
+                        for element in (*ancestors, *tuple(child.iter()))
+                    ),
                 ):
                     flows.extend(cls._leaf_sentence_paragraph_flows(child))
-                visit(child, (*ancestors, child.tag))
+                visit(child, (*ancestors, child))
 
         visit(root, ())
         offsets: dict[ET.Element, set[int]] = {}
@@ -1295,17 +1306,6 @@ class MarkdownDocumentWriter:
             return True
 
         return visit_inline(element) and has_visible_text
-
-    @staticmethod
-    def _eligible_sentence_paragraph_context(
-        ancestors: tuple[str, ...],
-    ) -> bool:
-        for tag in reversed(ancestors):
-            if tag in _SENTENCE_FLOW_CONTAINERS:
-                return True
-            if tag in _SENTENCE_FLOW_BARRIERS:
-                return False
-        return False
 
     @classmethod
     def _direct_sentence_flows(

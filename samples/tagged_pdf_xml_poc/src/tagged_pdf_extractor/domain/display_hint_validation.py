@@ -102,6 +102,29 @@ def validate_review_formatting_hints(
     sentence_paths = tuple(sentence_break_by_path)
     icon_paths = tuple(inline_icon_by_path)
 
+    for sentence_path in sentence_paths:
+        _reject_hint_path_conflict(
+            sentence_path,
+            source_heading_paths,
+            "source heading",
+            "sentence break",
+        )
+        _reject_hint_path_conflict(
+            sentence_path, promotion_paths, "promotion", "sentence break"
+        )
+        _reject_hint_path_conflict(
+            sentence_path, subtitle_paths, "subtitle", "sentence break"
+        )
+        _reject_hint_path_conflict(
+            sentence_path, text_paths, "text display", "sentence break"
+        )
+        _reject_hint_path_conflict(
+            sentence_path,
+            tuple(line_break_by_path),
+            "line break",
+            "sentence break",
+        )
+
     detected_sentence_by_path = _detected_sentence_hints(document)
     for path, hint in sentence_break_by_path.items():
         target = _resolved_content_fragment(elements, path, "sentence break hint")
@@ -193,28 +216,6 @@ def validate_review_formatting_hints(
                     "line break and text display hint paths overlap at "
                     f"{line_path} and {text_path}"
                 )
-    for sentence_path in sentence_paths:
-        _reject_hint_path_conflict(
-            sentence_path,
-            source_heading_paths,
-            "source heading",
-            "sentence break",
-        )
-        _reject_hint_path_conflict(
-            sentence_path, promotion_paths, "promotion", "sentence break"
-        )
-        _reject_hint_path_conflict(
-            sentence_path, subtitle_paths, "subtitle", "sentence break"
-        )
-        _reject_hint_path_conflict(
-            sentence_path, text_paths, "text display", "sentence break"
-        )
-        _reject_hint_path_conflict(
-            sentence_path,
-            tuple(line_break_by_path),
-            "line break",
-            "sentence break",
-        )
     for icon_path in icon_paths:
         _reject_hint_path_conflict(
             icon_path, source_heading_paths, "source heading", "inline icon"

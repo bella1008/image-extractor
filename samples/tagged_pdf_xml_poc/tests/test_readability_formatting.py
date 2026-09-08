@@ -12,12 +12,14 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
 )
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    HeadingPromotion,
     InlineIconHint,
     LineBreakHint,
     SentenceBreakHint,
     StructureElement,
     SubtitleHint,
     TaggedDocument,
+    TextDisplayHint,
     TextStyle,
 )
 from tagged_pdf_extractor.domain.readability_formatting import (
@@ -36,13 +38,14 @@ def _fragment(*text_parts: str, mcid: int = 1) -> ContentFragment:
 def _element(
     role: str,
     *children: StructureElement | ContentFragment,
+    source_role: str | None = None,
     actual_text: str | None = None,
     page_index: int | None = None,
     alternate_text: str | None = None,
     attributes: tuple[tuple[str, str], ...] = (),
 ) -> StructureElement:
     return StructureElement(
-        source_role=role,
+        source_role=source_role or role,
         semantic_role=role,
         actual_text=actual_text,
         page_index=page_index,
@@ -397,6 +400,18 @@ def test_compact_abbreviations_and_initials_do_not_split_sentences() -> None:
     )
 
 
+@pytest.mark.parametrize("separator", [" ", "\u00a0"])
+def test_spaced_single_letter_dotted_abbreviation_does_not_split(
+    separator: str,
+) -> None:
+    text = f"Use z.{separator}B. Certified parts. Next step."
+    document = _list_body_document(_fragment(text))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+
+
 @pytest.mark.parametrize(
     "abbreviation_flow",
     (
@@ -545,12 +560,88 @@ def test_explicit_closing_quotes_and_brackets_are_skipped(
     )
 
 
-def test_general_body_paragraph_outside_approved_context_does_not_split() -> None:
-    document = _document(
-        _element("paragraph", _fragment("First sentence. Next sentence."))
+def test_general_leaf_body_paragraph_splits_at_safe_sentence_boundary() -> None:
+    text = "First sentence. Next sentence."
+    document = _document(_element("paragraph", _fragment(text)))
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0), (text.index("Next"),)),
     )
 
+
+@pytest.mark.parametrize("source_role", ["Heading1", "chapter-title"])
+def test_source_role_heading_paragraphs_do_not_split(source_role: str) -> None:
+    paragraph = _element(
+        "paragraph",
+        _fragment("First sentence. Next sentence."),
+        source_role=source_role,
+    )
+
+    assert detect_sentence_break_hints(_document(paragraph)) == ()
+
+
+def test_promoted_heading_paragraph_does_not_split() -> None:
+    paragraph = _element(
+        "paragraph", _fragment("First sentence. Next sentence.")
+    )
+    promotion = HeadingPromotion(
+        child_path=(0,),
+        level=2,
+        label="01",
+        title="Title",
+        series_index=0,
+        heading_font_size=10.0,
+        body_font_size=6.0,
+        font_size_ratio=1.5,
+        promotion_reason="test",
+    )
+    document = replace(_document(paragraph), heading_promotions=(promotion,))
+
     assert detect_sentence_break_hints(document) == ()
+
+
+def test_subtitle_paragraph_does_not_split() -> None:
+    paragraph = _element(
+        "paragraph", _fragment("First sentence. Next sentence.")
+    )
+    subtitle = SubtitleHint(
+        child_path=(0,),
+        font_weight=600,
+        comparison_body_font_weight=400,
+        observed_line_count=1,
+    )
+    document = replace(_document(paragraph), subtitle_hints=(subtitle,))
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+@pytest.mark.parametrize("display_role", ["section_heading", "strong_label"])
+def test_text_display_paragraph_does_not_split(display_role: str) -> None:
+    paragraph = _element(
+        "paragraph", _fragment("First sentence. Next sentence.")
+    )
+    display = TextDisplayHint(
+        child_path=(0,),
+        display_role=display_role,  # type: ignore[arg-type]
+        font_weight=600,
+        font_size=8.0,
+        comparison_body_font_weight=400,
+        comparison_body_font_size=6.0,
+        reason="test",
+    )
+    document = replace(_document(paragraph), text_display_hints=(display,))
+
+    assert detect_sentence_break_hints(document) == ()
+
+
+def test_block_bearing_paragraph_does_not_split_outer_text() -> None:
+    paragraph = _element(
+        "paragraph",
+        _fragment("First sentence. Next sentence."),
+        _element("list", _element("list_item")),
+    )
+
+    assert detect_sentence_break_hints(_document(paragraph)) == ()
 
 
 def _verified_subtitle_table() -> tuple[StructureElement, tuple[int, ...]]:
@@ -687,7 +778,10 @@ def test_subtitle_outside_wrapper_table_does_not_link_body() -> None:
         subtitle_path=(0, 0, 0),
     )
 
-    assert detect_sentence_break_hints(document) == ()
+    assert verified_subtitle_linked_body_paths(document) == ()
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 1, 0), (text.index("Second"),)),
+    )
 
 
 def test_non_adjacent_paragraph_after_verified_subtitle_wrapper_is_rejected() -> None:
@@ -700,7 +794,10 @@ def test_non_adjacent_paragraph_after_verified_subtitle_wrapper_is_rejected() ->
         subtitle_path=subtitle_path,
     )
 
-    assert detect_sentence_break_hints(document) == ()
+    assert verified_subtitle_linked_body_paths(document) == ((0, 1),)
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 2, 0), (text.index("Second"),)),
+    )
 
 
 def test_multi_meaningful_child_subtitle_wrapper_is_rejected() -> None:
@@ -716,7 +813,10 @@ def test_multi_meaningful_child_subtitle_wrapper_is_rejected() -> None:
         subtitle_path=subtitle_path,
     )
 
-    assert detect_sentence_break_hints(document) == ()
+    assert verified_subtitle_linked_body_paths(document) == ()
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 1, 0), (text.index("Second"),)),
+    )
 
 
 def test_subtitle_linked_body_must_be_nonempty_inline_leaf_paragraph() -> None:
@@ -762,18 +862,22 @@ def test_duplicate_subtitle_hints_add_body_sentence_offsets_once() -> None:
 
 def test_unverified_table_title_does_not_link_following_body() -> None:
     table, _ = _verified_subtitle_table()
+    text = "First sentence. Second sentence."
     document = _document(
         _element(
             "section",
             _element("paragraph", table),
             _element(
                 "paragraph",
-                _fragment("First sentence. Second sentence.", mcid=214),
+                _fragment(text, mcid=214),
             ),
         )
     )
 
-    assert detect_sentence_break_hints(document) == ()
+    assert verified_subtitle_linked_body_paths(document) == ()
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 1, 0), (text.index("Second"),)),
+    )
 
 
 @pytest.mark.parametrize("role", ["heading", "caption", "label", "figure"])

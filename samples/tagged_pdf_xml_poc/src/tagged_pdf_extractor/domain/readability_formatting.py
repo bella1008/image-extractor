@@ -22,12 +22,13 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
 )
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_nonempty_inline_paragraph,
+    is_sentence_break_eligible_paragraph,
 )
+from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
 _INLINE_ROLES = frozenset({"span", "link"})
-_FLOW_CONTAINER_ROLES = frozenset({"list_body", "table_cell"})
 _FLOW_BARRIER_ROLES = frozenset(
     {"list", "table", "heading", "caption", "label", "figure"}
 )
@@ -51,6 +52,10 @@ _DOTTED_TOKEN_PATTERN = re.compile(
 )
 _COMPACT_ABBREVIATION_PATTERN = re.compile(
     r"(?<!\w)(?:[^\W\d_]\.){2,}",
+    re.UNICODE,
+)
+_SPACED_ABBREVIATION_PATTERN = re.compile(
+    r"(?<!\w)[^\W\d_]\.(?:\s+[^\W\d_]\.)+",
     re.UNICODE,
 )
 
@@ -87,15 +92,12 @@ def detect_sentence_break_hints(
     document: TaggedDocument,
 ) -> tuple[SentenceBreakHint, ...]:
     line_break_paths = {hint.child_path for hint in document.line_break_hints}
-    subtitle_linked_body_paths = set(
-        verified_subtitle_linked_body_paths(document)
-    )
     offsets_by_path: dict[tuple[int, ...], set[int]] = {}
 
     for flow in _eligible_flows(
         document.children,
         line_break_paths,
-        subtitle_linked_body_paths,
+        document,
     ):
         text, locations = _join_flow(flow)
         for start in sentence_start_offsets(text):
@@ -473,9 +475,20 @@ def _weighted_rank_value(
 def _eligible_flows(
     children: tuple[StructureElement | ContentFragment, ...],
     line_break_paths: set[tuple[int, ...]],
-    subtitle_linked_body_paths: set[tuple[int, ...]],
+    document: TaggedDocument,
 ) -> tuple[tuple[_FragmentText, ...], ...]:
     flows: list[tuple[_FragmentText, ...]] = []
+    heading_paths = {
+        path
+        for path, element in _structure_elements_with_paths(children)
+        if element.semantic_role == "heading"
+        or is_heading_candidate(element.source_role)
+    }
+    promotion_paths = {hint.child_path for hint in document.heading_promotions}
+    subtitle_paths = {hint.child_path for hint in document.subtitle_hints}
+    display_roles = {
+        hint.child_path: hint.display_role for hint in document.text_display_hints
+    }
 
     def visit(
         siblings: tuple[StructureElement | ContentFragment, ...],
@@ -494,9 +507,27 @@ def _eligible_flows(
                         line_break_paths,
                     )
                 )
-            if child.semantic_role == "paragraph" and (
-                _eligible_paragraph_context(ancestors)
-                or child_path in subtitle_linked_body_paths
+            display_role = next(
+                (
+                    role
+                    for path, role in display_roles.items()
+                    if _paths_overlap(child_path, path)
+                ),
+                "subtitle"
+                if any(_paths_overlap(child_path, path) for path in subtitle_paths)
+                else None,
+            )
+            heading_conflict = any(
+                _paths_overlap(child_path, path)
+                for path in heading_paths | promotion_paths
+            )
+            if is_sentence_break_eligible_paragraph(
+                semantic_role=child.semantic_role,
+                source_role=child.source_role,
+                ancestor_roles=ancestors,
+                is_nonempty_inline_leaf=is_nonempty_inline_paragraph(child),
+                display_role=display_role,
+                heading_conflict=heading_conflict,
             ):
                 flows.extend(
                     _leaf_paragraph_flows(
@@ -513,6 +544,27 @@ def _eligible_flows(
 
     visit(children, (), ())
     return tuple(flows)
+
+
+def _structure_elements_with_paths(
+    children: tuple[StructureElement | ContentFragment, ...],
+) -> tuple[tuple[tuple[int, ...], StructureElement], ...]:
+    found: list[tuple[tuple[int, ...], StructureElement]] = []
+    stack = [(children, ())]
+    while stack:
+        siblings, parent_path = stack.pop()
+        for index, child in enumerate(siblings):
+            if not isinstance(child, StructureElement):
+                continue
+            child_path = (*parent_path, index)
+            found.append((child_path, child))
+            stack.append((child.children, child_path))
+    return tuple(found)
+
+
+def _paths_overlap(left: tuple[int, ...], right: tuple[int, ...]) -> bool:
+    common = min(len(left), len(right))
+    return left[:common] == right[:common]
 
 
 def is_verified_subtitle_table_wrapper_pair(
@@ -615,15 +667,6 @@ def _is_meaningful_wrapper_child(
             for descendant in child.children
         )
     return True
-
-
-def _eligible_paragraph_context(ancestors: tuple[str, ...]) -> bool:
-    for role in reversed(ancestors):
-        if role in _FLOW_CONTAINER_ROLES:
-            return True
-        if role in _FLOW_BARRIER_ROLES:
-            return False
-    return False
 
 
 def _direct_list_body_flows(
@@ -779,7 +822,11 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
         end = _url_protected_end(text, match.start(), match.end())
         _mark_terminators(text, protected, match.start(), end)
 
-    for pattern in (_EMAIL_PATTERN, _COMPACT_ABBREVIATION_PATTERN):
+    for pattern in (
+        _EMAIL_PATTERN,
+        _COMPACT_ABBREVIATION_PATTERN,
+        _SPACED_ABBREVIATION_PATTERN,
+    ):
         for match in pattern.finditer(text):
             _mark_terminators(text, protected, match.start(), match.end())
 

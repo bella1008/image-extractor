@@ -1806,39 +1806,13 @@ def test_whitespace_actual_text_only_inline_body_is_not_a_markdown_candidate() -
     [
         (
             _subtitle_linked_body_xml(
-                _sentence_text("First sentence. Second sentence.", "Second"),
-                subtitle_display_role="ordinary",
-            ),
-            "ineligible sentence-break-source structure",
-        ),
-        (
-            _subtitle_linked_body_xml(
-                _sentence_text("First sentence. Second sentence.", "Second"),
-                wrapper_extra="<span><text>Unexpected content</text></span>",
-            ),
-            "ineligible sentence-break-source structure",
-        ),
-        (
-            _subtitle_linked_body_xml(
-                _sentence_text("First sentence. Second sentence.", "Second"),
-                between="<paragraph><text>Immediate body.</text></paragraph>",
-            ),
-            "ineligible sentence-break-source structure",
-        ),
-        (
-            _subtitle_linked_body_xml(
                 _sentence_text("First sentence. Second sentence.", "Second")
                 + "<list><list_item><text>Nested</text></list_item></list>",
             ),
             "ineligible sentence-break-source structure",
         ),
     ],
-    ids=(
-        "unverified-table-title",
-        "multi-child-wrapper",
-        "non-adjacent-body",
-        "non-leaf-body",
-    ),
+    ids=("non-leaf-body",),
 )
 def test_subtitle_linked_sentence_evidence_rejects_malformed_structure(
     tmp_path: Path,
@@ -1856,43 +1830,19 @@ def test_subtitle_linked_sentence_evidence_rejects_malformed_structure(
         )
 
 
-def test_subtitle_linked_sentence_evidence_rejects_wrapper_span_actual_text(
+def test_ordinary_section_paragraph_sentence_evidence_renders_break(
     tmp_path: Path,
 ) -> None:
-    semantic = tmp_path / "semantic_document.xml"
-    _write_xml(
-        semantic,
-        _subtitle_linked_body_xml(
-            _sentence_text("First sentence. Second sentence.", "Second"),
-            wrapper_extra='<span actual-text="Meaningful wrapper text" />',
-        ),
-    )
-
-    with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
-        MarkdownDocumentWriter.render_text(
-            semantic,
-            _report(),
-            source_name="manual.pdf",
-        )
-
-
-def test_arbitrary_section_paragraph_sentence_evidence_is_rejected(
-    tmp_path: Path,
-) -> None:
-    semantic = tmp_path / "semantic_document.xml"
-    _write_xml(
-        semantic,
+    markdown = _render(
+        tmp_path,
         "<section><paragraph>"
         f'{_sentence_text("First sentence. Second sentence.", "Second")}'
         "</paragraph></section>",
     )
 
-    with pytest.raises(ValueError, match="ineligible sentence-break-source structure"):
-        MarkdownDocumentWriter.render_text(
-            semantic,
-            _report(),
-            source_name="manual.pdf",
-        )
+    assert "First sentence.<br>\nSecond sentence." in markdown
+    assert markdown.count("First sentence.") == 1
+    assert markdown.count("Second sentence.") == 1
 
 
 def test_subtitle_linked_body_sentence_evidence_rejects_display_role_conflict(
@@ -2628,6 +2578,8 @@ def test_malformed_sentence_break_evidence_is_rejected(
         ("Use V2.2.3 now. Next sentence.", len("Use V2.")),
         ("Value is 2.5 GHz. Next sentence.", len("Value is 2.")),
         ("Open README.PDF now. Next sentence.", len("Open README.")),
+        ("Use z. B. Certified parts.", len("Use z. ")),
+        ("Use z.\u00a0B. Certified parts.", len("Use z.\u00a0")),
         (
             "Visit https://EXAMPLE.COM now. Next sentence.",
             len("Visit https://EXAMPLE."),
@@ -2639,6 +2591,8 @@ def test_malformed_sentence_break_evidence_is_rejected(
         "version-token",
         "decimal-token",
         "file-token",
+        "spaced-abbreviation",
+        "nbsp-abbreviation",
         "url-token",
     ),
 )
@@ -2672,7 +2626,6 @@ def test_manual_non_sentence_offsets_are_rejected(
 @pytest.mark.parametrize(
     "body",
     [
-        "<paragraph>{text}</paragraph>",
         "<list><list_item>{text}</list_item></list>",
         (
             "<list><list_item><list_body><caption>{text}</caption>"
@@ -2685,7 +2638,6 @@ def test_manual_non_sentence_offsets_are_rejected(
         ),
     ],
     ids=(
-        "top-level-paragraph",
         "direct-list-item",
         "caption-under-list-body",
         "paragraph-with-block-descendant",

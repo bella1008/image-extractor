@@ -12,6 +12,16 @@ BBox = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
+class PdfProfile:
+    source_token: str
+    region: str
+    buyer_codes: tuple[str, ...]
+    languages: tuple[str, ...]
+    doc_type: str
+    language_count: int
+
+
+@dataclass(frozen=True)
 class Diagnostic:
     severity: Literal["warning", "error"]
     code: str

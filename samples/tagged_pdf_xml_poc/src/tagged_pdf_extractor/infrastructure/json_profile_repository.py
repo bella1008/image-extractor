@@ -5,15 +5,16 @@ import re
 from pathlib import Path
 from typing import Any
 
-from domain.models import PdfProfile
-from ports.profile_repository import (
+from tagged_pdf_extractor.domain.models import PdfProfile
+from tagged_pdf_extractor.domain.profile_scope import parse_source_token
+from tagged_pdf_extractor.ports.profile_repository import (
     DuplicateSourceTokenError,
+    InvalidPdfFilenameError,
     InvalidProfileMappingError,
     InvalidProfileRowError,
     ProfileMappingFileError,
     UnknownSourceTokenError,
 )
-from src.filename_parser import parse_manual_filename
 
 
 _FIELDS = (
@@ -25,7 +26,7 @@ _FIELDS = (
     "language_count",
 )
 _DOC_TYPES = frozenset(("A2", "A3", "BOOK"))
-_LANGUAGE_COUNT_TOKEN = re.compile(r"_L(?P<count>\d+)$")
+_LANGUAGE_COUNT_TOKEN = re.compile(r"_L(?P<count>\d+)$", re.IGNORECASE)
 
 
 class JsonProfileRepository:
@@ -34,9 +35,14 @@ class JsonProfileRepository:
         self._profiles = self._load_profiles()
 
     def lookup(self, pdf_path: str | Path) -> PdfProfile:
-        source_token = parse_manual_filename(pdf_path).source_token
+        file_name = Path(pdf_path).name
+        source_token = parse_source_token(file_name)
+        if source_token is None:
+            raise InvalidPdfFilenameError(
+                f"Cannot derive source_token from PDF filename {file_name!r}"
+            )
         try:
-            return self._profiles[source_token]
+            return self._profiles[source_token.casefold()]
         except KeyError as exc:
             raise UnknownSourceTokenError(
                 f"No canonical PDF profile for source_token {source_token!r}"
@@ -68,13 +74,14 @@ class JsonProfileRepository:
         first_rows: dict[str, int] = {}
         for row_index, row in enumerate(payload):
             profile = _parse_profile_row(row, row_index)
-            if profile.source_token in profiles:
+            normalized_token = profile.source_token.casefold()
+            if normalized_token in profiles:
                 raise DuplicateSourceTokenError(
                     f"Duplicate source_token {profile.source_token!r} in rows "
-                    f"{first_rows[profile.source_token]} and {row_index}"
+                    f"{first_rows[normalized_token]} and {row_index}"
                 )
-            profiles[profile.source_token] = profile
-            first_rows[profile.source_token] = row_index
+            profiles[normalized_token] = profile
+            first_rows[normalized_token] = row_index
         return profiles
 
 
@@ -176,7 +183,9 @@ def _validate_source_token_consistency(
             f"Profile row {row_index} source_token {source_token!r} has no language token"
         )
     buyer_token, language_token = source_token.rsplit("_", 1)
-    if tuple(buyer_token.split()) != buyer_codes:
+    if tuple(part.casefold() for part in buyer_token.split()) != tuple(
+        code.casefold() for code in buyer_codes
+    ):
         raise InvalidProfileRowError(
             f"Profile row {row_index} source_token {source_token!r} does not match buyer_codes"
         )

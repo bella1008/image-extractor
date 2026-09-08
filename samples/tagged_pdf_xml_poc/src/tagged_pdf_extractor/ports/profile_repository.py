@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from domain.models import PdfProfile
+from tagged_pdf_extractor.domain.models import PdfProfile
 
 
 class ProfileRepositoryError(Exception):
@@ -24,6 +24,10 @@ class InvalidProfileRowError(InvalidProfileMappingError):
 
 class DuplicateSourceTokenError(InvalidProfileMappingError):
     """Raised when multiple rows declare the same source token."""
+
+
+class InvalidPdfFilenameError(ProfileRepositoryError, ValueError):
+    """Raised when a PDF filename has no valid canonical source token."""
 
 
 class UnknownSourceTokenError(ProfileRepositoryError, LookupError):

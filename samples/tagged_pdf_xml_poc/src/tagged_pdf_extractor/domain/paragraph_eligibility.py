@@ -14,6 +14,26 @@ _SENTENCE_DISPLAY_ROLES = frozenset(
 )
 
 
+def sentence_break_heading_conflict(
+    *,
+    semantic_role: str | None,
+    source_role: str | None,
+    display_role: str | None = None,
+    promoted: bool = False,
+) -> str | None:
+    """Return the shared heading-context conflict classification, if any."""
+
+    if promoted:
+        return "promoted_heading"
+    if semantic_role == "heading" or (
+        source_role is not None and is_heading_candidate(source_role)
+    ):
+        return "source_heading"
+    if display_role in _SENTENCE_DISPLAY_ROLES:
+        return display_role
+    return None
+
+
 def is_nonempty_inline_paragraph(element: StructureElement) -> bool:
     """Return whether a paragraph contains text through inline wrappers only."""
 
@@ -50,11 +70,20 @@ def is_sentence_break_eligible_paragraph(
         semantic_role != "paragraph"
         or not is_nonempty_inline_leaf
         or heading_conflict
-        or any(
-            role is not None and is_heading_candidate(role)
-            for role in (source_role, *ancestor_source_roles)
+        or sentence_break_heading_conflict(
+            semantic_role=semantic_role,
+            source_role=source_role,
+            display_role=display_role,
         )
-        or display_role in _SENTENCE_DISPLAY_ROLES
+        is not None
+        or any(
+            sentence_break_heading_conflict(
+                semantic_role=None,
+                source_role=role,
+            )
+            is not None
+            for role in ancestor_source_roles
+        )
     ):
         return False
     for role in reversed(ancestor_roles):

@@ -13,6 +13,7 @@ from xml.etree import ElementTree as ET
 from tagged_pdf_extractor.domain.models import QualityReport
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_sentence_break_eligible_paragraph,
+    sentence_break_heading_conflict,
 )
 from tagged_pdf_extractor.domain.inline_icon_policy import (
     GENERIC_INLINE_ICON_REASON,
@@ -22,10 +23,7 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
     parse_positive_finite_number,
     parse_unambiguous_bbox,
 )
-from tagged_pdf_extractor.domain.readability_formatting import (
-    is_verified_subtitle_table_wrapper_pair,
-    sentence_start_offsets,
-)
+from tagged_pdf_extractor.domain.readability_formatting import sentence_start_offsets
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
@@ -77,12 +75,6 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
 _INLINE_ICON_TOKEN = "[아이콘]"
 _SEMANTIC_NOTE_MARKERS = frozenset({"※"})
 _SENTENCE_INLINE_TAGS = frozenset({"span", "link"})
-_SENTENCE_FLOW_BARRIERS = frozenset(
-    {"list", "table", "heading", "caption", "label", "figure"}
-)
-_SENTENCE_HEADING_DISPLAY_ROLES = frozenset(
-    {"subtitle", "strong-label", "section-heading"}
-)
 _SENTENCE_SOURCE_BOUNDARY = object()
 _SENTENCE_BLOCK_BOUNDARY = object()
 
@@ -1161,17 +1153,22 @@ class MarkdownDocumentWriter:
         for element in offsets_by_element:
             ancestor: ET.Element | None = element
             while ancestor is not None:
-                if ancestor in promoted:
+                conflict = sentence_break_heading_conflict(
+                    semantic_role=ancestor.tag,
+                    source_role=ancestor.get("source-role"),
+                    display_role=ancestor.get("display-role"),
+                    promoted=ancestor in promoted,
+                )
+                if conflict == "promoted_heading":
                     raise ValueError(
                         "sentence-break-source overlaps report-promoted heading"
                     )
-                if ancestor.tag == "heading":
+                if conflict == "source_heading":
                     raise ValueError("sentence-break-source overlaps source heading")
-                display_role = ancestor.get("display-role")
-                if display_role in _SENTENCE_HEADING_DISPLAY_ROLES:
+                if conflict is not None:
                     raise ValueError(
                         "sentence-break-source overlaps "
-                        f"{display_role} display role"
+                        f"{conflict} display role"
                     )
                 ancestor = parents.get(ancestor)
 
@@ -1188,7 +1185,18 @@ class MarkdownDocumentWriter:
             ancestors: tuple[ET.Element, ...],
         ) -> None:
             for child in cls._structural_children(parent):
-                if child.tag == "list_body":
+                if child.tag == "list_body" and not any(
+                    (
+                        sentence_break_heading_conflict(
+                            semantic_role=element.tag,
+                            source_role=element.get("source-role"),
+                            display_role=element.get("display-role"),
+                            promoted=element in promoted,
+                        )
+                        is not None
+                    )
+                    for element in (*ancestors, *tuple(child.iter()))
+                ):
                     flows.extend(cls._direct_sentence_flows(child))
                 if is_sentence_break_eligible_paragraph(
                     semantic_role=child.tag,
@@ -1225,63 +1233,6 @@ class MarkdownDocumentWriter:
             element: frozenset(values)
             for element, values in offsets.items()
         }
-
-    @classmethod
-    def _subtitle_linked_sentence_bodies(
-        cls,
-        root: ET.Element,
-    ) -> set[ET.Element]:
-        bodies: set[ET.Element] = set()
-
-        def visit(parent: ET.Element, ancestors: tuple[str, ...]) -> None:
-            siblings = cls._structural_children(parent)
-            if not any(tag in _SENTENCE_FLOW_BARRIERS for tag in ancestors):
-                for index in range(len(siblings) - 1):
-                    wrapper = siblings[index]
-                    following = siblings[index + 1]
-                    meaningful = tuple(
-                        child
-                        for child in cls._structural_children(wrapper)
-                        if cls._is_meaningful_sentence_wrapper_child(child)
-                    )
-                    child_roles = tuple(child.tag for child in meaningful)
-                    table_has_subtitle = (
-                        child_roles == ("table",)
-                        and any(
-                            descendant.tag == "paragraph"
-                            and descendant.get("display-role") == "subtitle"
-                            for descendant in meaningful[0].iter()
-                        )
-                    )
-                    if is_verified_subtitle_table_wrapper_pair(
-                        wrapper_role=wrapper.tag,
-                        meaningful_wrapper_child_roles=child_roles,
-                        following_role=following.tag,
-                        table_contains_verified_subtitle=table_has_subtitle,
-                        following_is_nonempty_inline_leaf=(
-                            cls._is_nonempty_inline_sentence_paragraph(following)
-                        ),
-                    ):
-                        bodies.add(following)
-            for child in siblings:
-                visit(child, (*ancestors, child.tag))
-
-        visit(root, ())
-        return bodies
-
-    @classmethod
-    def _is_meaningful_sentence_wrapper_child(
-        cls,
-        child: ET.Element,
-    ) -> bool:
-        if child.tag == "text":
-            return bool(decode_data_element(child).strip())
-        if child.tag in _SENTENCE_INLINE_TAGS:
-            return bool((child.get("actual-text") or "").strip()) or any(
-                cls._is_meaningful_sentence_wrapper_child(descendant)
-                for descendant in cls._structural_children(child)
-            )
-        return True
 
     @classmethod
     def _is_nonempty_inline_sentence_paragraph(

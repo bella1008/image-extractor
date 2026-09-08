@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from html import escape
 from pathlib import Path
@@ -1759,49 +1760,6 @@ def test_standalone_markdown_rejects_sentence_break_after_compact_token(
 
 
 @pytest.mark.parametrize(
-    "barrier_tag",
-    ["heading", "caption", "label", "figure", "list", "table"],
-)
-def test_subtitle_linked_markdown_body_inside_barrier_is_not_eligible(
-    barrier_tag: str,
-) -> None:
-    root = ET.fromstring(
-        f"<document><{barrier_tag}>"
-        + _subtitle_linked_body_xml(
-            _sentence_text("First sentence. Second sentence.", "Second")
-        )
-        + f"</{barrier_tag}></document>"
-    )
-
-    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == set()
-
-
-def test_actual_text_only_inline_body_has_markdown_candidate_parity() -> None:
-    root = ET.fromstring(
-        "<document>"
-        + _subtitle_linked_body_xml(
-            '<span actual-text="Actual-text-only body." />'
-        )
-        + "</document>"
-    )
-    paragraphs = root.findall("./section/paragraph")
-
-    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == {
-        paragraphs[1]
-    }
-
-
-def test_whitespace_actual_text_only_inline_body_is_not_a_markdown_candidate() -> None:
-    root = ET.fromstring(
-        "<document>"
-        + _subtitle_linked_body_xml('<span actual-text=" &#10; " />')
-        + "</document>"
-    )
-
-    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == set()
-
-
-@pytest.mark.parametrize(
     ("body", "message"),
     [
         (
@@ -1863,16 +1821,6 @@ def test_subtitle_linked_body_sentence_evidence_rejects_display_role_conflict(
             _report(),
             source_name="manual.pdf",
         )
-
-
-def test_whitespace_only_subtitle_linked_markdown_body_is_not_eligible() -> None:
-    root = ET.fromstring(
-        "<document>"
-        + _subtitle_linked_body_xml("<text> \n </text>")
-        + "</document>"
-    )
-
-    assert MarkdownDocumentWriter._subtitle_linked_sentence_bodies(root) == set()
 
 
 def test_sentence_breaks_keep_four_sentences_in_one_list_item(
@@ -2623,6 +2571,29 @@ def test_manual_non_sentence_offsets_are_rejected(
         )
 
 
+@pytest.mark.parametrize("normalization_form", ["NFC", "NFD"])
+def test_manual_normalization_equivalent_abbreviation_offset_is_rejected(
+    tmp_path: Path,
+    normalization_form: str,
+) -> None:
+    abbreviation = unicodedata.normalize(normalization_form, "z\u030c. B.")
+    value = f"Use {abbreviation} Certified parts. Next sentence."
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        "<list><list_item><list_body><paragraph>"
+        f'{_sentence_text(value, "B.")}'
+        "</paragraph></list_body></list_item></list>",
+    )
+
+    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -2713,8 +2684,27 @@ def test_sentence_evidence_under_ancestor_source_heading_is_rejected(
 
     with pytest.raises(
         ValueError,
-        match="ineligible sentence-break-source structure",
+        match="source heading",
     ):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
+def test_direct_list_body_sentence_evidence_under_source_heading_is_rejected(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        '<unknown source-role="Heading1"><list><list_item><list_body>'
+        f'{_sentence_text("First sentence. Next sentence.", "Next")}'
+        "</list_body></list_item></list></unknown>",
+    )
+
+    with pytest.raises(ValueError, match="heading"):
         MarkdownDocumentWriter.render_text(
             semantic,
             _report(),

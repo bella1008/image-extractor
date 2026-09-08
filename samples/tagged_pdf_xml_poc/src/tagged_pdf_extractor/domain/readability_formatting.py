@@ -23,8 +23,8 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
 from tagged_pdf_extractor.domain.paragraph_eligibility import (
     is_nonempty_inline_paragraph,
     is_sentence_break_eligible_paragraph,
+    sentence_break_heading_conflict,
 )
-from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 
 
@@ -52,10 +52,6 @@ _DOTTED_TOKEN_PATTERN = re.compile(
 )
 _COMPACT_ABBREVIATION_PATTERN = re.compile(
     r"(?<!\w)(?:[^\W\d_]\.){2,}",
-    re.UNICODE,
-)
-_SPACED_ABBREVIATION_PATTERN = re.compile(
-    r"(?<!\w)[^\W\d_]\.(?:\s+[^\W\d_]\.)+",
     re.UNICODE,
 )
 
@@ -481,8 +477,11 @@ def _eligible_flows(
     heading_paths = {
         path
         for path, element in _structure_elements_with_paths(children)
-        if element.semantic_role == "heading"
-        or is_heading_candidate(element.source_role)
+        if sentence_break_heading_conflict(
+            semantic_role=element.semantic_role,
+            source_role=element.source_role,
+        )
+        is not None
     }
     promotion_paths = {hint.child_path for hint in document.heading_promotions}
     subtitle_paths = {hint.child_path for hint in document.subtitle_hints}
@@ -499,14 +498,6 @@ def _eligible_flows(
             if not isinstance(child, StructureElement):
                 continue
             child_path = (*parent_path, index)
-            if child.semantic_role == "list_body":
-                flows.extend(
-                    _direct_list_body_flows(
-                        child,
-                        child_path,
-                        line_break_paths,
-                    )
-                )
             display_role = next(
                 (
                     role
@@ -521,6 +512,23 @@ def _eligible_flows(
                 _paths_overlap(child_path, path)
                 for path in heading_paths | promotion_paths
             )
+            if (
+                child.semantic_role == "list_body"
+                and not heading_conflict
+                and sentence_break_heading_conflict(
+                    semantic_role=child.semantic_role,
+                    source_role=child.source_role,
+                    display_role=display_role,
+                )
+                is None
+            ):
+                flows.extend(
+                    _direct_list_body_flows(
+                        child,
+                        child_path,
+                        line_break_paths,
+                    )
+                )
             if is_sentence_break_eligible_paragraph(
                 semantic_role=child.semantic_role,
                 source_role=child.source_role,
@@ -825,10 +833,11 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
     for pattern in (
         _EMAIL_PATTERN,
         _COMPACT_ABBREVIATION_PATTERN,
-        _SPACED_ABBREVIATION_PATTERN,
     ):
         for match in pattern.finditer(text):
             _mark_terminators(text, protected, match.start(), match.end())
+
+    _protect_spaced_single_letter_dotted_tokens(text, protected)
 
     for match in _DOTTED_TOKEN_PATTERN.finditer(text):
         token = match.group()
@@ -857,6 +866,47 @@ def _protected_terminators(text: str) -> tuple[bool, ...]:
     _protect_compact_single_period_tokens(text, protected)
     _protect_initials(text, protected)
     return tuple(protected)
+
+
+def _protect_spaced_single_letter_dotted_tokens(
+    text: str,
+    protected: list[bool],
+) -> None:
+    for start, character in enumerate(text):
+        if not character.isalpha() or (
+            start > 0
+            and (text[start - 1].isalnum() or text[start - 1] == "_")
+        ):
+            continue
+        token_end = _single_letter_dotted_token_end(text, start)
+        if token_end is None:
+            continue
+        sequence_end = token_end
+        token_count = 1
+        while sequence_end < len(text):
+            next_start = sequence_end
+            while next_start < len(text) and text[next_start].isspace():
+                next_start += 1
+            if next_start == sequence_end:
+                break
+            next_end = _single_letter_dotted_token_end(text, next_start)
+            if next_end is None:
+                break
+            token_count += 1
+            sequence_end = next_end
+        if token_count >= 2:
+            _mark_terminators(text, protected, start, sequence_end)
+
+
+def _single_letter_dotted_token_end(text: str, start: int) -> int | None:
+    if start >= len(text) or not text[start].isalpha():
+        return None
+    cursor = start + 1
+    while cursor < len(text) and unicodedata.category(text[cursor]).startswith("M"):
+        cursor += 1
+    if cursor >= len(text) or text[cursor] != ".":
+        return None
+    return cursor + 1
 
 
 def _protect_compact_single_period_tokens(

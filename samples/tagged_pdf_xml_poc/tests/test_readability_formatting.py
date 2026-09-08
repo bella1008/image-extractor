@@ -412,6 +412,21 @@ def test_spaced_single_letter_dotted_abbreviation_does_not_split(
     )
 
 
+@pytest.mark.parametrize("normalization_form", ["NFC", "NFD"])
+def test_normalization_equivalent_spaced_abbreviation_preserves_offsets(
+    normalization_form: str,
+) -> None:
+    abbreviation = unicodedata.normalize(normalization_form, "z\u030c. B.")
+    text = f"Use {abbreviation} Certified parts. Next step."
+    fragment = _fragment(text)
+    document = _list_body_document(fragment)
+
+    assert detect_sentence_break_hints(document) == (
+        SentenceBreakHint((0, 0, 1, 0), (text.index("Next"),)),
+    )
+    assert fragment.text_parts == (text,)
+
+
 @pytest.mark.parametrize(
     "abbreviation_flow",
     (
@@ -578,6 +593,25 @@ def test_source_role_heading_paragraphs_do_not_split(source_role: str) -> None:
     )
 
     assert detect_sentence_break_hints(_document(paragraph)) == ()
+
+
+def test_direct_list_body_under_source_role_heading_does_not_split() -> None:
+    text = "First sentence. Next sentence."
+    document = _document(
+        _element(
+            "unknown",
+            _element(
+                "list",
+                _element(
+                    "list_item",
+                    _element("list_body", _fragment(text)),
+                ),
+            ),
+            source_role="Heading1",
+        )
+    )
+
+    assert detect_sentence_break_hints(document) == ()
 
 
 def test_promoted_heading_paragraph_does_not_split() -> None:

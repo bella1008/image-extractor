@@ -21,8 +21,8 @@ from tagged_pdf_extractor.domain.typography import TypographyEvidence, typograph
 
 
 _VISIBLE_MARKER = re.compile(
-    r"^\s*(?:[•◦▪▫‣⁃●○■□]|#{1,6}(?=\s)|\d{1,3}(?=\s)|"
-    r"\(?\d{1,3}(?:[.)]|(?:\.\d+)+)(?=\s))"
+    r"^\s*(?:[-*](?=\s|$)|[•◦▪▫‣⁃●○■□]|#{1,6}(?=\s)|"
+    r"\d{1,3}(?=\s)|\(?\d{1,3}(?:[.)]|(?:\.\d+)+))"
 )
 _LIST_BODY_ROLE = "LBody"
 _LEFT_TOLERANCE_FONT_RATIO = 0.25

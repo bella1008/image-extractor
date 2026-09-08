@@ -85,6 +85,7 @@ def _document(
     ),
     target_page: int = 0,
     target_language: str | None = None,
+    target_source_role: str = "LBody",
     target_font_name: str = "Body-Regular",
     target_font_size: float = 8.0,
     preceding_marker_bbox: tuple[float, float, float, float] | None = (
@@ -101,6 +102,7 @@ def _document(
     ),
     following_page: int = 0,
     section: bool = True,
+    role_map: tuple[tuple[str, str], ...] = (),
 ) -> TaggedDocument:
     preceding = _list(
         page_index=0,
@@ -110,7 +112,7 @@ def _document(
         body_bboxes=preceding_body_bboxes,
     )
     target = StructureElement(
-        "LBody",
+        target_source_role,
         "paragraph",
         page_index=target_page,
         language=target_language,
@@ -136,7 +138,7 @@ def _document(
     children = (
         StructureElement("Sect", "section", language="en", children=siblings),
     ) if section else siblings
-    return TaggedDocument(Path("manual.pdf"), True, "en", (), children)
+    return TaggedDocument(Path("manual.pdf"), True, "en", role_map, children)
 
 
 def test_detects_evidenced_list_continuation_and_preserves_source() -> None:
@@ -184,11 +186,78 @@ def test_sibling_topology_without_complete_geometry_returns_no_hint() -> None:
 
 @pytest.mark.parametrize(
     "target_text",
-    ("• Bullet text", "2. Numbered text", "01 Heading text", "## Heading text"),
-    ids=("bullet", "numeric", "numbered-heading", "markdown-heading"),
+    (
+        "• Bullet text",
+        "-",
+        "- Hyphen bullet text",
+        "*",
+        "* Asterisk bullet text",
+        "2. Numbered text",
+        "2.Numbered text",
+        "01 Heading text",
+        "## Heading text",
+    ),
+    ids=(
+        "bullet",
+        "bare-hyphen",
+        "hyphen",
+        "bare-asterisk",
+        "asterisk",
+        "numeric",
+        "compact-numeric",
+        "numbered-heading",
+        "markdown-heading",
+    ),
 )
 def test_visible_marker_returns_no_hint(target_text: str) -> None:
     assert detect_list_continuation_hints(_document(target_text=target_text)) == ()
+
+
+def test_wrong_sibling_topology_returns_no_hint() -> None:
+    source = _document()
+    section = source.children[0]
+    assert isinstance(section, StructureElement)
+    preceding = StructureElement(
+        "P",
+        "paragraph",
+        children=(
+            _fragment(
+                "Not a list",
+                page_index=0,
+                mcid=9,
+                bbox=(100.0, 200.0, 180.0, 208.0),
+            ),
+        ),
+    )
+    wrong_topology = replace(
+        source,
+        children=(
+            replace(
+                section,
+                children=(preceding, section.children[1], section.children[2]),
+            ),
+        ),
+    )
+
+    assert detect_list_continuation_hints(wrong_topology) == ()
+
+
+def test_non_list_associated_target_source_role_returns_no_hint() -> None:
+    source = _document(target_source_role="P")
+
+    assert detect_list_continuation_hints(source) == ()
+
+
+def test_role_map_alias_resolving_to_list_body_returns_hint() -> None:
+    source = _document(
+        target_source_role="CustomListBody",
+        role_map=(("CustomListBody", "LBody"),),
+    )
+
+    hints = detect_list_continuation_hints(source)
+
+    assert len(hints) == 1
+    assert hints[0].source_role == "CustomListBody"
 
 
 def test_different_page_returns_no_hint() -> None:
@@ -211,6 +280,12 @@ def test_typography_tier_mismatch_returns_no_hint() -> None:
 
 def test_alignment_with_list_marker_instead_of_body_returns_no_hint() -> None:
     source = _document(target_bbox=(88.0, 176.0, 168.0, 184.0))
+
+    assert detect_list_continuation_hints(source) == ()
+
+
+def test_alignment_with_neither_list_body_nor_marker_returns_no_hint() -> None:
+    source = _document(target_bbox=(94.0, 176.0, 174.0, 184.0))
 
     assert detect_list_continuation_hints(source) == ()
 

@@ -160,6 +160,116 @@ def test_semantic_writer_serializes_continuation_evidence_without_raw_mutation(
     }
 
 
+def _continuation_publication_document(hint: ContinuationHint) -> TaggedDocument:
+    def list_block(label_text: str, body_text: str, mcid: int) -> StructureElement:
+        return StructureElement(
+            "L",
+            "list",
+            children=(
+                StructureElement(
+                    "LI",
+                    "list_item",
+                    children=(
+                        StructureElement(
+                            "Lbl",
+                            "label",
+                            children=(ContentFragment(0, mcid, (label_text,)),),
+                        ),
+                        StructureElement(
+                            "LBody",
+                            "list_body",
+                            children=(ContentFragment(0, mcid + 1, (body_text,)),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    target = StructureElement(
+        "LBody",
+        "paragraph",
+        children=(ContentFragment(0, 20, ("Continuation text",)),),
+    )
+    return TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "en",
+        (),
+        (list_block("10.", "Tenth item", 10), target, list_block("11.", "Eleventh item", 30)),
+        continuation_hints=(hint,),
+    )
+
+
+@pytest.mark.parametrize(
+    ("paragraph_bbox", "list_body_bbox", "left_delta", "vertical_gap", "attribute"),
+    [
+        (
+            (0.0000045, 1.0, 20.0, 10.0),
+            (0.0, 14.0, 20.0, 24.0),
+            0.0000045,
+            4.0,
+            "left-delta",
+        ),
+        (
+            (0.0, 1.0, 20.0, 10.0),
+            (0.0, 10.0000045, 20.0, 24.0),
+            0.0,
+            0.0000045,
+            "vertical-gap",
+        ),
+    ],
+    ids=("left-delta-half-micro", "vertical-gap-half-micro"),
+)
+def test_continuation_half_micro_evidence_publishes_from_xml_to_markdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    paragraph_bbox: tuple[float, float, float, float],
+    list_body_bbox: tuple[float, float, float, float],
+    left_delta: float,
+    vertical_gap: float,
+    attribute: str,
+) -> None:
+    hint = replace(
+        _continuation_hint((1,)),
+        preceding_list_item_path=(0, 0),
+        preceding_list_body_path=(0, 0, 1),
+        paragraph_bbox=paragraph_bbox,
+        list_body_bbox=list_body_bbox,
+        left_delta=left_delta,
+        vertical_gap=vertical_gap,
+    )
+    document = _continuation_publication_document(hint)
+    validated = ValidatedReviewFormattingHints(
+        line_break_by_path=MappingProxyType({}),
+        text_display_by_path=MappingProxyType({}),
+        sentence_break_by_path=MappingProxyType({}),
+        inline_icon_by_path=MappingProxyType({}),
+        continuation_by_path=MappingProxyType({hint.child_path: hint}),
+    )
+    monkeypatch.setattr(
+        xml_writer_module, "validate_display_hints", lambda actual: validated
+    )
+    semantic_path = tmp_path / "semantic.xml"
+    markdown_path = tmp_path / "semantic.md"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+    paragraph = ET.parse(semantic_path).getroot().find("paragraph")
+    assert paragraph is not None
+    MarkdownDocumentWriter().write(
+        semantic_path,
+        QualityReport("pass", {}, {}, ()),
+        markdown_path,
+        source_name="manual.pdf",
+    )
+
+    assert paragraph.attrib[attribute] == repr(
+        left_delta if attribute == "left-delta" else vertical_gap
+    )
+    assert "10. Tenth item\n\n    Continuation text\n\n11. Eleventh item" in markdown_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def _review_formatting_document() -> TaggedDocument:
     heading = StructureElement(
         "P", "paragraph", children=(ContentFragment(0, 1, ("Form title",)),)

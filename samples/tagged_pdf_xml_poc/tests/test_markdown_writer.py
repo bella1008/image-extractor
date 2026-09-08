@@ -357,6 +357,33 @@ def test_malformed_list_continuation_xml_fails_closed(
         )
 
 
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [
+        ("icon-reason", "small_inline_figure_with_adjacent_text"),
+        ("width-font-ratio", "1.4"),
+        ("height-font-ratio", "1.4"),
+        ("route-separator-count", "3"),
+        ("route-parenthesized", "true"),
+    ],
+)
+def test_rejects_inline_icon_only_attribute_on_list_continuation(
+    tmp_path: Path, attribute: str, value: str
+) -> None:
+    body = (
+        "<section>"
+        + _continuation_list("bullet", "First item")
+        + _continuation_paragraph(extra_attributes=f'{attribute}="{value}"')
+        + _continuation_list("bullet", "Second item")
+        + "</section>"
+    )
+
+    with pytest.raises(
+        ValueError, match="inline-icon attributes overlap list-continuation"
+    ):
+        _render(tmp_path, body)
+
+
 def test_renders_subtitle_hint_as_bold_without_heading_promotion(
     tmp_path: Path,
 ) -> None:

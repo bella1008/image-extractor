@@ -551,8 +551,10 @@ class XmlDocumentWriter:
             "preceding-list-body-path": path(hint.preceding_list_body_path),
             "paragraph-bbox": bbox(hint.paragraph_bbox),
             "list-body-bbox": bbox(hint.list_body_bbox),
-            "left-delta": XmlDocumentWriter._format_number(hint.left_delta),
-            "vertical-gap": XmlDocumentWriter._format_number(hint.vertical_gap),
+            "left-delta": XmlDocumentWriter._format_bbox_number(hint.left_delta),
+            "vertical-gap": XmlDocumentWriter._format_bbox_number(
+                hint.vertical_gap
+            ),
             "reference-font-size": XmlDocumentWriter._format_number(
                 hint.reference_font_size
             ),

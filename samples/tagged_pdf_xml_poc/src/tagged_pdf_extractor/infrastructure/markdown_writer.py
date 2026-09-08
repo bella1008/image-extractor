@@ -72,6 +72,9 @@ _INLINE_ICON_ATTRIBUTE_NAMES = frozenset(
         "route-parenthesized",
     }
 )
+_INLINE_ICON_UNIQUE_ATTRIBUTE_NAMES = _INLINE_ICON_ATTRIBUTE_NAMES - {
+    "reference-font-size"
+}
 _CONTINUATION_REASON = "sibling_list_paragraph_list_geometry_typography"
 _CONTINUATION_ATTRIBUTES = (
     "continuation-reason",
@@ -1203,6 +1206,13 @@ class MarkdownDocumentWriter:
             )
             if display_role == "inline-icon":
                 inline_icons[element] = cls._validate_inline_icon_evidence(element)
+            elif display_role == "list-continuation" and any(
+                name in element.attrib
+                for name in _INLINE_ICON_UNIQUE_ATTRIBUTE_NAMES
+            ):
+                raise ValueError(
+                    "inline-icon attributes overlap list-continuation"
+                )
             elif has_icon_attributes and display_role != "list-continuation":
                 raise ValueError(
                     "inline-icon attributes without inline-icon display role"

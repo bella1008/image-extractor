@@ -350,6 +350,30 @@ def test_accepts_required_hyphenated_language_codes(
     assert profile.languages == ("ENG", localized_code)
 
 
+@pytest.mark.parametrize("language", ["LAT", "LTU", "B-POR"])
+def test_accepts_single_language_source_tokens_without_a_buyer_allowlist(
+    tmp_path: Path, language: str
+) -> None:
+    source_token = f"XX_{language}"
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json",
+        [
+            _valid_row(
+                source_token=source_token,
+                languages=language,
+                doc_type="A3",
+                language_count=1,
+            )
+        ],
+    )
+    filename = f"BN68-00000A-00_SUG_Y26 TV ALL_{source_token}_260101.0.pdf"
+
+    profile = JsonProfileRepository(mapping_path).lookup(filename)
+
+    assert profile.source_token == source_token
+    assert profile.languages == (language,)
+
+
 @pytest.mark.parametrize("source_token", ["ZC_LXX", "ZC_ L02"])
 def test_rejects_malformed_source_token_rows_during_load(
     tmp_path: Path, source_token: str

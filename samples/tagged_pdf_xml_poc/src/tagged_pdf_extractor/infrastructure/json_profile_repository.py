@@ -26,16 +26,23 @@ _REQUIRED_FIELDS = (
 _ALLOWED_FIELDS = frozenset((*_REQUIRED_FIELDS, "region", "buyer_codes"))
 _DOC_TYPES = frozenset(("A2", "A3", "BOOK"))
 _LANGUAGE_CODE = re.compile(r"(?:[A-Z]{3}|[A-Z]-[A-Z]{3})")
-_SOURCE_TOKEN = re.compile(
-    r"[A-Z0-9]+(?: [A-Z0-9]+)*_(?:L\d{2}|[A-KM-Z][A-Z0-9]*)"
+_SOURCE_TOKEN_PARTS = re.compile(
+    r"(?P<buyer>[A-Z0-9]+(?: [A-Z0-9]+)*)_"
+    r"(?P<language_token>[A-Z0-9-]+)"
 )
-_LANGUAGE_COUNT_TOKEN = re.compile(r"_L(?P<count>\d{2})$")
+_LANGUAGE_COUNT_TOKEN = re.compile(r"L(?P<count>\d{2})")
+_COMBINATION_TOKEN = re.compile(r"[A-Z]+")
 
 
 class JsonProfileRepository:
     def __init__(self, mapping_path: str | Path) -> None:
         self._mapping_path = Path(mapping_path)
         self._profiles = self._load_profiles()
+        self._language_codes = frozenset(
+            language
+            for profile in self._profiles.values()
+            for language in profile.languages
+        )
 
     def lookup(self, pdf_path: str | Path) -> PdfProfile:
         file_name = Path(pdf_path).name
@@ -45,16 +52,32 @@ class JsonProfileRepository:
                 f"Cannot derive valid source_token from PDF filename {file_name!r}"
             )
         normalized_source_token = source_token.upper()
-        if _SOURCE_TOKEN.fullmatch(normalized_source_token) is None:
+        token_match = _SOURCE_TOKEN_PARTS.fullmatch(normalized_source_token)
+        if token_match is None:
             raise InvalidPdfFilenameError(
                 f"Cannot derive valid source_token from PDF filename {file_name!r}"
             )
         try:
             return self._profiles[normalized_source_token.casefold()]
         except KeyError as exc:
+            language_token = token_match.group("language_token")
+            if not self._is_valid_unknown_language_token(language_token):
+                raise InvalidPdfFilenameError(
+                    f"Cannot derive valid source_token from PDF filename {file_name!r}"
+                ) from exc
             raise UnknownSourceTokenError(
                 f"No canonical PDF profile for source_token {normalized_source_token!r}"
             ) from exc
+
+    def _is_valid_unknown_language_token(self, language_token: str) -> bool:
+        if _LANGUAGE_COUNT_TOKEN.fullmatch(language_token) is not None:
+            return True
+        if _LANGUAGE_CODE.fullmatch(language_token) is not None:
+            return (
+                not language_token.startswith("L")
+                or language_token in self._language_codes
+            )
+        return _COMBINATION_TOKEN.fullmatch(language_token) is not None
 
     def _load_profiles(self) -> dict[str, PdfProfile]:
         try:
@@ -114,7 +137,8 @@ def _parse_profile_row(row: Any, row_index: int) -> PdfProfile:
             _required_string(row, row_index, metadata_field)
 
     source_token = _required_string(row, row_index, "source_token")
-    if _SOURCE_TOKEN.fullmatch(source_token) is None:
+    token_match = _SOURCE_TOKEN_PARTS.fullmatch(source_token)
+    if token_match is None:
         raise InvalidProfileRowError(
             f"Profile row {row_index} field 'source_token' has invalid format: "
             f"{source_token!r}"
@@ -142,7 +166,13 @@ def _parse_profile_row(row: Any, row_index: int) -> PdfProfile:
             f"Profile row {row_index} field 'doc_type' must be A2, A3, or BOOK"
         )
 
-    _validate_source_token_consistency(source_token, languages, language_count, row_index)
+    _validate_source_token_consistency(
+        source_token,
+        token_match.group("language_token"),
+        languages,
+        language_count,
+        row_index,
+    )
     return PdfProfile(
         source_token=source_token,
         doc_type=doc_type,
@@ -188,13 +218,12 @@ def _ordered_language_codes(value: str, row_index: int) -> tuple[str, ...]:
 
 def _validate_source_token_consistency(
     source_token: str,
+    language_token: str,
     languages: tuple[str, ...],
     language_count: int,
     row_index: int,
 ) -> None:
-    _, language_token = source_token.rsplit("_", 1)
-
-    count_match = _LANGUAGE_COUNT_TOKEN.search(source_token)
+    count_match = _LANGUAGE_COUNT_TOKEN.fullmatch(language_token)
     if count_match:
         declared_count = int(count_match.group("count"))
         if declared_count != language_count:
@@ -202,7 +231,16 @@ def _validate_source_token_consistency(
                 f"Profile row {row_index} source_token {source_token!r} declares "
                 f"{declared_count} languages but language_count is {language_count}"
             )
-    elif language_count == 1 and languages != (language_token,):
+    elif language_count == 1:
+        if languages == (language_token,):
+            return
         raise InvalidProfileRowError(
             f"Profile row {row_index} source_token {source_token!r} does not match languages"
+        )
+    elif language_token.startswith("L") or _COMBINATION_TOKEN.fullmatch(
+        language_token
+    ) is None:
+        raise InvalidProfileRowError(
+            f"Profile row {row_index} source_token {source_token!r} has invalid "
+            "combination language token"
         )

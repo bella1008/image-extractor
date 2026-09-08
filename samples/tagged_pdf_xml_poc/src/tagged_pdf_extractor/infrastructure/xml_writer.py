@@ -166,6 +166,7 @@ def _set_data_text(element: ET.Element, value: str) -> None:
 
 class XmlDocumentWriter:
     def write_raw(self, document: TaggedDocument, path: Path) -> None:
+        validate_display_hints(document)
         root_attributes = {
             "source": str(document.source_path),
             "marked": "true" if document.marked else "false",
@@ -554,6 +555,13 @@ class XmlDocumentWriter:
         return f"{value:.6f}".rstrip("0").rstrip(".")
 
     @staticmethod
+    def _format_bbox_number(value: float) -> str:
+        if value == 0:
+            return "0"
+        serialized = repr(value)
+        return serialized[:-2] if serialized.endswith(".0") else serialized
+
+    @staticmethod
     def _fragment_attributes(fragment: ContentFragment) -> dict[str, str]:
         attributes = {"page-index": str(fragment.page_index)}
         if fragment.mcid is not None:
@@ -563,7 +571,7 @@ class XmlDocumentWriter:
         bbox = fragment.bbox
         if bbox is not None:
             attributes["bbox"] = ",".join(
-                XmlDocumentWriter._format_number(value) for value in bbox
+                XmlDocumentWriter._format_bbox_number(value) for value in bbox
             )
         return attributes
 

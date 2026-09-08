@@ -1288,6 +1288,59 @@ def test_raw_and_semantic_fragments_serialize_resolved_union_bbox(
     assert semantic_text.text == "First Second"
 
 
+def test_fragment_bbox_serialization_preserves_tiny_positive_extent(
+    tmp_path: Path,
+) -> None:
+    fragment = ContentFragment(
+        page_index=2,
+        mcid=7,
+        text_parts=("Text",),
+        text_bboxes=((10.0, 20.0, 10.0000001, 20.0000001),),
+    )
+    document = TaggedDocument(
+        Path("tiny-geometry.pdf"), True, "en", (), (fragment,)
+    )
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    for element in (
+        ET.parse(raw_path).getroot().find("fragment"),
+        ET.parse(semantic_path).getroot().find("text"),
+    ):
+        assert element is not None
+        assert element.attrib["bbox"] == "10,20,10.0000001,20.0000001"
+        left, bottom, right, top = map(float, element.attrib["bbox"].split(","))
+        assert right > left
+        assert top > bottom
+
+
+@pytest.mark.parametrize("write_method", ["write_raw", "write_semantic"])
+def test_xml_writer_rejects_malformed_fragment_geometry_before_writing(
+    tmp_path: Path,
+    write_method: str,
+) -> None:
+    fragment = ContentFragment(
+        page_index=2,
+        mcid=7,
+        text_parts=("Text",),
+        text_bboxes=((10.0, 20.0, 10.0, 32.0),),
+    )
+    document = TaggedDocument(
+        Path("invalid-geometry.pdf"), True, "en", (), (fragment,)
+    )
+    target = tmp_path / f"{write_method}.xml"
+    target.write_text("sentinel", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"invalid fragment bbox at \(0,\)"):
+        getattr(XmlDocumentWriter(), write_method)(document, target)
+
+    assert target.read_text(encoding="utf-8") == "sentinel"
+
+
 def test_fragment_without_geometry_omits_bbox_attribute(tmp_path: Path) -> None:
     fragment = ContentFragment(
         page_index=2,
@@ -1311,7 +1364,7 @@ def test_fragment_without_geometry_omits_bbox_attribute(tmp_path: Path) -> None:
     assert "bbox" not in semantic_text.attrib
 
 
-def test_geometry_xml_round_trip_preserves_text_without_markdown_coordinates(
+def test_geometry_does_not_change_complete_markdown_output(
     tmp_path: Path,
 ) -> None:
     source_text = "Settings > Support"
@@ -1322,25 +1375,36 @@ def test_geometry_xml_round_trip_preserves_text_without_markdown_coordinates(
         text_bboxes=((10.0, 20.0, 30.0, 32.0),),
     )
     document = TaggedDocument(Path("geometry.pdf"), True, "en", (), (fragment,))
-    semantic_path = tmp_path / "semantic.xml"
-    markdown_path = tmp_path / "semantic.md"
+    document_without_geometry = replace(
+        document,
+        children=(replace(fragment, text_bboxes=()),),
+    )
+    semantic_path = tmp_path / "semantic-with-geometry.xml"
+    semantic_without_geometry_path = tmp_path / "semantic-without-geometry.xml"
+    markdown_path = tmp_path / "with-geometry.md"
+    markdown_without_geometry_path = tmp_path / "without-geometry.md"
 
-    XmlDocumentWriter().write_semantic(document, semantic_path)
+    writer = XmlDocumentWriter()
+    writer.write_semantic(document, semantic_path)
+    writer.write_semantic(document_without_geometry, semantic_without_geometry_path)
     semantic_text = ET.parse(semantic_path).getroot().find("text")
     assert semantic_text is not None
     assert semantic_text.attrib["bbox"] == "10,20,30,32"
     assert semantic_text.text == source_text
 
-    MarkdownDocumentWriter().write(
-        semantic_path,
-        QualityReport("pass", {}, {}, ()),
-        markdown_path,
+    report = QualityReport("pass", {}, {}, ())
+    markdown_writer = MarkdownDocumentWriter()
+    markdown_writer.write(
+        semantic_path, report, markdown_path, source_name="geometry.pdf"
+    )
+    markdown_writer.write(
+        semantic_without_geometry_path,
+        report,
+        markdown_without_geometry_path,
         source_name="geometry.pdf",
     )
-    markdown = markdown_path.read_text(encoding="utf-8")
-    assert source_text in markdown
-    assert "bbox" not in markdown
-    assert "10,20,30,32" not in markdown
+
+    assert markdown_path.read_bytes() == markdown_without_geometry_path.read_bytes()
 
 
 def test_populated_text_styles_are_not_serialized_to_xml_yet(tmp_path: Path) -> None:

@@ -51,12 +51,14 @@ def _render(
 def _continuation_paragraph(
     content: str = "<text>Continuation text</text>",
     *,
+    item_path: str = "0/0/0",
+    body_path: str = "0/0/0/1",
     extra_attributes: str = "",
 ) -> str:
     return f"""
     <paragraph display-role="list-continuation"
       continuation-reason="sibling_list_paragraph_list_geometry_typography"
-      preceding-list-item-path="0/0/0" preceding-list-body-path="0/0/0/1"
+      preceding-list-item-path="{item_path}" preceding-list-body-path="{body_path}"
       page-index="0" paragraph-bbox="100,176,180,184"
       list-body-bbox="100,188,180,208" left-delta="0" vertical-gap="4"
       reference-font-size="8" continuation-source-role="LBody"
@@ -191,6 +193,92 @@ def test_continuation_topology_ignores_whitespace_only_fragments(
     markdown = _render(tmp_path, body)
 
     assert "- First item\n\n  Continuation text\n\n- Second item" in markdown
+
+
+def test_rejects_continuation_referencing_nonfinal_preceding_list_item(
+    tmp_path: Path,
+) -> None:
+    preceding = (
+        "<list>"
+        "<list_item><label><text>9.</text></label>"
+        "<list_body><text>Ninth item</text></list_body></list_item>"
+        "<list_item><label><text>10.</text></label>"
+        "<list_body><text>Tenth item</text></list_body></list_item>"
+        "</list>"
+    )
+    body = (
+        "<section>"
+        + preceding
+        + _continuation_paragraph()
+        + _continuation_list("11.", "Eleventh item")
+        + "</section>"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="continuation predecessor path is not final meaningful list_item",
+    ):
+        _render(tmp_path, body)
+
+
+def test_rejects_continuation_referencing_wrong_final_item_list_body(
+    tmp_path: Path,
+) -> None:
+    preceding = (
+        "<list>"
+        "<list_item><label><text>9.</text></label>"
+        "<list_body><text>Ninth item</text></list_body></list_item>"
+        "<list_item><label><text>10.</text></label>"
+        "<list_body><text>Tenth item</text></list_body>"
+        "<span><list_body><text>Tampered body</text></list_body></span>"
+        "</list_item>"
+        "</list>"
+    )
+    body = (
+        "<section>"
+        + preceding
+        + _continuation_paragraph(
+            item_path="0/0/1",
+            body_path="0/0/1/2/0",
+        )
+        + _continuation_list("11.", "Eleventh item")
+        + "</section>"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="continuation predecessor body path is not final item list_body",
+    ):
+        _render(tmp_path, body)
+
+
+def test_continuation_predecessor_matching_ignores_whitespace_fragments(
+    tmp_path: Path,
+) -> None:
+    preceding = (
+        "<list>"
+        "<list_item><label><text>9.</text></label>"
+        "<list_body><text>Ninth item</text></list_body></list_item>"
+        "<list_item><label><text>10.</text></label>"
+        "<list_body><text>Tenth item</text></list_body><text> \t </text>"
+        "</list_item>"
+        "<text>\n</text>"
+        "</list>"
+    )
+    body = (
+        "<section>"
+        + preceding
+        + _continuation_paragraph(
+            item_path="0/0/1",
+            body_path="0/0/1/1",
+        )
+        + _continuation_list("11.", "Eleventh item")
+        + "</section>"
+    )
+
+    markdown = _render(tmp_path, body)
+
+    assert "10. Tenth item\n\n    Continuation text\n\n11. Eleventh item" in markdown
 
 
 def test_renders_evidenced_list_continuation_under_preceding_item(

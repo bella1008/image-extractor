@@ -471,9 +471,10 @@ class MarkdownDocumentWriter:
         if index < 0 or siblings[index].tag != "list":
             raise ValueError("list-continuation predecessor is not preceding list")
         list_children = cls._structural_children(siblings[index])
-        if not list_children or list_children[-1].tag != "list_item":
+        item_index = cls._final_meaningful_child_index(list_children)
+        if item_index is None or list_children[item_index].tag != "list_item":
             raise ValueError("list-continuation predecessor path is not list_item")
-        item = list_children[-1]
+        item = list_children[item_index]
         direct_labels = tuple(
             child
             for child in cls._structural_children(item)
@@ -485,6 +486,15 @@ class MarkdownDocumentWriter:
     @staticmethod
     def _is_ignorable_text_fragment(element: ET.Element) -> bool:
         return element.tag == "text" and not decode_data_element(element).strip()
+
+    @classmethod
+    def _final_meaningful_child_index(
+        cls, children: list[ET.Element]
+    ) -> int | None:
+        index = len(children) - 1
+        while index >= 0 and cls._is_ignorable_text_fragment(children[index]):
+            index -= 1
+        return index if index >= 0 else None
 
     @classmethod
     def _list_events(
@@ -1362,6 +1372,29 @@ class MarkdownDocumentWriter:
                 or item_path[: len(preceding_path)] != preceding_path
             ):
                 raise ValueError("list-continuation predecessor is not preceding list")
+            preceding_children = cls._structural_children(preceding)
+            final_item_index = cls._final_meaningful_child_index(
+                preceding_children
+            )
+            if final_item_index is None:
+                raise ValueError(
+                    "continuation predecessor path is not final meaningful list_item"
+                )
+            final_item = preceding_children[final_item_index]
+            final_item_path = (*preceding_path, final_item_index)
+            if final_item.tag != "list_item" or item_path != final_item_path:
+                raise ValueError(
+                    "continuation predecessor path is not final meaningful list_item"
+                )
+            body_candidates = [
+                (*final_item_path, index)
+                for index, child in enumerate(cls._structural_children(final_item))
+                if child.tag == "list_body"
+            ]
+            if len(body_candidates) != 1 or body_path != body_candidates[0]:
+                raise ValueError(
+                    "continuation predecessor body path is not final item list_body"
+                )
             following_index = target_path[-1] + 1
             following_path = (*target_path[:-1], following_index)
             following = indexed.get(following_path)

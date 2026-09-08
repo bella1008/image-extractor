@@ -384,3 +384,53 @@ def test_rejects_malformed_source_token_rows_during_load(
 
     with pytest.raises(InvalidProfileRowError, match="source_token"):
         JsonProfileRepository(mapping_path)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {
+            "source_token": "ZC_LXX",
+            "languages": "LXX",
+            "doc_type": "A3",
+            "language_count": 1,
+        },
+        {
+            "source_token": "ZA_ENG",
+            "languages": "ENG;FRA",
+            "language_count": 2,
+        },
+        {
+            "source_token": "PY_ENRU",
+            "languages": "FRA;DEU",
+            "language_count": 2,
+        },
+        {
+            "source_token": "SQ MI_HEAR",
+            "languages": "ENG;FRA",
+            "language_count": 2,
+        },
+        {
+            "source_token": "XX_JUNK",
+            "languages": "ENG;FRA",
+            "language_count": 2,
+        },
+    ],
+)
+def test_rejects_invalid_source_token_language_relationships(
+    tmp_path: Path, overrides: dict[str, object]
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json", [_valid_row(**overrides)]
+    )
+
+    with pytest.raises(InvalidProfileRowError, match="source_token"):
+        JsonProfileRepository(mapping_path)
+
+
+def test_lookup_rejects_unknown_combination_token() -> None:
+    repository = JsonProfileRepository(CANONICAL_MAPPING)
+    filename = "BN68-00000A-00_SUG_Y26 TV ALL_XX_JUNK_260101.0.pdf"
+
+    with pytest.raises(InvalidPdfFilenameError, match="source_token"):
+        repository.lookup(filename)

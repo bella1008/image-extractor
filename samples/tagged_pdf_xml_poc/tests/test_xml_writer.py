@@ -13,6 +13,7 @@ from tagged_pdf_extractor.domain.models import (
     HeadingPromotion,
     InlineIconHint,
     LineBreakHint,
+    QualityReport,
     SentenceBreakHint,
     StructureElement,
     SubtitleHint,
@@ -27,6 +28,7 @@ from tagged_pdf_extractor.domain.readability_formatting import (
     apply_readability_formatting,
 )
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
+from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
 
 
@@ -1253,6 +1255,92 @@ def test_xml_round_trip_preserves_hierarchy_and_exact_unicode_osd_path(
             "action": "trim_left",
         },
     )
+
+
+def test_raw_and_semantic_fragments_serialize_resolved_union_bbox(
+    tmp_path: Path,
+) -> None:
+    fragment = ContentFragment(
+        page_index=2,
+        mcid=7,
+        text_parts=("First", "Second"),
+        text_bboxes=(
+            (10.0, 20.0, 20.0, 30.0),
+            (15.0, 24.0, 30.0, 32.0),
+        ),
+    )
+    document = TaggedDocument(Path("geometry.pdf"), True, "en", (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw_fragment = ET.parse(raw_path).getroot().find("fragment")
+    semantic_text = ET.parse(semantic_path).getroot().find("text")
+    assert raw_fragment is not None
+    assert semantic_text is not None
+    assert raw_fragment.attrib["bbox"] == "10,20,30,32"
+    assert semantic_text.attrib["bbox"] == "10,20,30,32"
+    assert [part.text for part in raw_fragment.findall("part")] == ["First", "Second"]
+    assert "".join(raw_fragment.itertext()) == fragment.text
+    assert semantic_text.text == "First Second"
+
+
+def test_fragment_without_geometry_omits_bbox_attribute(tmp_path: Path) -> None:
+    fragment = ContentFragment(
+        page_index=2,
+        mcid=7,
+        text_parts=("Text",),
+        text_bboxes=(None,),
+    )
+    document = TaggedDocument(Path("no-geometry.pdf"), True, "en", (), (fragment,))
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw_fragment = ET.parse(raw_path).getroot().find("fragment")
+    semantic_text = ET.parse(semantic_path).getroot().find("text")
+    assert raw_fragment is not None
+    assert semantic_text is not None
+    assert "bbox" not in raw_fragment.attrib
+    assert "bbox" not in semantic_text.attrib
+
+
+def test_geometry_xml_round_trip_preserves_text_without_markdown_coordinates(
+    tmp_path: Path,
+) -> None:
+    source_text = "Settings > Support"
+    fragment = ContentFragment(
+        page_index=0,
+        mcid=8,
+        text_parts=(source_text,),
+        text_bboxes=((10.0, 20.0, 30.0, 32.0),),
+    )
+    document = TaggedDocument(Path("geometry.pdf"), True, "en", (), (fragment,))
+    semantic_path = tmp_path / "semantic.xml"
+    markdown_path = tmp_path / "semantic.md"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+    semantic_text = ET.parse(semantic_path).getroot().find("text")
+    assert semantic_text is not None
+    assert semantic_text.attrib["bbox"] == "10,20,30,32"
+    assert semantic_text.text == source_text
+
+    MarkdownDocumentWriter().write(
+        semantic_path,
+        QualityReport("pass", {}, {}, ()),
+        markdown_path,
+        source_name="geometry.pdf",
+    )
+    markdown = markdown_path.read_text(encoding="utf-8")
+    assert source_text in markdown
+    assert "bbox" not in markdown
+    assert "10,20,30,32" not in markdown
 
 
 def test_populated_text_styles_are_not_serialized_to_xml_yet(tmp_path: Path) -> None:

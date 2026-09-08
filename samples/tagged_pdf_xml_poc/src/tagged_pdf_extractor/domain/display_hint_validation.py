@@ -59,6 +59,12 @@ def validate_review_formatting_hints(
         document.inline_icon_hints, "inline icon hint"
     )
     elements, ancestors = _index_document(document.children)
+    for path, target in elements.items():
+        if not isinstance(target, ContentFragment):
+            continue
+        for bbox in target.text_bboxes:
+            if bbox is not None and not _valid_bbox(bbox):
+                raise ValueError(f"invalid fragment bbox at {path}")
     for path in subtitle_by_path:
         _resolved_structure_element(elements, path, "subtitle hint")
 

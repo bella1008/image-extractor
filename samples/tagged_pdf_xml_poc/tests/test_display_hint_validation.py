@@ -47,6 +47,45 @@ def _fragment(text: str) -> ContentFragment:
     return ContentFragment(page_index=0, mcid=1, text_parts=(text,))
 
 
+@pytest.mark.parametrize(
+    "bbox",
+    [
+        (0.0, 0.0, float("nan"), 1.0),
+        (0.0, 0.0, float("inf"), 1.0),
+        (2.0, 0.0, 1.0, 1.0),
+        (0.0, 2.0, 1.0, 1.0),
+        (0.0, 0.0, 0.0, 1.0),
+        (0.0, 0.0, 1.0, 0.0),
+    ],
+)
+def test_fragment_geometry_validation_rejects_malformed_box(
+    bbox: tuple[float, float, float, float],
+) -> None:
+    fragment = ContentFragment(
+        page_index=0,
+        mcid=1,
+        text_parts=("Text",),
+        text_bboxes=(bbox,),
+    )
+
+    with pytest.raises(ValueError, match=r"invalid fragment bbox at \(0,\)"):
+        validate_review_formatting_hints(_document(fragment))
+
+
+@pytest.mark.parametrize("text_bboxes", [(), (None,)])
+def test_fragment_geometry_validation_accepts_absent_box(
+    text_bboxes: tuple[None, ...],
+) -> None:
+    fragment = ContentFragment(
+        page_index=0,
+        mcid=1,
+        text_parts=("Text",),
+        text_bboxes=text_bboxes,
+    )
+
+    validate_review_formatting_hints(_document(fragment))
+
+
 def _styled_fragment(text: str, *, mcid: int = 1) -> ContentFragment:
     return ContentFragment(
         page_index=3,

@@ -560,6 +560,11 @@ class XmlDocumentWriter:
             attributes["mcid"] = str(fragment.mcid)
         if fragment.object_ref is not None:
             attributes["object-ref"] = fragment.object_ref
+        bbox = fragment.bbox
+        if bbox is not None:
+            attributes["bbox"] = ",".join(
+                XmlDocumentWriter._format_number(value) for value in bbox
+            )
         return attributes
 
     @staticmethod

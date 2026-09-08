@@ -178,6 +178,7 @@ class PypdfOperationTextRunner:
             operations = tuple(content.operations)
 
             extractor = TextExtraction()
+            geometry_ambiguous = False
 
             def visitor(
                 value: str,
@@ -186,6 +187,7 @@ class PypdfOperationTextRunner:
                 _font_resource: Any,
                 font_size: Any,
             ) -> None:
+                nonlocal geometry_ambiguous
                 if value:
                     font = extractor.font
                     font_name = getattr(font, "name", None)
@@ -194,14 +196,17 @@ class PypdfOperationTextRunner:
                     normalized_font_size = _effective_font_size(
                         font_size, text_matrix, current_matrix
                     )
-                    bbox = _text_run_bbox(
-                        value,
-                        font,
-                        font_size,
-                        getattr(extractor, "char_scale", 1.0),
-                        text_matrix,
-                        current_matrix,
-                    )
+                    bbox = None
+                    if not geometry_ambiguous:
+                        bbox = _text_run_bbox(
+                            value,
+                            font,
+                            font_size,
+                            getattr(extractor, "char_scale", 1.0),
+                            text_matrix,
+                            current_matrix,
+                        )
+                    geometry_ambiguous = False
                     _invoke_callback(
                         on_text, value, font_name, normalized_font_size, bbox
                     )
@@ -219,13 +224,19 @@ class PypdfOperationTextRunner:
                     extractor.process_operation(operator, operands)
                     extractor.memo_cm = extractor.cm_matrix.copy()
                     extractor.memo_tm = extractor.tm_matrix.copy()
+                elif operator == b"Tz":
+                    if extractor.text:
+                        geometry_ambiguous = True
+                    extractor.process_operation(operator, operands)
                 elif operator == b"'":
                     extractor.process_operation(b"T*", [])
+                    extractor._flush_text()
                     extractor.process_operation(b"Tj", operands)
                 elif operator == b'"' and len(operands) >= 3:
                     extractor.process_operation(b"Tw", [operands[0]])
                     extractor.process_operation(b"Tc", [operands[1]])
                     extractor.process_operation(b"T*", [])
+                    extractor._flush_text()
                     extractor.process_operation(b"Tj", operands[2:])
                 elif operator == b"TJ":
                     threshold = extractor._space_width * 0.95
@@ -242,6 +253,10 @@ class PypdfOperationTextRunner:
                 elif operator == b"TD" and len(operands) >= 2:
                     extractor.process_operation(b"TL", [-operands[1]])
                     extractor.process_operation(b"Td", operands)
+                    extractor._flush_text()
+                elif operator in (b"Td", b"Tm", b"T*"):
+                    extractor.process_operation(operator, operands)
+                    extractor._flush_text()
                 elif operator == b"Do":
                     extractor._flush_text()
                     if on_xobject is not None:

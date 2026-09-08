@@ -110,6 +110,61 @@ def test_runner_reports_bbox_for_scaled_axis_aligned_horizontal_text() -> None:
     assert captured[0][1] == pytest.approx((25.0, 67.0, 34.44, 97.0))
 
 
+def test_runner_returns_none_bbox_when_text_scale_changes_within_mcid() -> None:
+    page = _in_memory_page(
+        b"BT /F1 10 Tf /P << /MCID 1 >> BDC "
+        b"100 Tz (A) Tj 50 Tz (B) Tj EMC ET"
+    )
+    active_mcids: list[int] = []
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    def on_boundary(operator: bytes, operands: list[object]) -> None:
+        if operator == b"BDC":
+            active_mcids.append(int(operands[1]["/MCID"]))
+        elif operator == b"EMC":
+            active_mcids.pop()
+
+    def on_text(
+        value: str,
+        _font_name: str | None,
+        _font_size: float | None,
+        bbox: tuple[float, float, float, float] | None,
+    ) -> None:
+        if active_mcids:
+            captured.append((value, bbox))
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=on_boundary,
+        on_text=on_text,
+    )
+
+    assert "".join(value for value, _bbox in captured) == "AB"
+    assert captured == [("AB", None)]
+
+
+def test_runner_splits_bbox_after_same_line_text_matrix_repositioning() -> None:
+    page = _in_memory_page(
+        b"BT /F1 10 Tf /P << /MCID 1 >> BDC "
+        b"1 0 0 1 10 20 Tm (A) Tj "
+        b"1 0 0 1 40 20 Tm (B) Tj EMC ET"
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert "".join(value for value, _bbox in captured) == "A B"
+    assert [value for value, _bbox in captured] == ["A ", "B"]
+    assert captured[0][1] == pytest.approx((10.0, 20.0, 19.45, 30.0))
+    assert captured[1][1] == pytest.approx((40.0, 20.0, 46.67, 30.0))
+
+
 def test_runner_reports_effective_font_size_from_text_matrix() -> None:
     page = _in_memory_page(
         b"BT /F1 1 Tf 16 0 0 16 10 20 Tm (Scaled heading) Tj ET"

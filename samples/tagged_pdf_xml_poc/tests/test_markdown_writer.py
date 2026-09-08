@@ -2700,6 +2700,28 @@ def test_sentence_evidence_overlapping_heading_display_roles_is_rejected(
         )
 
 
+def test_sentence_evidence_under_ancestor_source_heading_is_rejected(
+    tmp_path: Path,
+) -> None:
+    semantic = tmp_path / "semantic_document.xml"
+    _write_xml(
+        semantic,
+        '<unknown source-role="Heading1"><paragraph>'
+        f'{_sentence_text("First sentence. Next sentence.", "Next")}'
+        "</paragraph></unknown>",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="ineligible sentence-break-source structure",
+    ):
+        MarkdownDocumentWriter.render_text(
+            semantic,
+            _report(),
+            source_name="manual.pdf",
+        )
+
+
 def test_sentence_evidence_overlapping_report_promoted_heading_is_rejected(
     tmp_path: Path,
 ) -> None:

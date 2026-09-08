@@ -1197,6 +1197,9 @@ class MarkdownDocumentWriter:
                     is_nonempty_inline_leaf=(
                         cls._is_nonempty_inline_sentence_paragraph(child)
                     ),
+                    ancestor_source_roles=tuple(
+                        element.get("source-role") for element in ancestors
+                    ),
                     display_role=child.get("display-role"),
                     heading_conflict=any(
                         element in promoted

@@ -40,6 +40,7 @@ def is_sentence_break_eligible_paragraph(
     source_role: str | None,
     ancestor_roles: tuple[str, ...],
     is_nonempty_inline_leaf: bool,
+    ancestor_source_roles: tuple[str | None, ...] = (),
     display_role: str | None = None,
     heading_conflict: bool = False,
 ) -> bool:
@@ -49,7 +50,10 @@ def is_sentence_break_eligible_paragraph(
         semantic_role != "paragraph"
         or not is_nonempty_inline_leaf
         or heading_conflict
-        or (source_role is not None and is_heading_candidate(source_role))
+        or any(
+            role is not None and is_heading_candidate(role)
+            for role in (source_role, *ancestor_source_roles)
+        )
         or display_role in _SENTENCE_DISPLAY_ROLES
     ):
         return False

@@ -18,6 +18,25 @@ class PdfProfile:
     languages: tuple[str, ...]
     language_count: int
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_token, str) or not self.source_token.strip():
+            raise ValueError("source_token must be a non-empty string")
+        if self.doc_type not in {"A2", "A3", "BOOK"}:
+            raise ValueError("doc_type must be A2, A3, or BOOK")
+        if not isinstance(self.languages, tuple) or not self.languages:
+            raise ValueError("languages must be a non-empty tuple")
+        for language in self.languages:
+            _validate_language_code(language)
+        if len(set(self.languages)) != len(self.languages):
+            raise ValueError("languages must not contain duplicates")
+        if (
+            not isinstance(self.language_count, int)
+            or isinstance(self.language_count, bool)
+            or self.language_count <= 0
+            or self.language_count != len(self.languages)
+        ):
+            raise ValueError("language_count must equal the number of languages")
+
 
 @dataclass(frozen=True)
 class Diagnostic:
@@ -112,6 +131,183 @@ class NumberedHeadingSeriesAudit:
     valid_sequence: bool
 
 
+HeadingOrigin = Literal["source", "promoted"]
+IntervalEvidenceOrigin = Literal["bookmark", "structural_language_section"]
+HeadingMismatchComponent = Literal["count", "level", "origin", "numbered_label"]
+
+
+@dataclass(frozen=True)
+class LanguageIntervalEvidence:
+    language: str
+    start_page_index: int
+    end_page_index: int
+    start_path: tuple[int, ...]
+    end_path: tuple[int, ...]
+    evidence_origin: IntervalEvidenceOrigin
+
+    def __post_init__(self) -> None:
+        _validate_language_code(self.language)
+        if not isinstance(self.start_page_index, int) or isinstance(
+            self.start_page_index, bool
+        ):
+            raise ValueError("start_page_index must be an integer")
+        if not isinstance(self.end_page_index, int) or isinstance(
+            self.end_page_index, bool
+        ):
+            raise ValueError("end_page_index must be an integer")
+        if self.start_page_index < 0 or self.end_page_index < self.start_page_index:
+            raise ValueError("page bounds must be non-negative and ordered")
+        _validate_child_path(self.start_path, "start_path")
+        _validate_child_path(self.end_path, "end_path")
+        if self.end_path < self.start_path:
+            raise ValueError("path bounds must be ordered")
+        if self.evidence_origin not in {"bookmark", "structural_language_section"}:
+            raise ValueError("evidence_origin is not supported")
+
+
+@dataclass(frozen=True)
+class HeadingSignatureEntry:
+    heading_level: int
+    heading_origin: HeadingOrigin
+    numbered_label: str | None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.heading_level, int)
+            or isinstance(self.heading_level, bool)
+            or self.heading_level <= 0
+        ):
+            raise ValueError("heading_level must be a positive integer")
+        if self.heading_origin not in {"source", "promoted"}:
+            raise ValueError("heading_origin must be source or promoted")
+        if self.heading_origin == "source" and self.numbered_label is not None:
+            raise ValueError("numbered_label must be None for a source heading")
+        if self.heading_origin == "promoted" and (
+            not isinstance(self.numbered_label, str)
+            or len(self.numbered_label) != 2
+            or self.numbered_label == "00"
+            or any(character not in "0123456789" for character in self.numbered_label)
+        ):
+            raise ValueError("numbered_label must be an ASCII label from 01 through 99")
+
+
+@dataclass(frozen=True)
+class LanguageHeadingSignature:
+    language: str
+    interval: LanguageIntervalEvidence
+    entries: tuple[HeadingSignatureEntry, ...]
+
+    def __post_init__(self) -> None:
+        if self.language != self.interval.language:
+            raise ValueError("signature language must match interval language")
+        if not isinstance(self.entries, tuple) or not all(
+            isinstance(entry, HeadingSignatureEntry) for entry in self.entries
+        ):
+            raise ValueError("entries must be a tuple of HeadingSignatureEntry values")
+
+
+@dataclass(frozen=True)
+class HeadingMismatchPosition:
+    language: str
+    position: int
+    component: HeadingMismatchComponent
+    expected: HeadingSignatureEntry | None
+    observed: HeadingSignatureEntry | None
+
+    def __post_init__(self) -> None:
+        if not self.language:
+            raise ValueError("language is required")
+        if (
+            not isinstance(self.position, int)
+            or isinstance(self.position, bool)
+            or self.position < 0
+        ):
+            raise ValueError("position must be a non-negative integer")
+        if self.component not in {"count", "level", "origin", "numbered_label"}:
+            raise ValueError("component is not supported")
+        if self.component == "count" and (self.expected is None) == (
+            self.observed is None
+        ):
+            raise ValueError("count mismatch must identify one missing signature entry")
+        if self.component != "count" and (
+            self.expected is None or self.observed is None
+        ):
+            raise ValueError("component mismatch requires expected and observed entries")
+        if self.component == "level" and (
+            self.expected is not None
+            and self.observed is not None
+            and self.expected.heading_level == self.observed.heading_level
+        ):
+            raise ValueError("level mismatch entries must differ")
+        if self.component == "origin" and (
+            self.expected is not None
+            and self.observed is not None
+            and self.expected.heading_origin == self.observed.heading_origin
+        ):
+            raise ValueError("origin mismatch entries must differ")
+        if self.component == "numbered_label" and (
+            self.expected is not None
+            and self.observed is not None
+            and self.expected.numbered_label == self.observed.numbered_label
+        ):
+            raise ValueError("numbered_label mismatch entries must differ")
+
+
+@dataclass(frozen=True)
+class MultilingualHeadingAudit:
+    applicable: bool
+    passed: bool
+    expected_interval_count: int
+    observed_interval_count: int
+    interval_count_matches: bool | None
+    total_heading_count_matches: bool | None
+    heading_level_sequence_matches: bool | None
+    heading_origin_sequence_matches: bool | None
+    numbered_label_sequence_matches: bool | None
+    signatures: tuple[LanguageHeadingSignature, ...] = ()
+    mismatch_positions: tuple[HeadingMismatchPosition, ...] = ()
+    diagnostics: tuple[Diagnostic, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("expected_interval_count", self.expected_interval_count),
+            ("observed_interval_count", self.observed_interval_count),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if not self.applicable and not self.passed:
+            raise ValueError("a not-applicable audit must pass")
+        if not isinstance(self.signatures, tuple) or not isinstance(
+            self.mismatch_positions, tuple
+        ):
+            raise ValueError("audit evidence collections must be tuples")
+
+
+def _validate_child_path(path: tuple[int, ...], name: str) -> None:
+    if not isinstance(path, tuple) or not path:
+        raise ValueError(f"{name} must be a non-empty tuple")
+    if any(
+        not isinstance(index, int) or isinstance(index, bool) or index < 0
+        for index in path
+    ):
+        raise ValueError(f"{name} must contain non-negative integer indices")
+
+
+def _validate_language_code(language: object) -> None:
+    if (
+        not isinstance(language, str)
+        or not language
+        or language != language.upper()
+        or language.startswith("-")
+        or language.endswith("-")
+        or "--" in language
+        or any(
+            character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ-" for character in language
+        )
+    ):
+        raise ValueError("language must be a canonical uppercase ASCII code")
+
+
 @dataclass(frozen=True)
 class SubtitleHint:
     child_path: tuple[int, ...]
@@ -203,6 +399,7 @@ class TaggedDocument:
     sentence_break_hints: tuple[SentenceBreakHint, ...] = ()
     inline_icon_hints: tuple[InlineIconHint, ...] = ()
     continuation_hints: tuple[ContinuationHint, ...] = ()
+    multilingual_heading_audit: MultilingualHeadingAudit | None = None
 
 
 @dataclass(frozen=True)

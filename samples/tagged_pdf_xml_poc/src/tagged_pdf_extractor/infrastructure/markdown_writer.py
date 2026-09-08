@@ -267,8 +267,11 @@ class MarkdownDocumentWriter:
                         raise ValueError(
                             "list-continuation has no preceding list block"
                         )
+                    content_indent = cls._continuation_content_indent(
+                        parent, child
+                    )
                     continuation = "\n".join(
-                        f"  {line}"
+                        f"{content_indent}{line}"
                         for line in cls._escape_physical_lines(text).splitlines()
                     )
                     blocks[-1] = f"{blocks[-1]}\n\n{continuation}"
@@ -397,11 +400,7 @@ class MarkdownDocumentWriter:
             if child.tag == "label"
         )
         label_analysis = cls._analyze_list_labels(direct_labels)
-        marker = (
-            label_analysis.ordered_marker
-            or label_analysis.note_marker
-            or "-"
-        )
+        marker = cls._list_item_marker(label_analysis)
         content_labels = label_analysis.retained_content_labels
         text_parts = [f"{' '.join(content_labels)} "] if content_labels else []
         content_indent = f"{indent}{' ' * (len(marker) + 1)}"
@@ -450,6 +449,42 @@ class MarkdownDocumentWriter:
         if not has_content:
             lines.append(f"{indent}{marker}")
         return lines
+
+    @staticmethod
+    def _list_item_marker(label_analysis: _ListLabelAnalysis) -> str:
+        return (
+            label_analysis.ordered_marker
+            or label_analysis.note_marker
+            or "-"
+        )
+
+    @classmethod
+    def _continuation_content_indent(
+        cls,
+        parent: ET.Element,
+        continuation: ET.Element,
+    ) -> str:
+        siblings = cls._structural_children(parent)
+        index = siblings.index(continuation) - 1
+        while index >= 0 and cls._is_ignorable_text_fragment(siblings[index]):
+            index -= 1
+        if index < 0 or siblings[index].tag != "list":
+            raise ValueError("list-continuation predecessor is not preceding list")
+        list_children = cls._structural_children(siblings[index])
+        if not list_children or list_children[-1].tag != "list_item":
+            raise ValueError("list-continuation predecessor path is not list_item")
+        item = list_children[-1]
+        direct_labels = tuple(
+            child
+            for child in cls._structural_children(item)
+            if child.tag == "label"
+        )
+        marker = cls._list_item_marker(cls._analyze_list_labels(direct_labels))
+        return " " * (len(marker) + 1)
+
+    @staticmethod
+    def _is_ignorable_text_fragment(element: ET.Element) -> bool:
+        return element.tag == "text" and not decode_data_element(element).strip()
 
     @classmethod
     def _list_events(
@@ -1137,6 +1172,10 @@ class MarkdownDocumentWriter:
             has_sentence_attributes = any(
                 name in element.attrib for name in _SENTENCE_BREAK_ATTRIBUTE_NAMES
             )
+            if display_role == "list-continuation" and has_sentence_attributes:
+                raise ValueError(
+                    "sentence-break evidence overlaps list-continuation"
+                )
             if display_role == "sentence-break-source":
                 if element.tag != "text":
                     raise ValueError("sentence-break-source must target text")
@@ -1158,6 +1197,10 @@ class MarkdownDocumentWriter:
                 raise ValueError(
                     "inline-icon attributes without inline-icon display role"
                 )
+        cls._reject_sentence_continuation_overlaps(
+            sentence_offsets_by_element,
+            continuation_elements,
+        )
         cls._validate_sentence_boundaries(
             root,
             sentence_offsets_by_element,
@@ -1165,6 +1208,20 @@ class MarkdownDocumentWriter:
         )
         cls._validate_inline_icon_structures(root, inline_icons)
         cls._validate_continuation_structures(root, continuation_elements)
+
+    @staticmethod
+    def _reject_sentence_continuation_overlaps(
+        sentence_offsets_by_element: dict[ET.Element, tuple[int, ...]],
+        continuation_elements: list[ET.Element],
+    ) -> None:
+        sentence_elements = set(sentence_offsets_by_element)
+        if any(
+            sentence_elements.intersection(continuation.iter())
+            for continuation in continuation_elements
+        ):
+            raise ValueError(
+                "sentence-break-source overlaps list-continuation"
+            )
 
     @classmethod
     def _validate_continuation_evidence(cls, element: ET.Element) -> None:
@@ -1294,8 +1351,7 @@ class MarkdownDocumentWriter:
             while (
                 preceding_index >= 0
                 and preceding is not None
-                and preceding.tag == "text"
-                and not decode_data_element(preceding).strip()
+                and cls._is_ignorable_text_fragment(preceding)
             ):
                 preceding_index -= 1
                 preceding_path = (*target_path[:-1], preceding_index)
@@ -1306,6 +1362,20 @@ class MarkdownDocumentWriter:
                 or item_path[: len(preceding_path)] != preceding_path
             ):
                 raise ValueError("list-continuation predecessor is not preceding list")
+            following_index = target_path[-1] + 1
+            following_path = (*target_path[:-1], following_index)
+            following = indexed.get(following_path)
+            while (
+                following is not None
+                and cls._is_ignorable_text_fragment(following)
+            ):
+                following_index += 1
+                following_path = (*target_path[:-1], following_index)
+                following = indexed.get(following_path)
+            if following is None or following.tag != "list":
+                raise ValueError(
+                    "list-continuation following sibling is not list"
+                )
 
     @classmethod
     def _validate_sentence_boundaries(

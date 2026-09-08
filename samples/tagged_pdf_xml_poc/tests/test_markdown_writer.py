@@ -48,6 +48,151 @@ def _render(
     return output.read_text(encoding="utf-8")
 
 
+def _continuation_paragraph(
+    content: str = "<text>Continuation text</text>",
+    *,
+    extra_attributes: str = "",
+) -> str:
+    return f"""
+    <paragraph display-role="list-continuation"
+      continuation-reason="sibling_list_paragraph_list_geometry_typography"
+      preceding-list-item-path="0/0/0" preceding-list-body-path="0/0/0/1"
+      page-index="0" paragraph-bbox="100,176,180,184"
+      list-body-bbox="100,188,180,208" left-delta="0" vertical-gap="4"
+      reference-font-size="8" continuation-source-role="LBody"
+      preceding-body-font-weight="400" preceding-body-font-size="8"
+      preceding-body-observed-lines="0:11,0:12" target-font-weight="400"
+      target-font-size="8" target-observed-lines="0:20" {extra_attributes}>
+      {content}
+    </paragraph>
+    """
+
+
+def _continuation_list(label: str, text: str) -> str:
+    return (
+        f"<list><list_item><label><text>{label}</text></label>"
+        f"<list_body><text>{text}</text></list_body></list_item></list>"
+    )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        (
+            '<text display-role="sentence-break-source" sentence-break-offsets="20" '
+            'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
+            "Continuation first. Continuation second.</text>"
+        ),
+        (
+            "<span>"
+            '<text display-role="sentence-break-source" sentence-break-offsets="20" '
+            'sentence-break-reason="conservative_sentence_terminal_in_review_container">'
+            "Continuation first. Continuation second.</text>"
+            "</span>"
+        ),
+    ],
+    ids=("direct-target-text", "nested-descendant"),
+)
+def test_rejects_sentence_break_source_overlapping_list_continuation(
+    tmp_path: Path, content: str
+) -> None:
+    body = (
+        "<section>"
+        + _continuation_list("bullet", "First item")
+        + _continuation_paragraph(content)
+        + _continuation_list("bullet", "Second item")
+        + "</section>"
+    )
+
+    with pytest.raises(
+        ValueError, match="sentence-break-source overlaps list-continuation"
+    ):
+        _render(tmp_path, body)
+
+
+def test_rejects_sentence_break_attributes_on_list_continuation_target(
+    tmp_path: Path,
+) -> None:
+    body = (
+        "<section>"
+        + _continuation_list("bullet", "First item")
+        + _continuation_paragraph(
+            extra_attributes=(
+                'sentence-break-offsets="20" '
+                'sentence-break-reason="conservative_sentence_terminal_in_review_container"'
+            )
+        )
+        + _continuation_list("bullet", "Second item")
+        + "</section>"
+    )
+
+    with pytest.raises(
+        ValueError, match="sentence-break evidence overlaps list-continuation"
+    ):
+        _render(tmp_path, body)
+
+
+def test_continuation_indent_uses_ordered_marker_content_indent(
+    tmp_path: Path,
+) -> None:
+    body = (
+        "<section>"
+        + _continuation_list("10.", "First item")
+        + _continuation_paragraph()
+        + _continuation_list("11.", "Second item")
+        + "</section>"
+    )
+
+    markdown = _render(tmp_path, body)
+
+    assert "10. First item\n\n    Continuation text\n\n11. Second item" in markdown
+    assert "\n\n  Continuation text" not in markdown
+
+
+@pytest.mark.parametrize(
+    "following",
+    [
+        "",
+        "<paragraph><text>Not a list</text></paragraph>",
+        "<text> \t </text>",
+    ],
+    ids=("missing", "non-list", "ignorable-only"),
+)
+def test_rejects_continuation_without_following_meaningful_list(
+    tmp_path: Path, following: str
+) -> None:
+    body = (
+        "<section>"
+        + _continuation_list("bullet", "First item")
+        + _continuation_paragraph()
+        + following
+        + "</section>"
+    )
+
+    with pytest.raises(
+        ValueError, match="list-continuation following sibling is not list"
+    ):
+        _render(tmp_path, body)
+
+
+def test_continuation_topology_ignores_whitespace_only_fragments(
+    tmp_path: Path,
+) -> None:
+    body = (
+        "<section>"
+        + _continuation_list("bullet", "First item")
+        + "<text> \t </text>"
+        + _continuation_paragraph()
+        + "<text>\n</text>"
+        + _continuation_list("bullet", "Second item")
+        + "</section>"
+    )
+
+    markdown = _render(tmp_path, body)
+
+    assert "- First item\n\n  Continuation text\n\n- Second item" in markdown
+
+
 def test_renders_evidenced_list_continuation_under_preceding_item(
     tmp_path: Path,
 ) -> None:

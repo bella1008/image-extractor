@@ -151,6 +151,32 @@ class InlineIconHint:
 
 
 @dataclass(frozen=True)
+class ContinuationTypographyEvidence:
+    preceding_body_font_weight: int
+    preceding_body_font_size: float
+    preceding_body_observed_lines: tuple[tuple[int, int], ...]
+    target_font_weight: int
+    target_font_size: float
+    target_observed_lines: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class ContinuationHint:
+    child_path: tuple[int, ...]
+    preceding_list_item_path: tuple[int, ...]
+    preceding_list_body_path: tuple[int, ...]
+    page_index: int
+    paragraph_bbox: BBox
+    list_body_bbox: BBox
+    left_delta: float
+    vertical_gap: float
+    reference_font_size: float
+    source_role: str
+    typography_evidence: ContinuationTypographyEvidence
+    reason: str = "sibling_list_paragraph_list_geometry_typography"
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -166,6 +192,7 @@ class TaggedDocument:
     text_display_hints: tuple[TextDisplayHint, ...] = ()
     sentence_break_hints: tuple[SentenceBreakHint, ...] = ()
     inline_icon_hints: tuple[InlineIconHint, ...] = ()
+    continuation_hints: tuple[ContinuationHint, ...] = ()
 
 
 @dataclass(frozen=True)

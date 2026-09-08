@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, fields
+from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
 
 import pytest
@@ -253,7 +253,7 @@ def test_missing_or_ambiguous_multilingual_intervals_fail_closed(
     assert audit.diagnostics[-1].code == code
 
 
-def test_interval_with_no_document_nodes_fails_closed() -> None:
+def test_interval_with_missing_boundary_fails_closed() -> None:
     intervals = (
         _intervals("ENG", "FRA")[0],
         LanguageIntervalEvidence(
@@ -269,7 +269,10 @@ def test_interval_with_no_document_nodes_fails_closed() -> None:
 
     assert audit.passed is False
     assert audit.signatures == ()
-    assert audit.diagnostics[-1].code == "multilingual_heading_interval_empty"
+    assert audit.diagnostics[-1].code == (
+        "multilingual_heading_interval_boundary_invalid"
+    )
+    assert audit.diagnostics[-1].context["reason"] == "missing_start_path"
 
 
 def test_single_language_profile_returns_stable_not_applicable_audit() -> None:
@@ -398,6 +401,210 @@ def test_invalid_numbered_promotion_path_fails_closed() -> None:
     assert audit.passed is False
     assert audit.signatures == ()
     assert audit.diagnostics[-1].code == "multilingual_heading_promotion_paths_invalid"
+
+
+def test_standard_locale_markers_match_canonical_interval_languages() -> None:
+    document = _document(
+        _section("en-US", 0, _heading("source", 2, 0)),
+        _section("fr-FR", 1, _heading("localized", 2, 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is True
+
+
+def test_absent_element_language_markers_do_not_fail_validation() -> None:
+    document = _document(
+        _section("ENG", 0, _heading("source", 2, 0)),
+        _section("FRA", 1, _heading("localized", 2, 1)),
+    )
+    document = replace(
+        document,
+        children=tuple(replace(section, language=None) for section in document.children),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is True
+
+
+def test_nested_elements_inherit_nearest_structural_language_marker() -> None:
+    nested = StructureElement(
+        "Div",
+        "division",
+        page_index=0,
+        children=(_heading("source", 2, 0),),
+    )
+    document = _document(
+        _section("en-US", 0, nested),
+        _section("fr-FR", 1, _heading("localized", 2, 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is True
+
+
+def test_conflicting_nested_body_language_marker_fails_closed() -> None:
+    conflicting = StructureElement(
+        "P",
+        "paragraph",
+        page_index=0,
+        language="fr-FR",
+        children=(_text("body", 0),),
+    )
+    document = _document(
+        _section("en-US", 0, _heading("source", 2, 0), conflicting),
+        _section("fr-FR", 1, _heading("localized", 2, 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is False
+    diagnostic = audit.diagnostics[-1]
+    assert diagnostic.code == "multilingual_heading_language_marker_invalid"
+    assert diagnostic.context == {
+        "language": "ENG",
+        "child_path": (0, 1),
+        "observed_marker": "fr-FR",
+        "inherited_marker": "en-US",
+        "reason": "conflicting_canonical_language",
+    }
+
+
+def test_unrecognized_locale_marker_is_ambiguous_not_guessed() -> None:
+    document = _document(
+        _section("English (US)", 0, _heading("source", 2, 0)),
+        _section("fr-FR", 1, _heading("localized", 2, 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is False
+    assert audit.diagnostics[-1].context["reason"] == "ambiguous_language_marker"
+
+
+@pytest.mark.parametrize("heading_origin", ["source", "promoted"])
+def test_heading_with_conflicting_structural_language_is_rejected(
+    heading_origin: str,
+) -> None:
+    if heading_origin == "source":
+        target = replace(_heading("source", 2, 0), language="fr-FR")
+        promotions: tuple[HeadingPromotion, ...] = ()
+    else:
+        target = replace(_list_item("source", 0), language="fr-FR")
+        promotions = (_promotion((0, 0), "01"), _promotion((1, 0), "01"))
+    right_target = (
+        _heading("localized", 2, 1)
+        if heading_origin == "source"
+        else _list_item("localized", 1)
+    )
+    document = _document(
+        _section("en-US", 0, target),
+        _section("fr-FR", 1, right_target),
+        promotions=promotions,
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is False
+    assert audit.diagnostics[-1].code == "multilingual_heading_language_marker_invalid"
+    assert audit.diagnostics[-1].context["child_path"] == (0, 0)
+
+
+def test_document_level_pdf_language_is_not_interval_evidence() -> None:
+    document = replace(
+        _document(
+            _section("ENG", 0, _heading("source", 2, 0)),
+            _section("FRA", 1, _heading("localized", 2, 1)),
+        ),
+        language="de-DE",
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is True
+
+
+@pytest.mark.parametrize(
+    ("profile_language", "matching_marker", "conflicting_marker"),
+    [
+        ("C-FRA", "fr-CA", "fr-FR"),
+        ("M-SPA", "es-MX", "es-ES"),
+        ("B-POR", "pt-BR", "pt-PT"),
+    ],
+)
+def test_region_specific_canonical_languages_require_matching_standard_region(
+    profile_language: str, matching_marker: str, conflicting_marker: str
+) -> None:
+    matching = _document(
+        _section("ENG", 0, _heading("source", 2, 0)),
+        _section(matching_marker, 1, _heading("localized", 2, 1)),
+    )
+    conflicting = replace(
+        matching,
+        children=(
+            matching.children[0],
+            replace(matching.children[1], language=conflicting_marker),
+        ),
+    )
+    intervals = _intervals("ENG", profile_language)
+
+    assert validate_multilingual_headings(
+        _profile("ENG", profile_language), intervals, matching
+    ).passed
+    failed = validate_multilingual_headings(
+        _profile("ENG", profile_language), intervals, conflicting
+    )
+    assert failed.passed is False
+    assert failed.diagnostics[-1].context["reason"] == "conflicting_canonical_language"
+
+
+@pytest.mark.parametrize(
+    ("replacement", "reason"),
+    [
+        ({"start_path": (0, 0, 0, 9), "end_path": (0, 1)}, "missing_start_path"),
+        ({"start_path": (0,), "end_path": (0, 0, 0)}, "end_path_not_structure"),
+    ],
+)
+def test_interval_boundaries_must_identify_existing_structure_elements(
+    replacement: dict[str, tuple[int, ...]], reason: str
+) -> None:
+    document = _document(
+        _section(
+            "ENG",
+            0,
+            _heading("source", 2, 0),
+            _paragraph("body", 0),
+        ),
+        _section("FRA", 1, _heading("localized", 2, 1)),
+    )
+    first, second = _intervals("ENG", "FRA")
+    first = replace(first, **replacement)
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), (first, second), document
+    )
+
+    assert audit.passed is False
+    assert audit.signatures == ()
+    assert audit.diagnostics[-1].code == "multilingual_heading_interval_boundary_invalid"
+    assert audit.diagnostics[-1].context["reason"] == reason
 
 
 def test_tagged_document_default_construction_remains_compatible() -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from tagged_pdf_extractor.domain.heading_promotion_validation import (
     HeadingPromotionTracker,
 )
@@ -15,6 +17,61 @@ from tagged_pdf_extractor.domain.models import (
     PdfProfile,
     StructureElement,
     TaggedDocument,
+)
+
+
+_CANONICAL_BY_PRIMARY = {
+    "AR": "ARA",
+    "BG": "BUL",
+    "CA": "CAT",
+    "CS": "CZE",
+    "DA": "DAN",
+    "DE": "DEU",
+    "EL": "GRE",
+    "EN": "ENG",
+    "ES": "SPA",
+    "ET": "EST",
+    "EU": "EUS",
+    "FI": "FIN",
+    "FR": "FRA",
+    "GL": "GLG",
+    "HE": "HEB",
+    "HR": "CRO",
+    "HU": "HUN",
+    "ID": "INS",
+    "IT": "ITA",
+    "KK": "KAZ",
+    "KO": "KOR",
+    "KY": "KYR",
+    "LT": "LTU",
+    "LV": "LAT",
+    "MK": "MKD",
+    "MN": "MON",
+    "NL": "DUT",
+    "NO": "NOR",
+    "PL": "POL",
+    "PT": "POR",
+    "RO": "ROM",
+    "RU": "RUS",
+    "SK": "SLK",
+    "SL": "SLV",
+    "SQ": "ALB",
+    "SR": "SER",
+    "SV": "SWE",
+    "TH": "THA",
+    "TR": "TUR",
+}
+_REGIONAL_CANONICAL = {
+    ("ES", "MX"): "M-SPA",
+    ("FR", "CA"): "C-FRA",
+    ("PT", "BR"): "B-POR",
+    ("ZH", "TW"): "TPE",
+}
+_KNOWN_CANONICAL_LANGUAGES = frozenset(_CANONICAL_BY_PRIMARY.values()) | frozenset(
+    _REGIONAL_CANONICAL.values()
+)
+_STANDARD_LANGUAGE_MARKER = re.compile(
+    r"^(?P<primary>[A-Za-z]{2})(?:-(?P<region>[A-Za-z]{2}))?$"
 )
 
 
@@ -71,7 +128,23 @@ def validate_multilingual_headings(
             {"intervals": intervals},
         )
 
-    elements = _walk_elements(document.children)
+    nodes = _walk_nodes(document.children)
+    elements = tuple(
+        (path, node)
+        for path, node in nodes
+        if isinstance(node, StructureElement)
+    )
+    node_by_path = dict(nodes)
+    for interval in intervals:
+        boundary_failure = _interval_boundary_failure(interval, node_by_path)
+        if boundary_failure is not None:
+            return _failed_interval_audit(
+                expected_count,
+                observed_count,
+                "multilingual_heading_interval_boundary_invalid",
+                "Language interval boundaries must identify StructureElement nodes.",
+                boundary_failure,
+            )
     try:
         promotion_tracker = HeadingPromotionTracker(document.heading_promotions)
         promotion_by_path: dict[tuple[int, ...], HeadingPromotion] = {}
@@ -104,6 +177,15 @@ def validate_multilingual_headings(
                 "Language interval does not contain document structure.",
                 {"language": interval.language, "interval": interval},
             )
+        marker_failure = _language_marker_failure(bounded_elements, interval)
+        if marker_failure is not None:
+            return _failed_interval_audit(
+                expected_count,
+                observed_count,
+                "multilingual_heading_language_marker_invalid",
+                "Structural language marker conflicts with its language interval.",
+                marker_failure,
+            )
         try:
             entries = _signature_entries(
                 bounded_elements, promotion_by_path, interval
@@ -135,24 +217,97 @@ def validate_multilingual_headings(
     )
 
 
-def _walk_elements(
+def _walk_nodes(
     children: tuple[StructureElement | ContentFragment, ...],
-) -> tuple[tuple[tuple[int, ...], StructureElement], ...]:
-    found: list[tuple[tuple[int, ...], StructureElement]] = []
+) -> tuple[
+    tuple[tuple[int, ...], StructureElement | ContentFragment], ...
+]:
+    found: list[
+        tuple[tuple[int, ...], StructureElement | ContentFragment]
+    ] = []
 
     def visit(
         siblings: tuple[StructureElement | ContentFragment, ...],
         parent_path: tuple[int, ...],
     ) -> None:
         for index, child in enumerate(siblings):
-            if not isinstance(child, StructureElement):
-                continue
             child_path = (*parent_path, index)
             found.append((child_path, child))
-            visit(child.children, child_path)
+            if isinstance(child, StructureElement):
+                visit(child.children, child_path)
 
     visit(children, ())
     return tuple(found)
+
+
+def _interval_boundary_failure(
+    interval: LanguageIntervalEvidence,
+    node_by_path: dict[
+        tuple[int, ...], StructureElement | ContentFragment
+    ],
+) -> dict[str, object] | None:
+    for name, path in (
+        ("start_path", interval.start_path),
+        ("end_path", interval.end_path),
+    ):
+        node = node_by_path.get(path)
+        if isinstance(node, StructureElement):
+            continue
+        reason = f"missing_{name}" if node is None else f"{name}_not_structure"
+        return {
+            "language": interval.language,
+            "boundary_path": path,
+            "reason": reason,
+        }
+    return None
+
+
+def _language_marker_failure(
+    elements: tuple[tuple[tuple[int, ...], StructureElement], ...],
+    interval: LanguageIntervalEvidence,
+) -> dict[str, object] | None:
+    inherited_by_path: dict[tuple[int, ...], str | None] = {}
+    for path, element in elements:
+        inherited_marker = inherited_by_path.get(path[:-1])
+        marker = element.language
+        if marker is None:
+            inherited_by_path[path] = inherited_marker
+            continue
+        canonical = _canonical_language_marker(marker)
+        if canonical is None:
+            return {
+                "language": interval.language,
+                "child_path": path,
+                "observed_marker": marker,
+                "inherited_marker": inherited_marker,
+                "reason": "ambiguous_language_marker",
+            }
+        if canonical != interval.language:
+            return {
+                "language": interval.language,
+                "child_path": path,
+                "observed_marker": marker,
+                "inherited_marker": inherited_marker,
+                "reason": "conflicting_canonical_language",
+            }
+        inherited_by_path[path] = marker
+    return None
+
+
+def _canonical_language_marker(marker: str) -> str | None:
+    upper_marker = marker.upper()
+    if upper_marker in _KNOWN_CANONICAL_LANGUAGES:
+        return upper_marker
+    match = _STANDARD_LANGUAGE_MARKER.fullmatch(marker)
+    if match is None:
+        return None
+    primary = match.group("primary").upper()
+    region = match.group("region")
+    if region is not None:
+        regional = _REGIONAL_CANONICAL.get((primary, region.upper()))
+        if regional is not None:
+            return regional
+    return _CANONICAL_BY_PRIMARY.get(primary)
 
 
 def _ordered_nonoverlapping(

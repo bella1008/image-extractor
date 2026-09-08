@@ -270,6 +270,62 @@ def test_continuation_half_micro_evidence_publishes_from_xml_to_markdown(
     )
 
 
+def test_tiny_positive_continuation_font_sizes_publish_from_xml_to_markdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    font_size = 4e-7
+    base_hint = _continuation_hint((1,))
+    hint = replace(
+        base_hint,
+        preceding_list_item_path=(0, 0),
+        preceding_list_body_path=(0, 0, 1),
+        reference_font_size=font_size,
+        typography_evidence=replace(
+            base_hint.typography_evidence,
+            preceding_body_font_size=font_size,
+            target_font_size=font_size,
+        ),
+    )
+    document = _continuation_publication_document(hint)
+    validated = ValidatedReviewFormattingHints(
+        line_break_by_path=MappingProxyType({}),
+        text_display_by_path=MappingProxyType({}),
+        sentence_break_by_path=MappingProxyType({}),
+        inline_icon_by_path=MappingProxyType({}),
+        continuation_by_path=MappingProxyType({hint.child_path: hint}),
+    )
+    monkeypatch.setattr(
+        xml_writer_module, "validate_display_hints", lambda actual: validated
+    )
+    semantic_path = tmp_path / "semantic.xml"
+    markdown_path = tmp_path / "semantic.md"
+
+    XmlDocumentWriter().write_semantic(document, semantic_path)
+    paragraph = ET.parse(semantic_path).getroot().find("paragraph")
+    assert paragraph is not None
+    MarkdownDocumentWriter().write(
+        semantic_path,
+        QualityReport("pass", {}, {}, ()),
+        markdown_path,
+        source_name="manual.pdf",
+    )
+
+    assert {
+        name: paragraph.attrib[name]
+        for name in (
+            "reference-font-size",
+            "preceding-body-font-size",
+            "target-font-size",
+        )
+    } == {
+        "reference-font-size": "4e-07",
+        "preceding-body-font-size": "4e-07",
+        "target-font-size": "4e-07",
+    }
+    assert "Continuation text" in markdown_path.read_text(encoding="utf-8")
+
+
 def _review_formatting_document() -> TaggedDocument:
     heading = StructureElement(
         "P", "paragraph", children=(ContentFragment(0, 1, ("Form title",)),)

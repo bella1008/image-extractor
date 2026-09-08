@@ -555,21 +555,21 @@ class XmlDocumentWriter:
             "vertical-gap": XmlDocumentWriter._format_bbox_number(
                 hint.vertical_gap
             ),
-            "reference-font-size": XmlDocumentWriter._format_number(
+            "reference-font-size": XmlDocumentWriter._format_bbox_number(
                 hint.reference_font_size
             ),
             "continuation-source-role": hint.source_role,
             "preceding-body-font-weight": str(
                 evidence.preceding_body_font_weight
             ),
-            "preceding-body-font-size": XmlDocumentWriter._format_number(
+            "preceding-body-font-size": XmlDocumentWriter._format_bbox_number(
                 evidence.preceding_body_font_size
             ),
             "preceding-body-observed-lines": lines(
                 evidence.preceding_body_observed_lines
             ),
             "target-font-weight": str(evidence.target_font_weight),
-            "target-font-size": XmlDocumentWriter._format_number(
+            "target-font-size": XmlDocumentWriter._format_bbox_number(
                 evidence.target_font_size
             ),
             "target-observed-lines": lines(evidence.target_observed_lines),

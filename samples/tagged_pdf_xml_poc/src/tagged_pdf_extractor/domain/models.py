@@ -498,6 +498,17 @@ class TaggedDocument:
     multilingual_heading_audit: MultilingualHeadingAudit | None = None
     bookmark_page_bounds: tuple[BookmarkPageBounds, ...] = ()
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.bookmark_page_bounds, tuple):
+            raise ValueError("bookmark_page_bounds must be a tuple")
+        if not all(
+            isinstance(bounds, BookmarkPageBounds)
+            for bounds in self.bookmark_page_bounds
+        ):
+            raise ValueError(
+                "bookmark_page_bounds must contain BookmarkPageBounds values"
+            )
+
 
 @dataclass(frozen=True)
 class QualityReport:

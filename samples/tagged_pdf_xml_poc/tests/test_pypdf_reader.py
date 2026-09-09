@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import pytest
 from pypdf import PdfWriter
+from pypdf.errors import PdfReadError, PyPdfError
 from pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -98,7 +99,7 @@ def _read_fake_outline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     outline: Any,
-    starts: dict[str, Any],
+    starts: list[tuple[Destination, Any]],
     *,
     page_count: int = 50,
 ) -> TaggedDocument:
@@ -107,12 +108,20 @@ def _read_fake_outline(
         pages = [object() for _ in range(page_count)]
 
         def get_destination_page_number(self, destination: Destination) -> Any:
-            value = starts[destination.title]
+            matches = [value for item, value in starts if item is destination]
+            assert len(matches) == 1
+            value = matches[0]
             if isinstance(value, Exception):
                 raise value
             return value
 
-    FakeReader.outline = outline
+    if isinstance(outline, Exception):
+        def raise_outline_error(_reader: Any) -> Any:
+            raise outline
+
+        FakeReader.outline = property(raise_outline_error)
+    else:
+        FakeReader.outline = outline
     monkeypatch.setattr(
         "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
         lambda _: FakeReader(),
@@ -154,6 +163,27 @@ def test_tagged_document_bookmark_bounds_default_preserves_compatibility() -> No
     assert document.bookmark_page_bounds == ()
 
 
+@pytest.mark.parametrize(
+    "bookmark_page_bounds",
+    [
+        [BookmarkPageBounds(1, 0, 0)],
+        ("not bookmark bounds",),
+    ],
+)
+def test_tagged_document_validates_only_bookmark_bounds_tuple_and_members(
+    bookmark_page_bounds: Any,
+) -> None:
+    with pytest.raises(ValueError, match="bookmark_page_bounds"):
+        TaggedDocument(
+            Path("invalid.pdf"),
+            True,
+            None,
+            (),
+            (),
+            bookmark_page_bounds=bookmark_page_bounds,
+        )
+
+
 def test_reads_five_top_level_bookmark_bounds_in_source_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -163,10 +193,7 @@ def test_reads_five_top_level_bookmark_bounds_in_source_order(
         tmp_path,
         monkeypatch,
         outline,
-        {
-            destination.title: start
-            for destination, start in zip(outline, (1, 11, 21, 31, 41))
-        },
+        list(zip(outline, (1, 11, 21, 31, 41))),
     )
 
     assert result.bookmark_page_bounds == tuple(
@@ -183,7 +210,7 @@ def test_pages_before_first_bookmark_remain_unassigned(
     destination = _destination("First source title")
 
     result = _read_fake_outline(
-        tmp_path, monkeypatch, [destination], {destination.title: 1}, page_count=3
+        tmp_path, monkeypatch, [destination], [(destination, 1)], page_count=3
     )
 
     assert result.bookmark_page_bounds == (
@@ -198,7 +225,7 @@ def test_last_bookmark_bound_includes_final_page(
     destination = _destination("Only source title")
 
     result = _read_fake_outline(
-        tmp_path, monkeypatch, [destination], {destination.title: 2}, page_count=7
+        tmp_path, monkeypatch, [destination], [(destination, 2)], page_count=7
     )
 
     assert result.bookmark_page_bounds[-1].end_page_index == 6
@@ -207,7 +234,7 @@ def test_last_bookmark_bound_includes_final_page(
 def test_empty_outline_preserves_extraction_without_fabricated_bounds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    result = _read_fake_outline(tmp_path, monkeypatch, [], {})
+    result = _read_fake_outline(tmp_path, monkeypatch, [], [])
 
     assert result.bookmark_page_bounds == ()
     assert result.diagnostics == ()
@@ -224,7 +251,7 @@ def test_ignores_one_child_list_unambiguously_attached_to_a_top_level_destinatio
         tmp_path,
         monkeypatch,
         [first, [child], second],
-        {first.title: 1, child.title: 2, second.title: 5},
+        [(first, 1), (child, 2), (second, 5)],
         page_count=9,
     )
 
@@ -234,51 +261,289 @@ def test_ignores_one_child_list_unambiguously_attached_to_a_top_level_destinatio
     )
 
 
+def test_recursively_validates_nested_child_lists_before_ignoring_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _destination("First")
+    child = _destination("Child")
+    grandchild = _destination("Grandchild")
+    child_sibling = _destination("Child sibling")
+    second = _destination("Second")
+
+    result = _read_fake_outline(
+        tmp_path,
+        monkeypatch,
+        [first, [child, [grandchild], child_sibling], second],
+        [(first, 0), (second, 5)],
+        page_count=9,
+    )
+
+    assert result.bookmark_page_bounds == (
+        BookmarkPageBounds(1, 0, 4, "First"),
+        BookmarkPageBounds(2, 5, 8, "Second"),
+    )
+
+
+def test_malformed_item_in_nested_child_list_fails_all_evidence_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _destination("First")
+    child = _destination("Child")
+    second = _destination("Second")
+
+    result = _read_fake_outline(
+        tmp_path,
+        monkeypatch,
+        [first, [child, ["malformed child"]], second],
+        [(first, 0), (second, 5)],
+        page_count=9,
+    )
+
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics[-1].context == {"reason": "invalid_outline_item"}
+
+
+def test_duplicate_titles_resolve_by_destination_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _destination("Repeated title")
+    second = _destination("Repeated title")
+
+    result = _read_fake_outline(
+        tmp_path,
+        monkeypatch,
+        [first, second],
+        [(first, 0), (second, 3)],
+        page_count=5,
+    )
+
+    assert result.bookmark_page_bounds == (
+        BookmarkPageBounds(1, 0, 2, "Repeated title"),
+        BookmarkPageBounds(2, 3, 4, "Repeated title"),
+    )
+
+
+def test_accepts_zero_as_a_destination_start_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = _destination("Starts at first page")
+
+    result = _read_fake_outline(
+        tmp_path, monkeypatch, [destination], [(destination, 0)], page_count=2
+    )
+
+    assert result.bookmark_page_bounds == (
+        BookmarkPageBounds(1, 0, 1, "Starts at first page"),
+    )
+
+
 @pytest.mark.parametrize(
-    ("outline", "starts", "page_count"),
+    ("outline", "reason"),
     [
-        (["not a destination"], {}, 5),
-        ([[_destination("Bare nested")]], {"Bare nested": 1}, 5),
+        (["not a destination"], "invalid_outline_item"),
+        ([[_destination("Bare nested")]], "unattached_child_outline"),
         (
             [
                 _destination("Parent"),
                 [_destination("Child")],
                 [_destination("Ambiguous")],
             ],
-            {"Parent": 0, "Child": 1, "Ambiguous": 2},
-            5,
+            "unattached_child_outline",
         ),
-        (
-            [_destination("First"), _destination("Second")],
-            {"First": 1, "Second": 1},
-            5,
-        ),
-        (
-            [_destination("First"), _destination("Second")],
-            {"First": 3, "Second": 2},
-            5,
-        ),
-        ([_destination("Outside")], {"Outside": 5}, 5),
-        ([_destination("Negative")], {"Negative": -1}, 5),
-        ([_destination("Unresolved")], {"Unresolved": None}, 5),
-        ([_destination("Error")], {"Error": RuntimeError("cannot resolve")}, 5),
     ],
 )
-def test_invalid_or_ambiguous_outline_fails_closed_without_partial_bounds(
+def test_malformed_outline_shape_fails_closed_with_stable_reason(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     outline: Any,
-    starts: dict[str, Any],
-    page_count: int,
+    reason: str,
 ) -> None:
+    result = _read_fake_outline(tmp_path, monkeypatch, outline, [])
+
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics[-1].code == "invalid_bookmark_page_bounds"
+    assert result.diagnostics[-1].context == {"reason": reason}
+
+
+@pytest.mark.parametrize(
+    ("starts", "page_count", "reason"),
+    [
+        ((1, 1), 5, "destination_pages_not_increasing"),
+        ((3, 2), 5, "destination_pages_not_increasing"),
+        ((5,), 5, "destination_page_out_of_range"),
+        ((-1,), 5, "destination_page_out_of_range"),
+        ((None,), 5, "destination_page_unresolved"),
+    ],
+)
+def test_invalid_destination_pages_fail_closed_with_stable_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    starts: tuple[Any, ...],
+    page_count: int,
+    reason: str,
+) -> None:
+    destinations = [_destination(f"Destination {index}") for index in range(len(starts))]
+
     result = _read_fake_outline(
-        tmp_path, monkeypatch, outline, starts, page_count=page_count
+        tmp_path,
+        monkeypatch,
+        destinations,
+        list(zip(destinations, starts)),
+        page_count=page_count,
     )
 
     assert result.bookmark_page_bounds == ()
-    assert [diagnostic.code for diagnostic in result.diagnostics] == [
-        "invalid_bookmark_page_bounds"
-    ]
+    assert result.diagnostics[-1].context == {"reason": reason}
+
+
+def test_pypdf_outline_read_error_is_optional_and_uses_stable_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _read_fake_outline(
+        tmp_path, monkeypatch, PdfReadError("unstable third-party message"), []
+    )
+
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics[-1].context == {
+        "reason": "pypdf_outline_read_error",
+        "exception_type": "PdfReadError",
+    }
+
+
+def test_pypdf_destination_resolution_error_uses_stable_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = _destination("Destination")
+
+    result = _read_fake_outline(
+        tmp_path,
+        monkeypatch,
+        [destination],
+        [(destination, PdfReadError("unstable third-party message"))],
+    )
+
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics[-1].context == {
+        "reason": "pypdf_destination_resolution_error",
+        "exception_type": "PdfReadError",
+    }
+
+
+@pytest.mark.parametrize("programmer_error", [AssertionError("bug"), RuntimeError("bug")])
+def test_destination_resolution_programmer_errors_propagate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    programmer_error: Exception,
+) -> None:
+    destination = _destination("Destination")
+
+    with pytest.raises(type(programmer_error)) as raised:
+        _read_fake_outline(
+            tmp_path,
+            monkeypatch,
+            [destination],
+            [(destination, programmer_error)],
+        )
+
+    assert raised.value is programmer_error
+
+
+def test_outline_attribute_programmer_error_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    programmer_error = AttributeError("property bug")
+
+    with pytest.raises(AttributeError) as raised:
+        _read_fake_outline(tmp_path, monkeypatch, programmer_error, [])
+
+    assert raised.value is programmer_error
+
+
+def test_unrelated_pypdf_error_from_outline_property_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unrelated_error = PyPdfError("not an expected outline-read failure")
+
+    with pytest.raises(PyPdfError) as raised:
+        _read_fake_outline(tmp_path, monkeypatch, unrelated_error, [])
+
+    assert raised.value is unrelated_error
+
+
+def test_bookmark_model_construction_programmer_error_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = _destination("Destination")
+    programmer_error = RuntimeError("model bug")
+
+    def fail_model_construction(**_values: Any) -> Any:
+        raise programmer_error
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.BookmarkPageBounds",
+        fail_model_construction,
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        _read_fake_outline(
+            tmp_path, monkeypatch, [destination], [(destination, 0)], page_count=2
+        )
+
+    assert raised.value is programmer_error
+
+
+def test_malformed_outline_keeps_extracted_children_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class PageReference:
+        idnum = 10
+        generation = 0
+
+    class Page:
+        indirect_reference = PageReference()
+
+    parent = {
+        "/S": NameObject("/P"),
+        "/Pg": PageReference(),
+        "/K": NumberObject(7),
+    }
+    destination = _destination("Top level")
+
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": {"/K": [parent]}}}
+        pages = [Page()]
+        outline = [destination, ["malformed child"]]
+
+        def get_destination_page_number(self, _destination: Destination) -> int:
+            return 0
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    result = TaggedPdfReader(
+        RecordingCollector({0: {7: ("Preserved extracted text",)}})
+    ).read(tmp_path / "malformed-outline.pdf")
+
+    assert result.children == (
+        StructureElement(
+            source_role="P",
+            semantic_role="paragraph",
+            page_index=0,
+            children=(
+                ContentFragment(
+                    0,
+                    7,
+                    ("Preserved extracted text",),
+                    text_styles=(TextStyle(None, None),),
+                    text_bboxes=(None,),
+                ),
+            ),
+        ),
+    )
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics[-1].context == {"reason": "invalid_outline_item"}
 
 
 def test_translates_decoder_failure_at_page_boundary(

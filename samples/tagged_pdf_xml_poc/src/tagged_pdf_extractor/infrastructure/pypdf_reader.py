@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader
+from pypdf.errors import LimitReachedError, PdfReadError
 from pypdf.generic import Destination, NullObject
 
 from tagged_pdf_extractor.domain.models import (
@@ -26,6 +27,13 @@ from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
 
 class TaggedPdfError(RuntimeError):
     pass
+
+
+class _BookmarkEvidenceError(Exception):
+    def __init__(self, reason: str, exception_type: str | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.exception_type = exception_type
 
 
 class TaggedPdfReader:
@@ -147,64 +155,107 @@ class TaggedPdfReader:
         page_count: int,
         diagnostics: list[Diagnostic],
     ) -> tuple[BookmarkPageBounds, ...]:
+        if not self._has_outline_attribute(reader):
+            return ()
         try:
-            outline = getattr(reader, "outline", None)
-            if outline is None or outline == []:
-                return ()
-            destinations = self._top_level_destinations(outline)
-            starts: list[int] = []
-            for destination in destinations:
-                page_index = reader.get_destination_page_number(destination)
-                if not isinstance(page_index, Integral) or isinstance(
-                    page_index, bool
-                ):
-                    raise ValueError("a top-level destination has no resolved page")
-                start = int(page_index)
-                if start < 0 or start >= page_count:
-                    raise ValueError("a top-level destination page is out of range")
-                if starts and start <= starts[-1]:
-                    raise ValueError(
-                        "top-level destination pages must be strictly increasing"
-                    )
-                starts.append(start)
+            outline = reader.outline
+        except (PdfReadError, LimitReachedError) as exc:
+            return self._bookmark_evidence_failure(
+                diagnostics,
+                _BookmarkEvidenceError(
+                    "pypdf_outline_read_error", type(exc).__name__
+                ),
+            )
 
-            return tuple(
-                BookmarkPageBounds(
-                    ordinal=index + 1,
-                    start_page_index=start,
-                    end_page_index=(
-                        starts[index + 1] - 1
-                        if index + 1 < len(starts)
-                        else page_count - 1
-                    ),
-                    source_title=(
-                        destination.title
-                        if isinstance(destination.title, str)
-                        else None
-                    ),
-                )
-                for index, (destination, start) in enumerate(
-                    zip(destinations, starts)
-                )
-            )
-        except Exception as exc:
-            diagnostics.append(
-                Diagnostic(
-                    severity="warning",
-                    code="invalid_bookmark_page_bounds",
-                    message=(
-                        "Top-level PDF outline could not produce unambiguous "
-                        "bookmark page bounds"
-                    ),
-                    context={"reason": str(exc)},
-                )
-            )
+        if outline is None or (
+            self._is_outline_sequence(outline) and len(outline) == 0
+        ):
             return ()
 
+        try:
+            destinations = self._top_level_destinations(outline)
+            starts = self._destination_starts(reader, destinations, page_count)
+        except _BookmarkEvidenceError as exc:
+            return self._bookmark_evidence_failure(diagnostics, exc)
+
+        return tuple(
+            BookmarkPageBounds(
+                ordinal=index + 1,
+                start_page_index=start,
+                end_page_index=(
+                    starts[index + 1] - 1
+                    if index + 1 < len(starts)
+                    else page_count - 1
+                ),
+                source_title=(
+                    destination.title
+                    if isinstance(destination.title, str)
+                    else None
+                ),
+            )
+            for index, (destination, start) in enumerate(zip(destinations, starts))
+        )
+
     @staticmethod
-    def _top_level_destinations(outline: Any) -> tuple[Destination, ...]:
-        if not TaggedPdfReader._is_outline_sequence(outline):
-            raise ValueError("PDF outline is not a sequence")
+    def _has_outline_attribute(reader: PdfReader) -> bool:
+        if "outline" in vars(reader):
+            return True
+        return any("outline" in base.__dict__ for base in type(reader).__mro__)
+
+    @staticmethod
+    def _bookmark_evidence_failure(
+        diagnostics: list[Diagnostic], error: _BookmarkEvidenceError
+    ) -> tuple[BookmarkPageBounds, ...]:
+        context = {"reason": error.reason}
+        if error.exception_type is not None:
+            context["exception_type"] = error.exception_type
+        diagnostics.append(
+            Diagnostic(
+                severity="warning",
+                code="invalid_bookmark_page_bounds",
+                message=(
+                    "Top-level PDF outline could not produce unambiguous "
+                    "bookmark page bounds"
+                ),
+                context=context,
+            )
+        )
+        return ()
+
+    @staticmethod
+    def _destination_starts(
+        reader: PdfReader,
+        destinations: tuple[Destination, ...],
+        page_count: int,
+    ) -> tuple[int, ...]:
+        starts: list[int] = []
+        for destination in destinations:
+            try:
+                page_index = reader.get_destination_page_number(destination)
+            except (PdfReadError, LimitReachedError) as exc:
+                raise _BookmarkEvidenceError(
+                    "pypdf_destination_resolution_error", type(exc).__name__
+                ) from exc
+            if not isinstance(page_index, Integral) or isinstance(page_index, bool):
+                raise _BookmarkEvidenceError("destination_page_unresolved")
+            start = int(page_index)
+            if start < 0 or start >= page_count:
+                raise _BookmarkEvidenceError("destination_page_out_of_range")
+            if starts and start <= starts[-1]:
+                raise _BookmarkEvidenceError("destination_pages_not_increasing")
+            starts.append(start)
+        return tuple(starts)
+
+    @classmethod
+    def _top_level_destinations(cls, outline: Any) -> tuple[Destination, ...]:
+        return cls._validate_outline_level(outline)
+
+    @classmethod
+    def _validate_outline_level(cls, outline: Any) -> tuple[Destination, ...]:
+        if not cls._is_outline_sequence(outline):
+            raise _BookmarkEvidenceError("outline_not_sequence")
+        if len(outline) == 0:
+            raise _BookmarkEvidenceError("empty_child_outline")
 
         destinations: list[Destination] = []
         child_list_allowed = False
@@ -213,16 +264,15 @@ class TaggedPdfReader:
                 destinations.append(item)
                 child_list_allowed = True
                 continue
-            if TaggedPdfReader._is_outline_sequence(item):
+            if cls._is_outline_sequence(item):
                 if not child_list_allowed:
-                    raise ValueError(
-                        "a top-level outline child list is not unambiguously attached"
-                    )
+                    raise _BookmarkEvidenceError("unattached_child_outline")
+                cls._validate_outline_level(item)
                 child_list_allowed = False
                 continue
-            raise ValueError("a top-level outline item is not a destination")
+            raise _BookmarkEvidenceError("invalid_outline_item")
         if not destinations:
-            raise ValueError("PDF outline has no top-level destinations")
+            raise _BookmarkEvidenceError("outline_has_no_destinations")
         return tuple(destinations)
 
     @staticmethod

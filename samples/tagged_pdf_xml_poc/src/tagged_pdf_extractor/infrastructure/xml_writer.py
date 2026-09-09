@@ -361,6 +361,7 @@ class XmlDocumentWriter:
                 node,
                 "mismatch",
                 {
+                    "interval-ordinal": scalar(mismatch["interval_ordinal"]),
                     "language": scalar(mismatch["language"]),
                     "position": scalar(mismatch["position"]),
                     "component": scalar(mismatch["component"]),

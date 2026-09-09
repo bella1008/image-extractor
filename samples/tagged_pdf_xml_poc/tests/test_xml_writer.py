@@ -41,7 +41,10 @@ from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocument
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
 
 
-def _xml_audit(state: str) -> MultilingualHeadingAudit:
+def _xml_audit(
+    state: str,
+    mismatch_component: str = "level",
+) -> MultilingualHeadingAudit:
     if state == "not_applicable":
         return MultilingualHeadingAudit(
             False, True, 1, 0, None, None, None, None, None
@@ -66,12 +69,19 @@ def _xml_audit(state: str) -> MultilingualHeadingAudit:
                 ),
             ),
         )
-    expected = HeadingSignatureEntry(1, "source", None)
-    observed = (
-        HeadingSignatureEntry(2, "source", None)
-        if state == "failed"
-        else expected
+    expected = (
+        HeadingSignatureEntry(2, "promoted", "01")
+        if mismatch_component in {"origin", "numbered_label"}
+        else HeadingSignatureEntry(1, "source", None)
     )
+    observed_entries = (expected,)
+    if state == "failed":
+        if mismatch_component == "count":
+            observed_entries = ()
+        elif mismatch_component in {"level", "origin"}:
+            observed_entries = (HeadingSignatureEntry(2, "source", None),)
+        else:
+            observed_entries = (HeadingSignatureEntry(2, "promoted", "02"),)
     signatures = tuple(
         LanguageHeadingSignature(
             language,
@@ -83,25 +93,40 @@ def _xml_audit(state: str) -> MultilingualHeadingAudit:
                 (ordinal - 1,),
                 "bookmark" if ordinal == 1 else "structural_language_section",
             ),
-            (entry,),
+            entries,
         )
-        for ordinal, (language, entry) in enumerate(
-            (("ENG", expected), ("C-FRA", observed)), start=1
+        for ordinal, (language, entries) in enumerate(
+            (("ENG", (expected,)), ("C-FRA", observed_entries)), start=1
         )
     )
+    observed = observed_entries[0] if observed_entries else None
     mismatch = (
-        HeadingMismatchPosition("C-FRA", 0, "level", expected, observed),
+        HeadingMismatchPosition(
+            "C-FRA",
+            0,
+            mismatch_component,  # type: ignore[arg-type]
+            expected,
+            observed,
+        ),
     ) if state == "failed" else ()
+    component_states = {
+        "count": True,
+        "level": True,
+        "origin": True,
+        "numbered_label": True,
+    }
+    if state == "failed":
+        component_states[mismatch_component] = False
     return MultilingualHeadingAudit(
         True,
         state == "passed",
         2,
         2,
         True,
-        True,
-        state == "passed",
-        True,
-        True,
+        component_states["count"],
+        component_states["level"],
+        component_states["origin"],
+        component_states["numbered_label"],
         signatures,
         mismatch,
     )
@@ -220,6 +245,7 @@ def test_semantic_xml_serializes_exact_audit_evidence_in_stable_order(
     mismatch = node.find("mismatch")
     assert mismatch is not None
     assert mismatch.attrib == {
+        "interval-ordinal": "2",
         "language": "C-FRA", "position": "0", "component": "level"
     }
     assert mismatch.find("expected").attrib == {
@@ -228,6 +254,31 @@ def test_semantic_xml_serializes_exact_audit_evidence_in_stable_order(
     assert mismatch.find("observed").attrib == {
         "level": "2", "origin": "source"
     }
+
+
+@pytest.mark.parametrize(
+    "component",
+    ("count", "level", "origin", "numbered_label"),
+)
+def test_semantic_xml_mismatch_uses_ordered_signature_interval_ordinal(
+    tmp_path: Path,
+    component: str,
+) -> None:
+    audit = _xml_audit("failed", component)
+    document = TaggedDocument(
+        Path("manual.pdf"), True, "ENG", (), (), multilingual_heading_audit=audit
+    )
+    path = tmp_path / f"{component}.xml"
+
+    XmlDocumentWriter().write_semantic(document, path)
+
+    mismatch = ET.parse(path).getroot().find(
+        "multilingual-heading-audit/mismatch"
+    )
+    assert mismatch is not None
+    assert mismatch.get("interval-ordinal") == "2"
+    assert mismatch.get("language") == "C-FRA"
+    assert mismatch.get("component") == component
 
 
 def test_pending_semantic_xml_serializes_diagnostic_context_stably(

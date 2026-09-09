@@ -114,7 +114,11 @@ def multilingual_heading_audit_to_data(
         }
 
     languages = []
+    interval_ordinal_by_language: dict[str, int] = {}
     for ordinal, signature in enumerate(audit.signatures, start=1):
+        if signature.language in interval_ordinal_by_language:
+            raise ValueError("multilingual audit signature languages must be unique")
+        interval_ordinal_by_language[signature.language] = ordinal
         interval = signature.interval
         languages.append(
             {
@@ -139,6 +143,15 @@ def multilingual_heading_audit_to_data(
                 ],
             }
         )
+
+    def mismatch_interval_ordinal(language: str) -> int:
+        try:
+            return interval_ordinal_by_language[language]
+        except KeyError as error:
+            raise ValueError(
+                "multilingual audit mismatch language has no signature interval"
+            ) from error
+
     return {
         "applicable": audit.applicable,
         "status": status,
@@ -153,6 +166,9 @@ def multilingual_heading_audit_to_data(
         "languages": languages,
         "mismatch_positions": [
             {
+                "interval_ordinal": mismatch_interval_ordinal(
+                    mismatch.language
+                ),
                 "language": mismatch.language,
                 "position": mismatch.position,
                 "component": mismatch.component,

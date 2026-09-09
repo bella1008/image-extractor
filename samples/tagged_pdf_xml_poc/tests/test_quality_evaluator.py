@@ -1457,7 +1457,9 @@ def test_each_signature_mismatch_fails_only_its_matching_gate(
     failed = [name for name, passed in report.hard_gates.items() if not passed]
     assert failed == [failed_gate]
     assert report.status == "fail"
-    assert report.metrics["multilingual_heading_audit"]["status"] == "failed"
+    metric = report.metrics["multilingual_heading_audit"]
+    assert metric["status"] == "failed"
+    assert metric["mismatch_positions"][0]["interval_ordinal"] == 2
 
 
 def test_mismatch_metric_contains_expected_and_observed_entries_without_wording() -> None:
@@ -1467,6 +1469,7 @@ def test_mismatch_metric_contains_expected_and_observed_entries_without_wording(
 
     assert metric["mismatch_positions"] == [
         {
+            "interval_ordinal": 2,
             "language": "C-FRA",
             "position": 1,
             "component": "level",
@@ -1483,6 +1486,15 @@ def test_mismatch_metric_contains_expected_and_observed_entries_without_wording(
         }
     ]
     assert "wording" not in repr(metric).lower()
+
+
+def test_mismatch_metric_rejects_language_without_signature_interval() -> None:
+    audit = _audit(component="level")
+    mismatch = replace(audit.mismatch_positions[0], language="DEU")
+    object.__setattr__(audit, "mismatch_positions", (mismatch,))
+
+    with pytest.raises(ValueError, match="mismatch language has no signature"):
+        _evaluate_with_audit(audit)
 
 
 def test_passing_audit_report_has_exact_deterministic_json_ready_shape() -> None:

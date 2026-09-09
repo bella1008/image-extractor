@@ -286,6 +286,27 @@ def test_book_heading_failures_preserve_valid_bookmark_count(
     assert resolution.diagnostic.code == code
 
 
+def test_book_invalid_structure_page_preserves_valid_bookmark_count() -> None:
+    document = _document(
+        (
+            StructureElement("P", "paragraph", page_index=-1),
+            _section(0, "first"),
+            _section(1, "second"),
+        ),
+        bounds=_bounds("first", "second"),
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("BOOK", "AAA", "BBB"), document
+    )
+
+    assert resolution.intervals == ()
+    assert resolution.observed_interval_count == 2
+    assert resolution.diagnostic is not None
+    assert resolution.diagnostic.code == "language_interval_page_evidence_invalid"
+    assert resolution.diagnostic.context == {"child_path": (0,)}
+
+
 def test_non_book_maps_two_heading_pages_to_canonical_order_without_wording() -> None:
     profile = _profile("A2", "AAA", "BBB")
     document = _document((_section(3, "first"), _section(7, "second")))

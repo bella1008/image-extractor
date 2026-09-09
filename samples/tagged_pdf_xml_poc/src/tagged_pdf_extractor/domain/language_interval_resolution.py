@@ -128,7 +128,7 @@ def _valid_page_index(value: object, path: tuple[int, ...]) -> int:
         raise _ResolutionFailure(
             "language_interval_page_evidence_invalid",
             "Document structure contains invalid page evidence.",
-            0,
+            None,
             {"child_path": path},
         )
     return value

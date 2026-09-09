@@ -75,19 +75,27 @@ def _text_run_bbox(
     font: Any,
     font_size: Any,
     text_scale: Any,
+    character_spacing: Any,
     text_matrix: Any,
     current_matrix: Any,
 ) -> BBox | None:
     try:
         normalized_size = float(font_size)
         normalized_text_scale = float(text_scale)
+        normalized_character_spacing = float(character_spacing)
         tm = [float(item) for item in text_matrix[:6]]
         cm = [float(item) for item in current_matrix[:6]]
         if len(tm) != 6 or len(cm) != 6:
             return None
         if not all(
             math.isfinite(item)
-            for item in (normalized_size, normalized_text_scale, *tm, *cm)
+            for item in (
+                normalized_size,
+                normalized_text_scale,
+                normalized_character_spacing,
+                *tm,
+                *cm,
+            )
         ):
             return None
         if normalized_size <= 0 or normalized_text_scale <= 0:
@@ -107,12 +115,9 @@ def _text_run_bbox(
             return None
         glyph_width = float(get_text_width(value))
         width = (
-            glyph_width
-            / 1000.0
-            * normalized_size
-            * normalized_text_scale
-            * scale_x
-        )
+            (glyph_width / 1000.0 * normalized_size)
+            + normalized_character_spacing * len(value)
+        ) * normalized_text_scale * scale_x
         height = normalized_size * scale_y
         right = left + width
         top = bottom + height
@@ -179,6 +184,14 @@ class PypdfOperationTextRunner:
 
             extractor = TextExtraction()
             geometry_ambiguous = False
+            character_spacing: float | None = 0.0
+            unmodeled_geometry_state = {
+                b"Tw": False,
+                b"Ts": False,
+            }
+            geometry_state_stack: list[
+                tuple[float | None, dict[bytes, bool]]
+            ] = []
 
             def visitor(
                 value: str,
@@ -197,12 +210,19 @@ class PypdfOperationTextRunner:
                         font_size, text_matrix, current_matrix
                     )
                     bbox = None
-                    if not geometry_ambiguous:
+                    if (
+                        not geometry_ambiguous
+                        and character_spacing is not None
+                        and not any(
+                            unmodeled_geometry_state.values()
+                        )
+                    ):
                         bbox = _text_run_bbox(
                             value,
                             font,
                             font_size,
                             getattr(extractor, "char_scale", 1.0),
+                            character_spacing,
                             text_matrix,
                             current_matrix,
                         )
@@ -215,28 +235,81 @@ class PypdfOperationTextRunner:
                 (0, 90, 180, 270), visitor, font_resources, fonts
             )
 
+            def process_position_change(
+                operator: bytes, operands: list[Any]
+            ) -> None:
+                nonlocal geometry_ambiguous
+                extractor._flush_text()
+                geometry_ambiguous = True
+                extractor.process_operation(operator, operands)
+                extractor._flush_text()
+                geometry_ambiguous = False
+
             for operands, operator in operations:
                 if operator in (b"BMC", b"BDC", b"EMC"):
                     extractor._flush_text()
                     _invoke_callback(on_boundary, operator, operands)
                 elif operator in (b"q", b"Q"):
                     extractor._flush_text()
+                    if operator == b"q":
+                        geometry_state_stack.append(
+                            (character_spacing, unmodeled_geometry_state.copy())
+                        )
+                    elif geometry_state_stack:
+                        (
+                            character_spacing,
+                            unmodeled_geometry_state,
+                        ) = geometry_state_stack.pop()
                     extractor.process_operation(operator, operands)
                     extractor.memo_cm = extractor.cm_matrix.copy()
                     extractor.memo_tm = extractor.tm_matrix.copy()
+                elif operator == b"Tc":
+                    extractor._flush_text()
+                    try:
+                        candidate_spacing = float(operands[0])
+                        character_spacing = (
+                            candidate_spacing
+                            if math.isfinite(candidate_spacing)
+                            else None
+                        )
+                    except (IndexError, TypeError, ValueError, OverflowError):
+                        character_spacing = None
+                    extractor.process_operation(operator, operands)
                 elif operator == b"Tz":
                     if extractor.text:
                         geometry_ambiguous = True
                     extractor.process_operation(operator, operands)
+                elif operator in unmodeled_geometry_state:
+                    try:
+                        state_is_active = float(operands[0]) != 0.0
+                    except (IndexError, TypeError, ValueError, OverflowError):
+                        state_is_active = True
+                    if extractor.text and (
+                        unmodeled_geometry_state[operator] or state_is_active
+                    ):
+                        geometry_ambiguous = True
+                    unmodeled_geometry_state[operator] = state_is_active
+                    extractor.process_operation(operator, operands)
                 elif operator == b"'":
-                    extractor.process_operation(b"T*", [])
-                    extractor._flush_text()
+                    process_position_change(b"T*", [])
                     extractor.process_operation(b"Tj", operands)
                 elif operator == b'"' and len(operands) >= 3:
+                    extractor._flush_text()
+                    unmodeled_geometry_state[b"Tw"] = (
+                        float(operands[0]) != 0.0
+                    )
+                    try:
+                        candidate_spacing = float(operands[1])
+                        character_spacing = (
+                            candidate_spacing
+                            if math.isfinite(candidate_spacing)
+                            else None
+                        )
+                    except (TypeError, ValueError, OverflowError):
+                        character_spacing = None
                     extractor.process_operation(b"Tw", [operands[0]])
                     extractor.process_operation(b"Tc", [operands[1]])
-                    extractor.process_operation(b"T*", [])
-                    extractor._flush_text()
+                    process_position_change(b"T*", [])
                     extractor.process_operation(b"Tj", operands[2:])
                 elif operator == b"TJ":
                     threshold = extractor._space_width * 0.95
@@ -252,11 +325,9 @@ class PypdfOperationTextRunner:
                                 extractor.process_operation(b"Tj", [" "])
                 elif operator == b"TD" and len(operands) >= 2:
                     extractor.process_operation(b"TL", [-operands[1]])
-                    extractor.process_operation(b"Td", operands)
-                    extractor._flush_text()
+                    process_position_change(b"Td", operands)
                 elif operator in (b"Td", b"Tm", b"T*"):
-                    extractor.process_operation(operator, operands)
-                    extractor._flush_text()
+                    process_position_change(operator, operands)
                 elif operator == b"Do":
                     extractor._flush_text()
                     if on_xobject is not None:

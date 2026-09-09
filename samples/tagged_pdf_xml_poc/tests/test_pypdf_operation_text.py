@@ -143,6 +143,50 @@ def test_runner_returns_none_bbox_when_text_scale_changes_within_mcid() -> None:
     assert captured == [("AB", None)]
 
 
+@pytest.mark.parametrize(
+    "text_state",
+    [b"3 Tw", b"4 Ts"],
+    ids=["word_spacing", "text_rise"],
+)
+def test_runner_keeps_text_but_fails_closed_for_unmodeled_geometry_state(
+    text_state: bytes,
+) -> None:
+    page = _in_memory_page(
+        b"BT /F1 10 Tf 1 0 0 1 10 20 Tm "
+        + text_state
+        + b" (A A) Tj ET"
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert "".join(value for value, _bbox in captured) == "A A"
+    assert captured == [("A A", None)]
+
+
+def test_runner_models_character_spacing_in_horizontal_bbox() -> None:
+    page = _in_memory_page(
+        b"BT /F1 10 Tf 1 0 0 1 10 20 Tm 2 Tc (A A) Tj ET"
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert captured == [("A A", pytest.approx((10.0, 20.0, 32.12, 30.0)))]
+
+
 def test_runner_splits_bbox_after_same_line_text_matrix_repositioning() -> None:
     page = _in_memory_page(
         b"BT /F1 10 Tf /P << /MCID 1 >> BDC "
@@ -160,9 +204,33 @@ def test_runner_splits_bbox_after_same_line_text_matrix_repositioning() -> None:
     )
 
     assert "".join(value for value, _bbox in captured) == "A B"
-    assert [value for value, _bbox in captured] == ["A ", "B"]
-    assert captured[0][1] == pytest.approx((10.0, 20.0, 19.45, 30.0))
-    assert captured[1][1] == pytest.approx((40.0, 20.0, 46.67, 30.0))
+    assert [value for value, _bbox in captured] == ["A", " ", "B"]
+    assert captured[0][1] == pytest.approx((10.0, 20.0, 16.67, 30.0))
+    assert captured[1][1] is None
+    assert captured[2][1] == pytest.approx((40.0, 20.0, 46.67, 30.0))
+
+
+def test_runner_flushes_text_before_processing_position_change() -> None:
+    page = _in_memory_page(
+        b"BT /F1 10 Tf "
+        b"1 0 0 1 10 20 Tm (A) Tj "
+        b"1 0 0 1 40 20 Tm (B) Tj ET"
+    )
+    captured: list[tuple[str, tuple[float, float, float, float] | None]] = []
+
+    PypdfOperationTextRunner().run(
+        page,
+        on_boundary=lambda _operator, _operands: None,
+        on_text=lambda value, _font_name, _font_size, bbox: captured.append(
+            (value, bbox)
+        ),
+    )
+
+    assert "".join(value for value, _bbox in captured) == "A B"
+    assert [value for value, _bbox in captured] == ["A", " ", "B"]
+    assert captured[0][1] == pytest.approx((10.0, 20.0, 16.67, 30.0))
+    assert captured[1][1] is None
+    assert captured[2][1] == pytest.approx((40.0, 20.0, 46.67, 30.0))
 
 
 def test_runner_reports_effective_font_size_from_text_matrix() -> None:

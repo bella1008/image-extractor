@@ -23,7 +23,6 @@ from tagged_pdf_extractor.domain.inline_icon_policy import (
     parse_positive_finite_number,
     parse_unambiguous_bbox,
 )
-from tagged_pdf_extractor.domain.readability_formatting import sentence_start_offsets
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
@@ -1518,15 +1517,10 @@ class MarkdownDocumentWriter:
             offsets_by_element,
             promoted,
         )
-        eligible_offsets = cls._eligible_sentence_offsets(root, promoted)
-        for element, offsets in offsets_by_element.items():
-            expected = eligible_offsets.get(element)
-            if expected is None:
+        eligible_elements = cls._eligible_sentence_elements(root, promoted)
+        for element in offsets_by_element:
+            if element not in eligible_elements:
                 raise ValueError("ineligible sentence-break-source structure")
-            if any(offset not in expected for offset in offsets):
-                raise ValueError(
-                    "sentence-break offset is not an eligible sentence-start boundary"
-                )
 
     @classmethod
     def _reject_sentence_heading_overlaps(
@@ -1563,11 +1557,11 @@ class MarkdownDocumentWriter:
                 ancestor = parents.get(ancestor)
 
     @classmethod
-    def _eligible_sentence_offsets(
+    def _eligible_sentence_elements(
         cls,
         root: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
-    ) -> dict[ET.Element, frozenset[int]]:
+    ) -> frozenset[ET.Element]:
         flows: list[tuple[_SemanticTextFragment, ...]] = []
 
         def visit(
@@ -1608,21 +1602,11 @@ class MarkdownDocumentWriter:
                 visit(child, (*ancestors, child))
 
         visit(root, ())
-        offsets: dict[ET.Element, set[int]] = {}
+        elements: set[ET.Element] = set()
         for flow in flows:
-            text, locations = cls._join_sentence_flow(flow)
             for fragment in flow:
-                offsets.setdefault(fragment.element, set())
-            for start in sentence_start_offsets(text):
-                location = locations[start]
-                if location is None:
-                    continue
-                element, local_offset = location
-                offsets.setdefault(element, set()).add(local_offset)
-        return {
-            element: frozenset(values)
-            for element, values in offsets.items()
-        }
+                elements.add(fragment.element)
+        return frozenset(elements)
 
     @classmethod
     def _is_nonempty_inline_sentence_paragraph(
@@ -1702,27 +1686,6 @@ class MarkdownDocumentWriter:
         if current:
             segments.append(tuple(current))
         return tuple(segments)
-
-    @staticmethod
-    def _join_sentence_flow(
-        fragments: tuple[_SemanticTextFragment, ...],
-    ) -> tuple[str, tuple[tuple[ET.Element, int] | None, ...]]:
-        characters: list[str] = []
-        locations: list[tuple[ET.Element, int] | None] = []
-        for fragment in fragments:
-            if characters and fragment.text:
-                _, decisions = join_text_parts(
-                    (characters[-1], fragment.text[0])
-                )
-                if decisions[0]["action"] == "insert_space":
-                    characters.append(" ")
-                    locations.append(None)
-            characters.extend(fragment.text)
-            locations.extend(
-                (fragment.element, offset)
-                for offset in range(len(fragment.text))
-            )
-        return "".join(characters), tuple(locations)
 
     @classmethod
     def _validate_inline_icon_evidence(

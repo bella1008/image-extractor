@@ -148,7 +148,7 @@ def _candidate_hint(
 
     preceding_geometry = _complete_geometry(preceding)
     target_geometry = _complete_geometry(target)
-    following_geometry = _complete_geometry(following)
+    following_page_index = _single_page_index(following)
     marker_geometry = _complete_geometry(marker)
     body_geometry = _complete_geometry(body)
     if any(
@@ -156,21 +156,19 @@ def _candidate_hint(
         for geometry in (
             preceding_geometry,
             target_geometry,
-            following_geometry,
             marker_geometry,
             body_geometry,
         )
-    ):
+    ) or following_page_index is None:
         return None
     assert preceding_geometry is not None
     assert target_geometry is not None
-    assert following_geometry is not None
     assert marker_geometry is not None
     assert body_geometry is not None
     pages = {
         preceding_geometry.page_index,
         target_geometry.page_index,
-        following_geometry.page_index,
+        following_page_index,
         marker_geometry.page_index,
         body_geometry.page_index,
     }
@@ -359,6 +357,37 @@ def _complete_geometry(element: StructureElement) -> _Geometry | None:
         )
     )
     return _Geometry(page_index, _union_bbox(normalized_lines), normalized_lines)
+
+
+def _single_page_index(element: StructureElement) -> int | None:
+    page_claims: set[int] = set()
+    valid = True
+
+    def visit(current: StructureElement) -> None:
+        nonlocal valid
+        if current.page_index is not None:
+            if (
+                isinstance(current.page_index, bool)
+                or not isinstance(current.page_index, int)
+                or current.page_index < 0
+            ):
+                valid = False
+            else:
+                page_claims.add(current.page_index)
+        for child in current.children:
+            if isinstance(child, StructureElement):
+                visit(child)
+            elif (
+                isinstance(child.page_index, bool)
+                or not isinstance(child.page_index, int)
+                or child.page_index < 0
+            ):
+                valid = False
+            else:
+                page_claims.add(child.page_index)
+
+    visit(element)
+    return next(iter(page_claims)) if valid and len(page_claims) == 1 else None
 
 
 def _valid_typography(element: StructureElement) -> TypographyEvidence | None:

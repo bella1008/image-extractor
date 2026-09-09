@@ -144,9 +144,9 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 ## 교차 프로필 가독성 근거 정책
 
-문장 경계, 목록 continuation, inline subtitle, 다국어 heading parity는 원문 문구나 번역 사전이 아니라 공통 구조·기하·글꼴 근거로만 판정합니다. BBox는 PDF에서 관찰될 때 XML과 보고서의 선택적 감사 근거로 보존하되 Raw XML 원문이나 Markdown에는 판정 속성을 섞지 않습니다. BBox 등 필수 근거가 없으면 해당 표시를 만들지 않는 fail-closed 방식입니다.
+문장 경계, 목록 continuation, inline subtitle, 다국어 heading parity는 원문 문구나 번역 사전이 아니라 공통 구조·기하·글꼴 근거로만 판정합니다. BBox는 PDF에서 관찰될 때 XML과 보고서의 선택적 감사 근거로 보존하되 Raw XML 원문이나 Markdown에는 판정 속성을 섞지 않습니다. 좌표 계산은 문자 간격(`Tc`)을 반영하고, 아직 정확히 모델링하지 않는 단어 간격(`Tw`)·텍스트 상승(`Ts`) 상태에서는 BBox를 만들지 않습니다. BBox 등 판정에 필요한 근거가 없으면 해당 표시를 만들지 않는 fail-closed 방식입니다.
 
-- 목록 continuation은 목록과의 인접성, 같은 페이지와 언어, 수평 정렬, 세로 간격, 글꼴 크기, 충돌 구조 부재를 각각 통과해야 합니다. 표준 `P`가 아닌 사용자 정의 source role이 semantic `P`로 해석되는 경우에도 나머지 조건을 모두 통과해야 합니다.
+- 목록 continuation은 목록과의 인접성, 같은 페이지와 언어, 수평 정렬, 세로 간격, 글꼴 크기, 충돌 구조 부재를 각각 통과해야 합니다. 앞 목록의 marker/body와 대상 문단은 완전한 기하·타이포그래피 근거가 필요하고, 뒤 목록은 구조 경계 및 모호하지 않은 동일 페이지·언어 근거로만 사용합니다. 표준 `P`가 아닌 사용자 정의 source role이 semantic `P`로 해석되는 경우에도 나머지 조건을 모두 통과해야 합니다.
 - inline subtitle은 단독 table wrapper, 유일한 inline leaf paragraph, offset 경계, 상대 굵기 근거가 모두 있을 때만 표시합니다.
 - 다국어 heading audit은 승격 heading, level이 확인된 source-role heading 후보, 구조적으로 검출된 section heading의 전체 level/origin/번호 label 서명을 비교합니다. heading 문구와 level 없는 문서 title은 서명에 포함하지 않습니다.
 - Runtime에는 buyer, 문구, 언어별 번역 heading을 추가하지 않습니다. 감사 근거는 `extraction_report.json`과 `semantic_document.xml`에 남고, 원문 보존용 `raw_structure.xml` 및 검토용 Markdown에는 audit 속성이 노출되지 않습니다.
@@ -164,6 +164,8 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 ZG에서는 normal space와 NBSP가 들어간 `z. B.`를 문장 내부에서 나누지 않았고, 검토된 DEU/FRA leaf 문장 경계와 FRA continuation을 원문 검색으로 확인했습니다. FRA continuation 대상은 text-equivalent한 한 문단만 검출됩니다. ITA 폐기 subtitle은 offset과 굵기 근거가 있는 inline 표시이며, DEU 대응 구간은 원문 구조대로 별도 제목과 qualifier로 유지됩니다. KR과 XU의 continuation은 각각 두 건이며 모든 검출 조건을 독립적으로 통과한 실제 구조 근거가 있습니다. 두 프로필에는 inline-subtitle hint가 없습니다.
 
 XU의 `Warranty Card`와 `WARRANTY CONDITIONS`는 PDF source role `Heading2`이며 report에서는 `source_role_candidate`, Markdown에서는 각각 `###`로 보존됩니다. 문구 기반 승격 규칙은 추가하지 않았습니다. RF maximum-transmitter-power 행과 `[QN990H]` 모델 코드가 같은 표 구조에 남아 있어 페이지의 RF/model-code 관계도 유지됩니다. 고위험 navigation 경로와 이름 없는 icon 위치를 다섯 Markdown에서 확인했고, Semantic XML inline icon 수와 Markdown `[아이콘]` 수가 프로필별로 일치합니다. 현재 blocker는 없습니다.
+
+2026-09-09 독립 리뷰에서 좌표의 위치 이동 flush, 코드 내 named-language 조합 사전, Markdown의 문장 경계 재탐지를 점검해 수정했습니다. 수정 후 필수 실물 PDF 회귀는 `37 passed`, 전체 POC는 `1709 passed, 1 skipped`이며 skip은 Windows 심볼릭 링크 기능 확인 1건입니다. XU Semantic XML에서 내용이 있는 텍스트의 `(0,0)` 시작 BBox는 0건입니다.
 
 ## 이전 샘플 검증 결과
 

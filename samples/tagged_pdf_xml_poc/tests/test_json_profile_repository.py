@@ -382,6 +382,42 @@ def test_accepts_single_language_source_tokens_without_a_buyer_allowlist(
     assert profile.languages == (language,)
 
 
+def test_accepts_named_language_combination_from_canonical_row_data(
+    tmp_path: Path,
+) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json",
+        [
+            _valid_row(
+                source_token="XX_ENFR",
+                languages="ENG;FRA",
+                language_count=2,
+            )
+        ],
+    )
+    filename = "BN68-00000A-00_SUG_Y26 TV ALL_XX_ENFR_260101.0.pdf"
+
+    profile = JsonProfileRepository(mapping_path).lookup(filename)
+
+    assert profile.languages == ("ENG", "FRA")
+
+
+def test_rejects_ambiguous_named_language_combination_rows(tmp_path: Path) -> None:
+    mapping_path = _write_fixture(
+        tmp_path / "profiles.json",
+        [
+            _valid_row(source_token="XX_ENFR", languages="ENG;FRA"),
+            _valid_row(source_token="YY_ENFR", languages="ENG;DEU"),
+        ],
+    )
+
+    with pytest.raises(
+        InvalidProfileRowError,
+        match="named language token 'ENFR'.*rows 0 and 1",
+    ):
+        JsonProfileRepository(mapping_path)
+
+
 @pytest.mark.parametrize("source_token", ["ZC_LXX", "ZC_ L02"])
 def test_rejects_malformed_source_token_rows_during_load(
     tmp_path: Path, source_token: str
@@ -423,21 +459,6 @@ def test_rejects_zero_language_count_source_token_during_load(
             "languages": "ENG;FRA",
             "language_count": 2,
         },
-        {
-            "source_token": "PY_ENRU",
-            "languages": "FRA;DEU",
-            "language_count": 2,
-        },
-        {
-            "source_token": "SQ MI_HEAR",
-            "languages": "ENG;FRA",
-            "language_count": 2,
-        },
-        {
-            "source_token": "XX_JUNK",
-            "languages": "ENG;FRA",
-            "language_count": 2,
-        },
     ],
 )
 def test_rejects_invalid_source_token_language_relationships(
@@ -455,5 +476,5 @@ def test_lookup_rejects_unknown_combination_token() -> None:
     repository = JsonProfileRepository(CANONICAL_MAPPING)
     filename = "BN68-00000A-00_SUG_Y26 TV ALL_XX_JUNK_260101.0.pdf"
 
-    with pytest.raises(InvalidPdfFilenameError, match="source_token"):
+    with pytest.raises(UnknownSourceTokenError, match="XX_JUNK"):
         repository.lookup(filename)

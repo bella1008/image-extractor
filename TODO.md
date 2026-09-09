@@ -220,12 +220,14 @@ Notes
   against the exact ZG, ZC, LATIN, KR, and XU real PDFs. Shared evidence policy:
   BBoxes and detector reasons remain optional XML/report audit evidence; Raw XML
   text and Markdown stay free of detector attributes; sentence, continuation,
-  subtitle, and heading-parity decisions fail closed unless every generic
-  structure/geometry/typography condition is present. Runtime contains no
-  buyer, phrase, language, translation, or localized-heading mapping.
+  subtitle, and heading-parity decisions fail closed unless every required
+  generic structure/geometry/typography condition is present. This policy adds
+  no buyer, phrase, language-combination, translation, or localized-heading mapping.
   - Design: `docs/superpowers/specs/2026-09-08-cross-profile-readability-and-heading-parity-design.md`
   - Korean review copy: `docs/superpowers/specs/2026-09-08-cross-profile-readability-and-heading-parity-design_kr.md`
-  - Real-PDF gate: `37 passed`; all five reports are `status=pass`, with ZG/ZC/LATIN
+  - Real-PDF gate: `37 passed`; full POC gate after independent review fixes:
+    `1709 passed, 1 skipped` (Windows symlink capability only). All five reports
+    are `status=pass`, with ZG/ZC/LATIN
     multilingual audits `passed` and KR/XU `not_applicable`; no failed hard gate,
     text-quality page, or quality diagnostic remains.
   - Outputs: `samples/tagged_pdf_xml_poc/outputs/cross_profile_readability_zg_260908`,
@@ -237,6 +239,11 @@ Notes
     remain PDF `Heading2` source-role candidates rendered as Markdown `###`, and
     that RF maximum-transmitter-power plus `[QN990H]` remain in one table. No
     translated heading mapping was added. Current blocker: none.
+  - Independent review fixes: flush geometry before position changes, model
+    character spacing while failing closed for unsupported word-spacing/text-rise
+    geometry, derive named language combinations from canonical JSON rows, and
+    keep sentence detection out of the Markdown writer. XU non-empty `(0,0)`
+    text BBoxes after regeneration: 0.
 - [x] Preserve complex table structure in `samples/tagged_pdf_xml_poc` Markdown output instead of flattening nested paragraphs and lists into a single `- 행 N:` line.
 - [x] Add typography-backed subtitle display hints. Do not hardcode `Correct Disposal...` wording; use verified structure plus relative PDF font weight and keep uncertain cases as separate plain paragraphs.
 - Add a conservative verified-icon catalog for recurring icon-only figures. Name only verified matches, retain evidence, and leave unknown icons for human review.

@@ -184,6 +184,52 @@ def test_sibling_topology_without_complete_geometry_returns_no_hint() -> None:
     assert detect_list_continuation_hints(source) == ()
 
 
+def test_following_list_only_requires_unambiguous_same_page_evidence() -> None:
+    source = _document()
+    section = source.children[0]
+    assert isinstance(section, StructureElement)
+    following = section.children[2]
+    assert isinstance(following, StructureElement)
+    item = following.children[0]
+    assert isinstance(item, StructureElement)
+    label, body = item.children
+    assert isinstance(body, StructureElement)
+    body_fragment = body.children[0]
+    assert isinstance(body_fragment, ContentFragment)
+    following_without_body_bbox = replace(
+        following,
+        children=(
+            replace(
+                item,
+                children=(
+                    label,
+                    replace(
+                        body,
+                        children=(
+                            replace(body_fragment, text_bboxes=(None,)),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    document = replace(
+        source,
+        children=(
+            replace(
+                section,
+                children=(
+                    section.children[0],
+                    section.children[1],
+                    following_without_body_bbox,
+                ),
+            ),
+        ),
+    )
+
+    assert len(detect_list_continuation_hints(document)) == 1
+
+
 @pytest.mark.parametrize(
     "target_text",
     (

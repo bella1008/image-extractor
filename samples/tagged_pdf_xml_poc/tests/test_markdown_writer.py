@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import re
 import unicodedata
 from collections import Counter
@@ -2120,6 +2121,21 @@ def test_sentence_breaks_render_in_subtitle_linked_body_paragraph(
     assert markdown.count("Third sentence.") == 1
 
 
+def test_markdown_writer_consumes_sentence_hint_without_rerunning_detector(
+    tmp_path: Path,
+) -> None:
+    assert "sentence_start_offsets" not in inspect.getsource(MarkdownDocumentWriter)
+
+    markdown = _render(
+        tmp_path,
+        "<section><paragraph>"
+        f'{_sentence_text("First sentence. Second sentence.", "Second")}'
+        "</paragraph></section>",
+    )
+
+    assert "First sentence.<br>\nSecond sentence." in markdown
+
+
 @pytest.mark.parametrize(
     ("value", "false_start"),
     (
@@ -2130,7 +2146,7 @@ def test_sentence_breaks_render_in_subtitle_linked_body_paragraph(
         ("参照 図. 2 を確認してください。", "2"),
     ),
 )
-def test_standalone_markdown_rejects_sentence_break_after_compact_token(
+def test_standalone_markdown_consumes_serialized_compact_token_break(
     tmp_path: Path,
     value: str,
     false_start: str,
@@ -2143,12 +2159,15 @@ def test_standalone_markdown_rejects_sentence_break_after_compact_token(
         "</list_body></list_item></list>",
     )
 
-    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
-        MarkdownDocumentWriter.render_text(
-            semantic,
-            _report(),
-            source_name="manual.pdf",
-        )
+    markdown = MarkdownDocumentWriter.render_text(
+        semantic,
+        _report(),
+        source_name="manual.pdf",
+    )
+
+    offset = value.index(false_start)
+    compact = re.sub(r"\n\s+", "\n", markdown)
+    assert value[:offset].rstrip() + "<br>\n" + value[offset:].lstrip() in compact
 
 
 @pytest.mark.parametrize(
@@ -2936,7 +2955,7 @@ def test_malformed_sentence_break_evidence_is_rejected(
         "url-token",
     ),
 )
-def test_manual_non_sentence_offsets_are_rejected(
+def test_markdown_consumes_in_bounds_serialized_sentence_offsets(
     tmp_path: Path,
     value: str,
     offset: int,
@@ -2955,16 +2974,18 @@ def test_manual_non_sentence_offsets_are_rejected(
         "</paragraph></list_body></list_item></list>",
     )
 
-    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
-        MarkdownDocumentWriter.render_text(
-            semantic,
-            _report(),
-            source_name="manual.pdf",
-        )
+    markdown = MarkdownDocumentWriter.render_text(
+        semantic,
+        _report(),
+        source_name="manual.pdf",
+    )
+
+    compact = re.sub(r"\n\s+", "\n", markdown)
+    assert value[:offset].rstrip() + "<br>\n" + value[offset:].lstrip() in compact
 
 
 @pytest.mark.parametrize("normalization_form", ["NFC", "NFD"])
-def test_manual_normalization_equivalent_abbreviation_offset_is_rejected(
+def test_markdown_does_not_redetect_normalization_equivalent_abbreviation(
     tmp_path: Path,
     normalization_form: str,
 ) -> None:
@@ -2978,12 +2999,15 @@ def test_manual_normalization_equivalent_abbreviation_offset_is_rejected(
         "</paragraph></list_body></list_item></list>",
     )
 
-    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
-        MarkdownDocumentWriter.render_text(
-            semantic,
-            _report(),
-            source_name="manual.pdf",
-        )
+    markdown = MarkdownDocumentWriter.render_text(
+        semantic,
+        _report(),
+        source_name="manual.pdf",
+    )
+
+    offset = value.index("B.")
+    compact = re.sub(r"\n\s+", "\n", markdown)
+    assert value[:offset].rstrip() + "<br>\n" + value[offset:] in compact
 
 
 @pytest.mark.parametrize(
@@ -3217,7 +3241,7 @@ def test_offset_zero_is_valid_at_an_eligible_fragment_boundary(
     assert markdown.count("<br>") == 1
 
 
-def test_source_rf_boundary_rejects_duplicate_manual_sentence_evidence(
+def test_source_rf_boundary_does_not_trigger_sentence_redetection(
     tmp_path: Path,
 ) -> None:
     semantic = tmp_path / "semantic_document.xml"
@@ -3232,12 +3256,13 @@ def test_source_rf_boundary_rejects_duplicate_manual_sentence_evidence(
         "</paragraph></list_body></list_item></list>",
     )
 
-    with pytest.raises(ValueError, match="not an eligible sentence-start boundary"):
-        MarkdownDocumentWriter.render_text(
-            semantic,
-            _report(),
-            source_name="manual.pdf",
-        )
+    markdown = MarkdownDocumentWriter.render_text(
+        semantic,
+        _report(),
+        source_name="manual.pdf",
+    )
+
+    assert "First sentence.\n  Next sentence." in markdown
 
 
 def test_sentence_and_icon_render_text_matches_written_bytes(tmp_path: Path) -> None:

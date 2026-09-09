@@ -31,10 +31,8 @@ _SOURCE_TOKEN_PARTS = re.compile(
     r"(?P<language_token>[A-Z0-9-]+)"
 )
 _LANGUAGE_COUNT_TOKEN = re.compile(r"L(?P<count>\d{2})")
-_NAMED_COMBINATION_LANGUAGES = {
-    "ENRU": ("RUS", "ENG"),
-    "HEAR": ("HEB", "ARA"),
-}
+_NAMED_LANGUAGE_TOKEN = re.compile(r"[A-Z]{4,}")
+_NAMED_COMBINATION = "named_combination"
 _RESERVED_MALFORMED_LANGUAGE_TOKENS = frozenset(("LXX",))
 
 
@@ -89,6 +87,7 @@ class JsonProfileRepository:
 
         profiles: dict[str, PdfProfile] = {}
         first_rows: dict[str, int] = {}
+        named_combinations: dict[str, tuple[tuple[str, ...], int]] = {}
         for row_index, row in enumerate(payload):
             profile = _parse_profile_row(row, row_index)
             normalized_token = profile.source_token.casefold()
@@ -97,6 +96,15 @@ class JsonProfileRepository:
                     f"Duplicate source_token {profile.source_token!r} in rows "
                     f"{first_rows[normalized_token]} and {row_index}"
                 )
+            language_token = profile.source_token.rsplit("_", maxsplit=1)[1]
+            if _classify_language_token(language_token) == _NAMED_COMBINATION:
+                previous = named_combinations.get(language_token)
+                if previous is not None and previous[0] != profile.languages:
+                    raise InvalidProfileRowError(
+                        f"Profile named language token {language_token!r} has "
+                        f"ambiguous languages in rows {previous[1]} and {row_index}"
+                    )
+                named_combinations[language_token] = (profile.languages, row_index)
             profiles[normalized_token] = profile
             first_rows[normalized_token] = row_index
         return profiles
@@ -219,6 +227,12 @@ def _validate_source_token_consistency(
                 f"Profile row {row_index} source_token {source_token!r} declares "
                 f"{token_classification} languages but language_count is {language_count}"
             )
+    elif token_classification == _NAMED_COMBINATION:
+        if language_count < 2:
+            raise InvalidProfileRowError(
+                f"Profile row {row_index} source_token {source_token!r} names a "
+                "language combination but contains only one language"
+            )
     elif languages != token_classification:
         raise InvalidProfileRowError(
             f"Profile row {row_index} source_token {source_token!r} does not match languages"
@@ -227,7 +241,7 @@ def _validate_source_token_consistency(
 
 def _classify_language_token(
     language_token: str,
-) -> int | tuple[str, ...] | None:
+) -> int | tuple[str, ...] | str | None:
     if language_token in _RESERVED_MALFORMED_LANGUAGE_TOKENS:
         return None
     count_match = _LANGUAGE_COUNT_TOKEN.fullmatch(language_token)
@@ -236,4 +250,6 @@ def _classify_language_token(
         return language_count if language_count > 0 else None
     if _LANGUAGE_CODE.fullmatch(language_token) is not None:
         return (language_token,)
-    return _NAMED_COMBINATION_LANGUAGES.get(language_token)
+    if _NAMED_LANGUAGE_TOKEN.fullmatch(language_token) is not None:
+        return _NAMED_COMBINATION
+    return None

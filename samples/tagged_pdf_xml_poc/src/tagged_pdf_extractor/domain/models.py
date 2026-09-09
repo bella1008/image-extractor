@@ -454,6 +454,31 @@ class ContinuationHint:
 
 
 @dataclass(frozen=True)
+class BookmarkPageBounds:
+    ordinal: int
+    start_page_index: int
+    end_page_index: int
+    source_title: str | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("ordinal", self.ordinal),
+            ("start_page_index", self.start_page_index),
+            ("end_page_index", self.end_page_index),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"{name} must be an integer")
+        if self.ordinal <= 0:
+            raise ValueError("ordinal must be positive")
+        if self.start_page_index < 0:
+            raise ValueError("start_page_index must be non-negative")
+        if self.end_page_index < self.start_page_index:
+            raise ValueError("page bounds must be ordered")
+        if self.source_title is not None and not isinstance(self.source_title, str):
+            raise ValueError("source_title must be a string or None")
+
+
+@dataclass(frozen=True)
 class TaggedDocument:
     source_path: Path
     marked: bool
@@ -471,6 +496,7 @@ class TaggedDocument:
     inline_icon_hints: tuple[InlineIconHint, ...] = ()
     continuation_hints: tuple[ContinuationHint, ...] = ()
     multilingual_heading_audit: MultilingualHeadingAudit | None = None
+    bookmark_page_bounds: tuple[BookmarkPageBounds, ...] = ()
 
 
 @dataclass(frozen=True)

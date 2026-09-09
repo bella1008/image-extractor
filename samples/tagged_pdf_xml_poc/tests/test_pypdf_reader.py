@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import Any, Callable
 
@@ -9,7 +10,9 @@ from pypdf.generic import (
     ArrayObject,
     BooleanObject,
     DecodedStreamObject,
+    Destination,
     DictionaryObject,
+    Fit,
     IndirectObject,
     NameObject,
     NullObject,
@@ -18,9 +21,11 @@ from pypdf.generic import (
 )
 
 from tagged_pdf_extractor.domain.models import (
+    BookmarkPageBounds,
     ContentFragment,
     Diagnostic,
     StructureElement,
+    TaggedDocument,
     TextStyle,
 )
 from tagged_pdf_extractor.infrastructure.mcid_text import McidTextResult
@@ -83,6 +88,197 @@ class RecordingCollector:
             ),
             diagnostics=self.diagnostics_by_page.get(page_index, ()),
         )
+
+
+def _destination(title: str) -> Destination:
+    return Destination(title, NumberObject(0), Fit.fit())
+
+
+def _read_fake_outline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outline: Any,
+    starts: dict[str, Any],
+    *,
+    page_count: int = 50,
+) -> TaggedDocument:
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": {"/K": []}}}
+        pages = [object() for _ in range(page_count)]
+
+        def get_destination_page_number(self, destination: Destination) -> Any:
+            value = starts[destination.title]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+    FakeReader.outline = outline
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+    return TaggedPdfReader(RecordingCollector()).read(tmp_path / "outline.pdf")
+
+
+def test_bookmark_page_bounds_are_frozen_and_strictly_validate_values() -> None:
+    bounds = BookmarkPageBounds(1, 1, 10, "  Exact source title  ")
+
+    assert bounds.source_title == "  Exact source title  "
+    with pytest.raises(FrozenInstanceError):
+        bounds.end_page_index = 11  # type: ignore[misc]
+
+    invalid_values = (
+        {"ordinal": True},
+        {"ordinal": 0},
+        {"ordinal": -1},
+        {"start_page_index": True},
+        {"start_page_index": -1},
+        {"end_page_index": 0},
+        {"source_title": 7},
+    )
+    for replacement in invalid_values:
+        values = {
+            "ordinal": 1,
+            "start_page_index": 1,
+            "end_page_index": 10,
+            "source_title": None,
+            **replacement,
+        }
+        with pytest.raises(ValueError):
+            BookmarkPageBounds(**values)  # type: ignore[arg-type]
+
+
+def test_tagged_document_bookmark_bounds_default_preserves_compatibility() -> None:
+    document = TaggedDocument(Path("legacy.pdf"), True, "en-US", (), ())
+
+    assert document.bookmark_page_bounds == ()
+
+
+def test_reads_five_top_level_bookmark_bounds_in_source_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outline = [_destination(f"Source {index}") for index in range(5)]
+
+    result = _read_fake_outline(
+        tmp_path,
+        monkeypatch,
+        outline,
+        {
+            destination.title: start
+            for destination, start in zip(outline, (1, 11, 21, 31, 41))
+        },
+    )
+
+    assert result.bookmark_page_bounds == tuple(
+        BookmarkPageBounds(ordinal, start, end, f"Source {ordinal - 1}")
+        for ordinal, (start, end) in enumerate(
+            ((1, 10), (11, 20), (21, 30), (31, 40), (41, 49)), start=1
+        )
+    )
+
+
+def test_pages_before_first_bookmark_remain_unassigned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = _destination("First source title")
+
+    result = _read_fake_outline(
+        tmp_path, monkeypatch, [destination], {destination.title: 1}, page_count=3
+    )
+
+    assert result.bookmark_page_bounds == (
+        BookmarkPageBounds(1, 1, 2, "First source title"),
+    )
+    assert all(bounds.start_page_index != 0 for bounds in result.bookmark_page_bounds)
+
+
+def test_last_bookmark_bound_includes_final_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = _destination("Only source title")
+
+    result = _read_fake_outline(
+        tmp_path, monkeypatch, [destination], {destination.title: 2}, page_count=7
+    )
+
+    assert result.bookmark_page_bounds[-1].end_page_index == 6
+
+
+def test_empty_outline_preserves_extraction_without_fabricated_bounds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _read_fake_outline(tmp_path, monkeypatch, [], {})
+
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics == ()
+
+
+def test_ignores_one_child_list_unambiguously_attached_to_a_top_level_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _destination("First")
+    child = _destination("Child")
+    second = _destination("Second")
+
+    result = _read_fake_outline(
+        tmp_path,
+        monkeypatch,
+        [first, [child], second],
+        {first.title: 1, child.title: 2, second.title: 5},
+        page_count=9,
+    )
+
+    assert result.bookmark_page_bounds == (
+        BookmarkPageBounds(1, 1, 4, "First"),
+        BookmarkPageBounds(2, 5, 8, "Second"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("outline", "starts", "page_count"),
+    [
+        (["not a destination"], {}, 5),
+        ([[_destination("Bare nested")]], {"Bare nested": 1}, 5),
+        (
+            [
+                _destination("Parent"),
+                [_destination("Child")],
+                [_destination("Ambiguous")],
+            ],
+            {"Parent": 0, "Child": 1, "Ambiguous": 2},
+            5,
+        ),
+        (
+            [_destination("First"), _destination("Second")],
+            {"First": 1, "Second": 1},
+            5,
+        ),
+        (
+            [_destination("First"), _destination("Second")],
+            {"First": 3, "Second": 2},
+            5,
+        ),
+        ([_destination("Outside")], {"Outside": 5}, 5),
+        ([_destination("Negative")], {"Negative": -1}, 5),
+        ([_destination("Unresolved")], {"Unresolved": None}, 5),
+        ([_destination("Error")], {"Error": RuntimeError("cannot resolve")}, 5),
+    ],
+)
+def test_invalid_or_ambiguous_outline_fails_closed_without_partial_bounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outline: Any,
+    starts: dict[str, Any],
+    page_count: int,
+) -> None:
+    result = _read_fake_outline(
+        tmp_path, monkeypatch, outline, starts, page_count=page_count
+    )
+
+    assert result.bookmark_page_bounds == ()
+    assert [diagnostic.code for diagnostic in result.diagnostics] == [
+        "invalid_bookmark_page_bounds"
+    ]
 
 
 def test_translates_decoder_failure_at_page_boundary(

@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader
-from pypdf.generic import NullObject
+from pypdf.generic import Destination, NullObject
 
 from tagged_pdf_extractor.domain.models import (
     BBox,
+    BookmarkPageBounds,
     ContentFragment,
     Diagnostic,
     StructureElement,
@@ -127,6 +128,9 @@ class TaggedPdfReader:
             active_refs=set(),
         )
         language = self._optional_string(catalog.get("/Lang"))
+        bookmark_page_bounds = self._read_bookmark_page_bounds(
+            reader, len(pages), diagnostics
+        )
         return TaggedDocument(
             source_path=pdf_path,
             marked=marked,
@@ -134,6 +138,97 @@ class TaggedPdfReader:
             role_map=tuple(sorted(role_map.items())),
             children=tuple(children),
             diagnostics=tuple(diagnostics),
+            bookmark_page_bounds=bookmark_page_bounds,
+        )
+
+    def _read_bookmark_page_bounds(
+        self,
+        reader: PdfReader,
+        page_count: int,
+        diagnostics: list[Diagnostic],
+    ) -> tuple[BookmarkPageBounds, ...]:
+        try:
+            outline = getattr(reader, "outline", None)
+            if outline is None or outline == []:
+                return ()
+            destinations = self._top_level_destinations(outline)
+            starts: list[int] = []
+            for destination in destinations:
+                page_index = reader.get_destination_page_number(destination)
+                if not isinstance(page_index, Integral) or isinstance(
+                    page_index, bool
+                ):
+                    raise ValueError("a top-level destination has no resolved page")
+                start = int(page_index)
+                if start < 0 or start >= page_count:
+                    raise ValueError("a top-level destination page is out of range")
+                if starts and start <= starts[-1]:
+                    raise ValueError(
+                        "top-level destination pages must be strictly increasing"
+                    )
+                starts.append(start)
+
+            return tuple(
+                BookmarkPageBounds(
+                    ordinal=index + 1,
+                    start_page_index=start,
+                    end_page_index=(
+                        starts[index + 1] - 1
+                        if index + 1 < len(starts)
+                        else page_count - 1
+                    ),
+                    source_title=(
+                        destination.title
+                        if isinstance(destination.title, str)
+                        else None
+                    ),
+                )
+                for index, (destination, start) in enumerate(
+                    zip(destinations, starts)
+                )
+            )
+        except Exception as exc:
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="invalid_bookmark_page_bounds",
+                    message=(
+                        "Top-level PDF outline could not produce unambiguous "
+                        "bookmark page bounds"
+                    ),
+                    context={"reason": str(exc)},
+                )
+            )
+            return ()
+
+    @staticmethod
+    def _top_level_destinations(outline: Any) -> tuple[Destination, ...]:
+        if not TaggedPdfReader._is_outline_sequence(outline):
+            raise ValueError("PDF outline is not a sequence")
+
+        destinations: list[Destination] = []
+        child_list_allowed = False
+        for item in outline:
+            if isinstance(item, Destination):
+                destinations.append(item)
+                child_list_allowed = True
+                continue
+            if TaggedPdfReader._is_outline_sequence(item):
+                if not child_list_allowed:
+                    raise ValueError(
+                        "a top-level outline child list is not unambiguously attached"
+                    )
+                child_list_allowed = False
+                continue
+            raise ValueError("a top-level outline item is not a destination")
+        if not destinations:
+            raise ValueError("PDF outline has no top-level destinations")
+        return tuple(destinations)
+
+    @staticmethod
+    def _is_outline_sequence(value: Any) -> bool:
+        return isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
         )
 
     def _read_role_map(self, value: Any) -> dict[str, str]:

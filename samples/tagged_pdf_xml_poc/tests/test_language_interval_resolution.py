@@ -5,12 +5,15 @@ from pathlib import Path
 import pytest
 
 from tagged_pdf_extractor.domain.language_interval_resolution import (
+    LanguageIntervalResolution,
     resolve_language_intervals,
 )
 from tagged_pdf_extractor.domain.models import (
     BookmarkPageBounds,
     ContentFragment,
+    Diagnostic,
     HeadingPromotion,
+    LanguageIntervalEvidence,
     PdfProfile,
     StructureElement,
     TaggedDocument,
@@ -123,6 +126,26 @@ def test_book_title_wording_changes_do_not_change_intervals() -> None:
     )
 
 
+def test_book_allows_untagged_pages_at_end_of_valid_reader_bounds() -> None:
+    document = _document(
+        (_section(0, "first"), _section(1, "second")),
+        bounds=(
+            BookmarkPageBounds(1, 0, 0, "first"),
+            BookmarkPageBounds(2, 1, 2, "second"),
+        ),
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("BOOK", "AAA", "BBB"), document
+    )
+
+    assert resolution.diagnostic is None
+    assert tuple(
+        (interval.start_page_index, interval.end_page_index)
+        for interval in resolution.intervals
+    ) == ((0, 0), (1, 2))
+
+
 @pytest.mark.parametrize(
     ("document", "code", "observed"),
     [
@@ -148,17 +171,6 @@ def test_book_title_wording_changes_do_not_change_intervals() -> None:
                 ),
             ),
             "language_interval_bookmark_order_invalid",
-            2,
-        ),
-        (
-            _document(
-                (_section(0, "a"), _section(1, "b")),
-                bounds=(
-                    BookmarkPageBounds(1, 0, 0, "a"),
-                    BookmarkPageBounds(2, 1, 9, "b"),
-                ),
-            ),
-            "language_interval_bookmark_out_of_page",
             2,
         ),
     ],
@@ -218,8 +230,60 @@ def test_missing_promoted_heading_path_fails_closed() -> None:
     )
 
     assert resolution.intervals == ()
+    assert resolution.observed_interval_count == 2
     assert resolution.diagnostic is not None
     assert resolution.diagnostic.code == "language_interval_heading_path_missing"
+
+
+@pytest.mark.parametrize(
+    ("children", "promotions", "code"),
+    [
+        (
+            (
+                StructureElement(
+                    "Sect", "section", children=(_heading("cross", 0, 1),)
+                ),
+                _section(1, "second"),
+            ),
+            (),
+            "language_interval_heading_page_evidence_ambiguous",
+        ),
+        (
+            (
+                StructureElement(
+                    "Sect", "section", children=(_heading("missing"),)
+                ),
+                _section(1, "second"),
+            ),
+            (),
+            "language_interval_heading_page_evidence_missing",
+        ),
+        (
+            (_section(0, "first"), _section(1, "second")),
+            (_promotion((9,)),),
+            "language_interval_heading_path_missing",
+        ),
+    ],
+)
+def test_book_heading_failures_preserve_valid_bookmark_count(
+    children: tuple[StructureElement, ...],
+    promotions: tuple[HeadingPromotion, ...],
+    code: str,
+) -> None:
+    document = _document(
+        children,
+        bounds=_bounds("first", "second"),
+        promotions=promotions,
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("BOOK", "AAA", "BBB"), document
+    )
+
+    assert resolution.intervals == ()
+    assert resolution.observed_interval_count == 2
+    assert resolution.diagnostic is not None
+    assert resolution.diagnostic.code == code
 
 
 def test_non_book_maps_two_heading_pages_to_canonical_order_without_wording() -> None:
@@ -262,7 +326,7 @@ def test_non_book_maps_two_heading_pages_to_canonical_order_without_wording() ->
                 _section(1, "second"),
             ),
             "language_interval_heading_page_evidence_ambiguous",
-            0,
+            1,
         ),
         (
             (
@@ -272,7 +336,7 @@ def test_non_book_maps_two_heading_pages_to_canonical_order_without_wording() ->
                 _section(1, "second"),
             ),
             "language_interval_heading_page_evidence_missing",
-            0,
+            1,
         ),
         (
             (
@@ -319,3 +383,134 @@ def test_non_heading_pages_outside_sheet_ranges_stay_unassigned() -> None:
     ) == ((3, 3), (7, 7))
     assert resolution.intervals[0].start_path == (1,)
     assert resolution.intervals[1].end_path == (2, 1)
+
+
+def test_single_language_profile_returns_empty_success_without_page_inference() -> None:
+    document = _document(
+        (_section(2, "first"), _section(9, "second"), _paragraph("body", 11))
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("A3", "AAA"), document
+    )
+
+    assert resolution == LanguageIntervalResolution((), 0, None)
+
+
+def test_sheet_heading_failure_preserves_known_heading_page_count() -> None:
+    document = _document(
+        (_section(0, "first"), _section(1, "second")),
+        promotions=(_promotion((9,)),),
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("A2", "AAA", "BBB"), document
+    )
+
+    assert resolution.intervals == ()
+    assert resolution.observed_interval_count == 2
+    assert resolution.diagnostic is not None
+    assert resolution.diagnostic.code == "language_interval_heading_path_missing"
+
+
+def test_none_page_evidence_and_multipage_ancestors_do_not_split_sheet_ranges() -> None:
+    first = StructureElement(
+        "Sect",
+        "section",
+        children=(
+            _heading("first", 0),
+            StructureElement("Div", "group"),
+            _paragraph("first body", 0),
+        ),
+    )
+    second = StructureElement(
+        "Sect",
+        "section",
+        children=(_heading("second", 1), _paragraph("second body", 1)),
+    )
+    multipage_ancestor = StructureElement(
+        "Document",
+        "document",
+        children=(StructureElement("Div", "group"), first, second),
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("A2", "AAA", "BBB"), _document((multipage_ancestor,))
+    )
+
+    assert resolution.diagnostic is None
+    assert tuple(interval.language for interval in resolution.intervals) == (
+        "AAA",
+        "BBB",
+    )
+
+
+def test_none_page_evidence_does_not_split_book_ranges() -> None:
+    first = StructureElement(
+        "Sect",
+        "section",
+        children=(
+            _heading("first", 0),
+            StructureElement("Div", "group"),
+            _paragraph("first body", 0),
+        ),
+    )
+    second = _section(1, "second")
+    document = _document(
+        (StructureElement("Document", "document", children=(first, second)),),
+        bounds=_bounds("first", "second"),
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("BOOK", "AAA", "BBB"), document
+    )
+
+    assert resolution.diagnostic is None
+    assert tuple(interval.language for interval in resolution.intervals) == (
+        "AAA",
+        "BBB",
+    )
+
+
+def test_membership_bearing_interleave_still_fails_with_irrelevant_evidence() -> None:
+    document = _document(
+        (
+            _section(0, "first"),
+            StructureElement("Div", "group"),
+            _section(1, "second"),
+            StructureElement("Div", "group"),
+            _paragraph("returns to first", 0),
+        )
+    )
+
+    resolution = resolve_language_intervals(
+        _profile("A2", "AAA", "BBB"), document
+    )
+
+    assert resolution.intervals == ()
+    assert resolution.observed_interval_count == 2
+    assert resolution.diagnostic is not None
+    assert resolution.diagnostic.code == "language_interval_structure_ranges_invalid"
+
+
+def _valid_interval() -> LanguageIntervalEvidence:
+    return LanguageIntervalEvidence(
+        "AAA", 0, 0, (0,), (0,), "structural_language_section"
+    )
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: LanguageIntervalResolution([], 0),
+        lambda: LanguageIntervalResolution((object(),), 1),
+        lambda: LanguageIntervalResolution((), 0, "invalid"),
+        lambda: LanguageIntervalResolution(
+            (_valid_interval(),), 1, Diagnostic("error", "x", "x")
+        ),
+        lambda: LanguageIntervalResolution((_valid_interval(),), 0),
+    ],
+)
+def test_language_interval_resolution_rejects_invalid_result_states(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()

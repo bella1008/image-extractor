@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tagged_pdf_extractor.domain.models import (
+    BookmarkPageBounds,
     ContentFragment,
     Diagnostic,
     LanguageIntervalEvidence,
@@ -19,12 +20,21 @@ class LanguageIntervalResolution:
     diagnostic: Diagnostic | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.intervals, tuple) or not all(
+            isinstance(interval, LanguageIntervalEvidence)
+            for interval in self.intervals
+        ):
+            raise ValueError(
+                "intervals must be a tuple of LanguageIntervalEvidence values"
+            )
         if (
             not isinstance(self.observed_interval_count, int)
             or isinstance(self.observed_interval_count, bool)
             or self.observed_interval_count < 0
         ):
             raise ValueError("observed_interval_count must be a non-negative integer")
+        if self.diagnostic is not None and not isinstance(self.diagnostic, Diagnostic):
+            raise ValueError("diagnostic must be a Diagnostic or None")
         if self.diagnostic is None:
             if self.observed_interval_count != len(self.intervals):
                 raise ValueError("successful resolution count must match its intervals")
@@ -45,15 +55,24 @@ def resolve_language_intervals(
 ) -> LanguageIntervalResolution:
     """Resolve canonical language intervals from structural page evidence only."""
     try:
-        elements = _structure_evidence(document)
+        if profile.language_count == 1:
+            return LanguageIntervalResolution((), 0)
         if profile.doc_type == "BOOK":
-            return _resolve_book(profile, document, elements)
+            bounds = _validated_book_bounds(profile, document)
+            try:
+                elements = _structure_evidence(document)
+                return _resolve_book(profile, bounds, document, elements)
+            except _ResolutionFailure as failure:
+                if failure.observed_interval_count is not None:
+                    raise
+                raise failure.with_observed_interval_count(len(bounds)) from failure
+        elements = _structure_evidence(document)
         heading_pages = _heading_pages(document, elements)
         return _resolve_sheet(profile, elements, heading_pages)
     except _ResolutionFailure as failure:
         return LanguageIntervalResolution(
             (),
-            failure.observed_interval_count,
+            failure.observed_interval_count or 0,
             Diagnostic("error", failure.code, failure.message, failure.context),
         )
 
@@ -63,7 +82,7 @@ class _ResolutionFailure(Exception):
         self,
         code: str,
         message: str,
-        observed_interval_count: int,
+        observed_interval_count: int | None,
         context: dict[str, object] | None = None,
     ) -> None:
         super().__init__(message)
@@ -71,6 +90,11 @@ class _ResolutionFailure(Exception):
         self.message = message
         self.observed_interval_count = observed_interval_count
         self.context = context or {}
+
+    def with_observed_interval_count(self, count: int) -> _ResolutionFailure:
+        if self.observed_interval_count is not None:
+            return self
+        return _ResolutionFailure(self.code, self.message, count, self.context)
 
 
 def _structure_evidence(document: TaggedDocument) -> tuple[_ElementEvidence, ...]:
@@ -113,54 +137,73 @@ def _valid_page_index(value: object, path: tuple[int, ...]) -> int:
 def _heading_pages(
     document: TaggedDocument,
     elements: tuple[_ElementEvidence, ...],
+    known_interval_count: int | None = None,
 ) -> tuple[tuple[tuple[int, ...], int], ...]:
     by_path = {item.path: item for item in elements}
     heading_paths = {
         item.path for item in elements if item.element.semantic_role == "heading"
     }
-    for promotion in document.heading_promotions:
-        if promotion.child_path not in by_path:
-            raise _ResolutionFailure(
-                "language_interval_heading_path_missing",
-                "A promoted heading path does not identify a StructureElement.",
-                0,
-                {"child_path": promotion.child_path},
-            )
-        heading_paths.add(promotion.child_path)
+    missing_promotion_paths = tuple(
+        promotion.child_path
+        for promotion in document.heading_promotions
+        if promotion.child_path not in by_path
+    )
+    heading_paths.update(
+        promotion.child_path
+        for promotion in document.heading_promotions
+        if promotion.child_path in by_path
+    )
 
-    if not heading_paths:
-        raise _ResolutionFailure(
-            "language_interval_heading_page_evidence_missing",
-            "No source or promoted heading has page evidence.",
-            0,
-        )
-
+    first_evidence_failure: tuple[str, str, dict[str, object]] | None = None
     resolved: list[tuple[tuple[int, ...], int]] = []
     for path in sorted(heading_paths):
         pages = by_path[path].pages
         if not pages:
-            raise _ResolutionFailure(
-                "language_interval_heading_page_evidence_missing",
-                "A source or promoted heading lacks page evidence.",
-                0,
-                {"child_path": path},
-            )
-        if len(pages) != 1:
-            raise _ResolutionFailure(
-                "language_interval_heading_page_evidence_ambiguous",
-                "A source or promoted heading spans multiple physical pages.",
-                0,
-                {"child_path": path, "page_indices": tuple(sorted(pages))},
-            )
+            if first_evidence_failure is None:
+                first_evidence_failure = (
+                    "language_interval_heading_page_evidence_missing",
+                    "A source or promoted heading lacks page evidence.",
+                    {"child_path": path},
+                )
+            continue
+        if len(pages) > 1:
+            if first_evidence_failure is None:
+                first_evidence_failure = (
+                    "language_interval_heading_page_evidence_ambiguous",
+                    "A source or promoted heading spans multiple physical pages.",
+                    {"child_path": path, "page_indices": tuple(sorted(pages))},
+                )
+            continue
         resolved.append((path, next(iter(pages))))
+
+    observed_count = (
+        known_interval_count
+        if known_interval_count is not None
+        else len({page for _, page in resolved})
+    )
+    if missing_promotion_paths:
+        raise _ResolutionFailure(
+            "language_interval_heading_path_missing",
+            "A promoted heading path does not identify a StructureElement.",
+            observed_count,
+            {"child_path": missing_promotion_paths[0]},
+        )
+    if first_evidence_failure is not None:
+        code, message, context = first_evidence_failure
+        raise _ResolutionFailure(code, message, observed_count, context)
+    if not heading_paths:
+        raise _ResolutionFailure(
+            "language_interval_heading_page_evidence_missing",
+            "No source or promoted heading has page evidence.",
+            observed_count,
+        )
     return tuple(resolved)
 
 
-def _resolve_book(
+def _validated_book_bounds(
     profile: PdfProfile,
     document: TaggedDocument,
-    elements: tuple[_ElementEvidence, ...],
-) -> LanguageIntervalResolution:
+) -> tuple[BookmarkPageBounds, ...]:
     bounds = document.bookmark_page_bounds
     if not bounds:
         raise _ResolutionFailure(
@@ -189,16 +232,17 @@ def _resolve_book(
             "Bookmark page bounds must be strictly increasing in ordinal order.",
             len(bounds),
         )
+    return bounds
 
-    document_pages = {page for item in elements for page in item.pages}
-    if not document_pages or bounds[-1].end_page_index > max(document_pages):
-        raise _ResolutionFailure(
-            "language_interval_bookmark_out_of_page",
-            "Bookmark page bounds extend beyond observed document pages.",
-            len(bounds),
-        )
 
-    heading_pages = _heading_pages(document, elements)
+def _resolve_book(
+    profile: PdfProfile,
+    bounds: tuple[BookmarkPageBounds, ...],
+    document: TaggedDocument,
+    elements: tuple[_ElementEvidence, ...],
+) -> LanguageIntervalResolution:
+
+    heading_pages = _heading_pages(document, elements, len(bounds))
     for path, page in heading_pages:
         memberships = tuple(
             index
@@ -237,7 +281,7 @@ def _resolve_book(
 
 def _book_membership(
     pages: frozenset[int],
-    bounds: tuple[object, ...],
+    bounds: tuple[BookmarkPageBounds, ...],
 ) -> int | None:
     if not pages:
         return None
@@ -307,16 +351,19 @@ def _contiguous_path_bounds(
     expected_memberships: tuple[int, ...],
     observed_interval_count: int,
 ) -> dict[int, tuple[tuple[int, ...], tuple[int, ...]]]:
+    membership_evidence = tuple(
+        item for item in memberships if item[1] is not None
+    )
     path_bounds: dict[int, tuple[tuple[int, ...], tuple[int, ...]]] = {}
     previous_end = -1
     for membership in expected_memberships:
         positions = tuple(
             index
-            for index, (_, observed) in enumerate(memberships)
+            for index, (_, observed) in enumerate(membership_evidence)
             if observed == membership
         )
         if not positions or positions[0] <= previous_end or any(
-            memberships[index][1] != membership
+            membership_evidence[index][1] != membership
             for index in range(positions[0], positions[-1] + 1)
         ):
             raise _ResolutionFailure(
@@ -326,8 +373,8 @@ def _contiguous_path_bounds(
                 {"interval_ordinal": membership + 1},
             )
         path_bounds[membership] = (
-            memberships[positions[0]][0],
-            memberships[positions[-1]][0],
+            membership_evidence[positions[0]][0],
+            membership_evidence[positions[-1]][0],
         )
         previous_end = positions[-1]
     return path_bounds

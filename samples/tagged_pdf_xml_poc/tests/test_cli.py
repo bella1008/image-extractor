@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -368,3 +369,147 @@ def test_cli_does_not_swallow_keyboard_interrupt(
 
     with pytest.raises(KeyboardInterrupt):
         cli.main(["manual.pdf", "--output", "out"])
+
+
+def test_build_use_case_accepts_injected_profile_mapping_path(tmp_path: Path) -> None:
+    from tagged_pdf_extractor import cli
+    from tagged_pdf_extractor.infrastructure.json_profile_repository import (
+        JsonProfileRepository,
+    )
+
+    mapping = tmp_path / "profiles.json"
+    mapping.write_text(
+        json.dumps(
+            [
+                {
+                    "source_token": "XX_ENG",
+                    "languages": "ENG",
+                    "doc_type": "A3",
+                    "language_count": 1,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    use_case = cli._build_use_case(mapping)
+
+    assert isinstance(use_case.profile_repository, JsonProfileRepository)
+    assert use_case.profile_repository._mapping_path == mapping
+
+
+def test_profile_mapping_search_uses_only_module_ancestors(tmp_path: Path) -> None:
+    from tagged_pdf_extractor import cli
+
+    repository_root = tmp_path / "repository"
+    module_file = repository_root / "package" / "src" / "cli.py"
+    module_file.parent.mkdir(parents=True)
+    module_file.write_text("", encoding="utf-8")
+    mapping = (
+        repository_root
+        / "metadata"
+        / "pdf_profile_mapping"
+        / "pdf_profile_mapping.json"
+    )
+    mapping.parent.mkdir(parents=True)
+    mapping.write_text("[]", encoding="utf-8")
+    misleading = tmp_path / "misleading" / "metadata" / "pdf_profile_mapping"
+    misleading.mkdir(parents=True)
+    (misleading / "pdf_profile_mapping.json").write_text("[]", encoding="utf-8")
+
+    assert cli._resolve_profile_mapping_path(module_file=module_file) == mapping
+
+
+def test_profile_mapping_search_accepts_explicit_repository_root(
+    tmp_path: Path,
+) -> None:
+    from tagged_pdf_extractor import cli
+
+    repository_root = tmp_path / "repository"
+    mapping = (
+        repository_root
+        / "metadata"
+        / "pdf_profile_mapping"
+        / "pdf_profile_mapping.json"
+    )
+    mapping.parent.mkdir(parents=True)
+    mapping.write_text("[]", encoding="utf-8")
+
+    assert (
+        cli._resolve_profile_mapping_path(repository_root=repository_root)
+        == mapping
+    )
+
+
+def test_profile_mapping_search_reports_stable_missing_error(tmp_path: Path) -> None:
+    from tagged_pdf_extractor import cli
+    from tagged_pdf_extractor.ports.profile_repository import ProfileMappingFileError
+
+    module_file = tmp_path / "repository" / "package" / "cli.py"
+    module_file.parent.mkdir(parents=True)
+    module_file.write_text("", encoding="utf-8")
+
+    with pytest.raises(
+        ProfileMappingFileError,
+        match=(
+            "Canonical PDF profile mapping was not found in module ancestors: "
+            "metadata/pdf_profile_mapping/pdf_profile_mapping.json"
+        ),
+    ):
+        cli._resolve_profile_mapping_path(module_file=module_file)
+
+
+def test_profile_mapping_search_reports_stable_ambiguous_error(tmp_path: Path) -> None:
+    from tagged_pdf_extractor import cli
+    from tagged_pdf_extractor.ports.profile_repository import ProfileMappingFileError
+
+    repository_root = tmp_path / "repository"
+    package_root = repository_root / "package"
+    module_file = package_root / "src" / "cli.py"
+    module_file.parent.mkdir(parents=True)
+    module_file.write_text("", encoding="utf-8")
+    for root in (repository_root, package_root):
+        mapping = root / "metadata" / "pdf_profile_mapping"
+        mapping.mkdir(parents=True)
+        (mapping / "pdf_profile_mapping.json").write_text("[]", encoding="utf-8")
+
+    with pytest.raises(
+        ProfileMappingFileError,
+        match=(
+            "Canonical PDF profile mapping is ambiguous across module ancestors: "
+            "metadata/pdf_profile_mapping/pdf_profile_mapping.json"
+        ),
+    ):
+        cli._resolve_profile_mapping_path(module_file=module_file)
+
+
+@pytest.mark.parametrize("kind", ["unknown", "malformed"])
+def test_cli_returns_two_for_typed_profile_lookup_errors(
+    kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from tagged_pdf_extractor import cli
+    from tagged_pdf_extractor.ports.profile_repository import (
+        InvalidPdfFilenameError,
+        UnknownSourceTokenError,
+    )
+
+    error = (
+        UnknownSourceTokenError("No canonical PDF profile for source_token 'XX_L02'")
+        if kind == "unknown"
+        else InvalidPdfFilenameError(
+            "Cannot derive valid source_token from PDF filename 'manual.pdf'"
+        )
+    )
+
+    class FailingUseCase:
+        def run(self, pdf: Path, output: Path, overwrite: bool = False):
+            raise error
+
+    monkeypatch.setattr(cli, "_build_use_case", lambda: FailingUseCase())
+
+    assert cli.main(["manual.pdf", "--output", "out"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"error: {error}\n"

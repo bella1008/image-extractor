@@ -20,12 +20,26 @@ from tagged_pdf_extractor.infrastructure.output_bundle import (
     OutputBundleWriter,
     OutputCollisionError,
 )
+from tagged_pdf_extractor.infrastructure.json_profile_repository import (
+    JsonProfileRepository,
+)
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
     PyMuPdfBaselineReader,
 )
 from tagged_pdf_extractor.infrastructure.pypdf_reader import (
     TaggedPdfError,
     TaggedPdfReader,
+)
+from tagged_pdf_extractor.ports.profile_repository import (
+    ProfileMappingFileError,
+    ProfileRepositoryError,
+)
+
+
+_PROFILE_MAPPING_RELATIVE_PATH = (
+    Path("metadata")
+    / "pdf_profile_mapping"
+    / "pdf_profile_mapping.json"
 )
 
 
@@ -41,6 +55,7 @@ _EXPECTED_ERRORS = (
     ET.ParseError,
     ValueError,
     TypeError,
+    ProfileRepositoryError,
 )
 
 
@@ -66,12 +81,64 @@ def _configure_utf8(stream: TextIO) -> None:
         reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
-def _build_use_case() -> ExtractDocument:
+def _resolve_profile_mapping_path(
+    profile_mapping_path: str | Path | None = None,
+    *,
+    repository_root: str | Path | None = None,
+    module_file: str | Path | None = None,
+) -> Path:
+    if profile_mapping_path is not None:
+        if repository_root is not None:
+            raise ValueError(
+                "profile_mapping_path and repository_root are mutually exclusive"
+            )
+        return Path(profile_mapping_path)
+
+    if repository_root is not None:
+        candidate = Path(repository_root).resolve() / _PROFILE_MAPPING_RELATIVE_PATH
+        if not candidate.is_file():
+            raise ProfileMappingFileError(
+                "Canonical PDF profile mapping was not found under repository root: "
+                f"{_PROFILE_MAPPING_RELATIVE_PATH.as_posix()}"
+            )
+        return candidate
+
+    anchor = Path(module_file) if module_file is not None else Path(__file__)
+    module_path = anchor.resolve()
+    search_roots: list[Path] = []
+    for parent in module_path.parents:
+        search_roots.append(parent)
+        if (parent / ".git").exists():
+            break
+    candidates = tuple(
+        parent / _PROFILE_MAPPING_RELATIVE_PATH
+        for parent in search_roots
+        if (parent / _PROFILE_MAPPING_RELATIVE_PATH).is_file()
+    )
+    portable_relative_path = _PROFILE_MAPPING_RELATIVE_PATH.as_posix()
+    if not candidates:
+        raise ProfileMappingFileError(
+            "Canonical PDF profile mapping was not found in module ancestors: "
+            f"{portable_relative_path}"
+        )
+    if len(candidates) != 1:
+        raise ProfileMappingFileError(
+            "Canonical PDF profile mapping is ambiguous across module ancestors: "
+            f"{portable_relative_path}"
+        )
+    return candidates[0]
+
+
+def _build_use_case(
+    profile_mapping_path: str | Path | None = None,
+) -> ExtractDocument:
+    mapping_path = _resolve_profile_mapping_path(profile_mapping_path)
     return ExtractDocument(
         TaggedPdfReader(),
         PyMuPdfBaselineReader(),
         QualityEvaluator(),
         OutputBundleWriter(),
+        JsonProfileRepository(mapping_path),
     )
 
 

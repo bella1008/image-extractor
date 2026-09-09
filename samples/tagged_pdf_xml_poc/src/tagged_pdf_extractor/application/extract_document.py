@@ -4,9 +4,16 @@ from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     ExtractionArtifacts,
+    MultilingualHeadingAudit,
     QualityReport,
     StructureElement,
     TaggedDocument,
+)
+from tagged_pdf_extractor.domain.language_interval_resolution import (
+    resolve_language_intervals,
+)
+from tagged_pdf_extractor.domain.multilingual_heading_validation import (
+    validate_multilingual_headings,
 )
 from tagged_pdf_extractor.domain.list_continuation_detection import (
     detect_list_continuation_hints,
@@ -28,6 +35,7 @@ from tagged_pdf_extractor.ports.output_writer import (
     OutputWriterPort,
 )
 from tagged_pdf_extractor.ports.pdf_reader import TaggedPdfReaderPort
+from tagged_pdf_extractor.ports.profile_repository import ProfileRepositoryPort
 
 
 class ExtractDocument:
@@ -37,11 +45,13 @@ class ExtractDocument:
         baseline_reader: BaselineReaderPort,
         evaluator: QualityEvaluator,
         writer: OutputWriterPort,
+        profile_repository: ProfileRepositoryPort | None = None,
     ) -> None:
         self.reader = reader
         self.baseline_reader = baseline_reader
         self.evaluator = evaluator
         self.writer = writer
+        self.profile_repository = profile_repository
 
     def run(
         self,
@@ -58,6 +68,29 @@ class ExtractDocument:
 
         document = self.reader.read(pdf_path)
         document = promote_numbered_chapter_headings(document)
+        if self.profile_repository is not None:
+            profile = self.profile_repository.lookup(pdf_path)
+            resolution = resolve_language_intervals(profile, document)
+            if resolution.diagnostic is None:
+                audit = validate_multilingual_headings(
+                    profile, resolution.intervals, document
+                )
+            else:
+                audit = MultilingualHeadingAudit(
+                    applicable=True,
+                    passed=False,
+                    expected_interval_count=profile.language_count,
+                    observed_interval_count=resolution.observed_interval_count,
+                    interval_count_matches=(
+                        profile.language_count == resolution.observed_interval_count
+                    ),
+                    total_heading_count_matches=None,
+                    heading_level_sequence_matches=None,
+                    heading_origin_sequence_matches=None,
+                    numbered_label_sequence_matches=None,
+                    diagnostics=(resolution.diagnostic,),
+                )
+            document = replace(document, multilingual_heading_audit=audit)
         document = detect_table_subtitles(document)
         document = apply_profile_review_formatting(document)
         document = _detect_list_continuations(document)

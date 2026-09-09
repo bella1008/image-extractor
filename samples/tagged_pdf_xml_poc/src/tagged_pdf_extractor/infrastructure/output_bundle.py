@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Callable
 from xml.etree import ElementTree as ET
 
+from tagged_pdf_extractor.application.evaluate_quality import (
+    multilingual_heading_audit_to_data,
+)
 from tagged_pdf_extractor.domain.models import (
     ExtractionArtifacts,
     QualityReport,
@@ -789,6 +792,16 @@ class OutputBundleWriter:
         report: QualityReport,
         staging: Path,
     ) -> None:
+        report_audit = report.metrics.get("multilingual_heading_audit")
+        if (
+            report_audit is not None
+            or document.multilingual_heading_audit is not None
+        ) and report_audit != multilingual_heading_audit_to_data(
+            document.multilingual_heading_audit
+        ):
+            raise ValueError(
+                "report multilingual heading audit does not match document audit"
+            )
         raw_path = staging / RAW_XML_NAME
         semantic_path = staging / SEMANTIC_XML_NAME
         report_path = staging / REPORT_JSON_NAME

@@ -19,6 +19,7 @@ from tagged_pdf_extractor.domain.models import (
     ExtractionArtifacts,
     HeadingPromotion,
     LineBreakHint,
+    MultilingualHeadingAudit,
     QualityReport,
     StructureElement,
     SubtitleHint,
@@ -90,6 +91,85 @@ def test_required_output_names_are_the_four_transaction_artifacts() -> None:
         "extraction_report.json",
         "semantic_document.md",
     )
+
+
+def test_output_bundle_audit_changes_report_and_xml_but_not_markdown(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "ENG",
+        (),
+        (
+            StructureElement(
+                "H1",
+                "heading",
+                1,
+                children=(ContentFragment(0, 1, ("Source heading",)),),
+            ),
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(ContentFragment(0, 2, ("Source body",)),),
+            ),
+        ),
+    )
+    not_applicable = MultilingualHeadingAudit(
+        False, True, 1, 0, None, None, None, None, None
+    )
+    configured = replace(document, multilingual_heading_audit=not_applicable)
+    evaluator = QualityEvaluator()
+    legacy_report = evaluator.evaluate(
+        document, "Source heading Source body", xml_round_trip_ok=True
+    )
+    configured_report = evaluator.evaluate(
+        configured, "Source heading Source body", xml_round_trip_ok=True
+    )
+
+    legacy = OutputBundleWriter().write(
+        document, legacy_report, tmp_path / "legacy"
+    )
+    current = OutputBundleWriter().write(
+        configured, configured_report, tmp_path / "configured"
+    )
+
+    assert legacy.semantic_markdown.read_bytes() == current.semantic_markdown.read_bytes()
+    assert "multilingual-heading-audit" not in legacy.raw_xml.read_text(
+        encoding="utf-8"
+    )
+    assert "status=\"not_applicable\"" in current.semantic_xml.read_text(
+        encoding="utf-8"
+    )
+    payload = json.loads(current.report_json.read_text(encoding="utf-8"))
+    assert payload["metrics"]["multilingual_heading_audit"]["status"] == (
+        "not_applicable"
+    )
+    assert isinstance(
+        payload["metrics"]["multilingual_heading_audit"][
+            "expected_interval_count"
+        ],
+        int,
+    )
+
+
+def test_output_bundle_rejects_report_audit_inconsistent_with_document(
+    tmp_path: Path,
+) -> None:
+    document = replace(
+        _document(tmp_path),
+        multilingual_heading_audit=MultilingualHeadingAudit(
+            False, True, 1, 0, None, None, None, None, None
+        ),
+    )
+    report = QualityEvaluator().evaluate(document, "", xml_round_trip_ok=True)
+    report.metrics["multilingual_heading_audit"] = {
+        **report.metrics["multilingual_heading_audit"],
+        "status": "passed",
+    }
+
+    with pytest.raises(ValueError, match="multilingual heading audit"):
+        OutputBundleWriter().write(document, report, tmp_path / "output")
 
 
 def test_output_bundle_keeps_raw_list_and_renders_one_promoted_heading(

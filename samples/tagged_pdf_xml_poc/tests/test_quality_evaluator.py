@@ -16,7 +16,12 @@ from tagged_pdf_extractor.application.evaluate_quality import (
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    HeadingMismatchPosition,
     HeadingPromotion,
+    HeadingSignatureEntry,
+    LanguageHeadingSignature,
+    LanguageIntervalEvidence,
+    MultilingualHeadingAudit,
     NumberedHeadingSeriesAudit,
     StructureElement,
     TaggedDocument,
@@ -119,6 +124,96 @@ def _body_only_document(text: str) -> TaggedDocument:
             "paragraph",
             children=(ContentFragment(0, 1, (text,)),),
         )
+    )
+
+
+def _entry(
+    level: int = 1,
+    origin: str = "source",
+    label: str | None = None,
+) -> HeadingSignatureEntry:
+    return HeadingSignatureEntry(level, origin, label)  # type: ignore[arg-type]
+
+
+def _signature(
+    language: str,
+    ordinal: int,
+    entries: tuple[HeadingSignatureEntry, ...],
+) -> LanguageHeadingSignature:
+    interval = LanguageIntervalEvidence(
+        language=language,
+        start_page_index=ordinal - 1,
+        end_page_index=ordinal - 1,
+        start_path=(ordinal - 1,),
+        end_path=(ordinal - 1,),
+        evidence_origin=(
+            "bookmark" if ordinal == 1 else "structural_language_section"
+        ),
+    )
+    return LanguageHeadingSignature(language, interval, entries)
+
+
+def _audit(
+    *,
+    component: str | None = None,
+) -> MultilingualHeadingAudit:
+    expected_entries = (_entry(1), _entry(2, "promoted", "01"))
+    observed_entries = expected_entries
+    states = {"count": True, "level": True, "origin": True, "numbered_label": True}
+    mismatches: tuple[HeadingMismatchPosition, ...] = ()
+    if component == "count":
+        observed_entries = expected_entries[:1]
+        states[component] = False
+        mismatches = (
+            HeadingMismatchPosition("C-FRA", 1, component, expected_entries[1], None),
+        )
+    elif component == "level":
+        observed_entries = (expected_entries[0], _entry(3, "promoted", "01"))
+        states[component] = False
+        mismatches = (
+            HeadingMismatchPosition(
+                "C-FRA", 1, component, expected_entries[1], observed_entries[1]
+            ),
+        )
+    elif component == "origin":
+        observed_entries = (expected_entries[0], _entry(2))
+        states[component] = False
+        mismatches = (
+            HeadingMismatchPosition(
+                "C-FRA", 1, component, expected_entries[1], observed_entries[1]
+            ),
+        )
+    elif component == "numbered_label":
+        observed_entries = (expected_entries[0], _entry(2, "promoted", "02"))
+        states[component] = False
+        mismatches = (
+            HeadingMismatchPosition(
+                "C-FRA", 1, component, expected_entries[1], observed_entries[1]
+            ),
+        )
+    return MultilingualHeadingAudit(
+        applicable=True,
+        passed=component is None,
+        expected_interval_count=2,
+        observed_interval_count=2,
+        interval_count_matches=True,
+        total_heading_count_matches=states["count"],
+        heading_level_sequence_matches=states["level"],
+        heading_origin_sequence_matches=states["origin"],
+        numbered_label_sequence_matches=states["numbered_label"],
+        signatures=(
+            _signature("ENG", 1, expected_entries),
+            _signature("C-FRA", 2, observed_entries),
+        ),
+        mismatch_positions=mismatches,
+    )
+
+
+def _evaluate_with_audit(audit: MultilingualHeadingAudit | None) -> QualityReport:
+    return QualityEvaluator().evaluate(
+        replace(_passing_document(), multilingual_heading_audit=audit),
+        "Heading Body",
+        xml_round_trip_ok=True,
     )
 
 
@@ -1068,6 +1163,11 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "numbered_heading_series_valid",
         "numbered_heading_series_counts_consistent",
         "numbered_heading_typography_valid",
+        "multilingual_interval_count_valid",
+        "multilingual_heading_count_parity",
+        "multilingual_heading_level_parity",
+        "multilingual_heading_origin_parity",
+        "multilingual_numbered_label_parity",
     )
     assert report.hard_gates == {
         "is_marked": False,
@@ -1083,6 +1183,11 @@ def test_hard_gates_are_fixed_and_all_must_pass() -> None:
         "numbered_heading_series_valid": True,
         "numbered_heading_series_counts_consistent": True,
         "numbered_heading_typography_valid": True,
+        "multilingual_interval_count_valid": True,
+        "multilingual_heading_count_parity": True,
+        "multilingual_heading_level_parity": True,
+        "multilingual_heading_origin_parity": True,
+        "multilingual_numbered_label_parity": True,
     }
     assert report.status == "fail"
 
@@ -1226,6 +1331,210 @@ def test_each_unresolved_reference_code_fails_resolved_references_gate(
     assert report.metrics["unresolved_reference_count"] == 1
     assert report.hard_gates["resolved_references"] is False
     assert report.status == "fail"
+
+
+def test_unconfigured_audit_preserves_legacy_gates_with_explicit_metric_status() -> None:
+    report = _evaluate_with_audit(None)
+
+    assert report.status == "pass"
+    assert all(report.hard_gates[name] for name in tuple(report.hard_gates)[-5:])
+    assert report.metrics["multilingual_heading_audit"] == {
+        "applicable": None,
+        "status": "not_configured",
+        "passed": None,
+        "expected_interval_count": None,
+        "observed_interval_count": None,
+        "interval_count_matches": None,
+        "total_heading_count_matches": None,
+        "heading_level_sequence_matches": None,
+        "heading_origin_sequence_matches": None,
+        "numbered_label_sequence_matches": None,
+        "languages": [],
+        "mismatch_positions": [],
+        "diagnostics": [],
+    }
+
+
+def test_single_language_audit_is_not_applicable_without_failing_gates() -> None:
+    audit = MultilingualHeadingAudit(
+        applicable=False,
+        passed=True,
+        expected_interval_count=1,
+        observed_interval_count=0,
+        interval_count_matches=None,
+        total_heading_count_matches=None,
+        heading_level_sequence_matches=None,
+        heading_origin_sequence_matches=None,
+        numbered_label_sequence_matches=None,
+    )
+
+    report = _evaluate_with_audit(audit)
+
+    assert report.status == "pass"
+    assert all(report.hard_gates[name] for name in tuple(report.hard_gates)[-5:])
+    metric = report.metrics["multilingual_heading_audit"]
+    assert metric["applicable"] is False
+    assert metric["status"] == "not_applicable"
+    assert metric["passed"] is True
+    assert metric["expected_interval_count"] == 1
+    assert metric["observed_interval_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("expected_count", "observed_count", "matches", "code"),
+    (
+        (2, 1, False, "multilingual_heading_interval_count_mismatch"),
+        (2, 2, True, "multilingual_heading_interval_boundary_invalid"),
+    ),
+    ids=("count-mismatch", "same-count-invalid-boundary"),
+)
+def test_pending_interval_failure_only_fails_interval_gate(
+    expected_count: int,
+    observed_count: int,
+    matches: bool,
+    code: str,
+) -> None:
+    audit = MultilingualHeadingAudit(
+        applicable=True,
+        passed=False,
+        expected_interval_count=expected_count,
+        observed_interval_count=observed_count,
+        interval_count_matches=matches,
+        total_heading_count_matches=None,
+        heading_level_sequence_matches=None,
+        heading_origin_sequence_matches=None,
+        numbered_label_sequence_matches=None,
+        diagnostics=(
+            Diagnostic(
+                "error",
+                code,
+                "interval resolution failed",
+                {"reason": "missing_start_path", "path": (1, 0)},
+            ),
+        ),
+    )
+
+    report = _evaluate_with_audit(audit)
+
+    assert report.status == "fail"
+    assert report.hard_gates["multilingual_interval_count_valid"] is False
+    assert all(
+        report.hard_gates[name]
+        for name in (
+            "multilingual_heading_count_parity",
+            "multilingual_heading_level_parity",
+            "multilingual_heading_origin_parity",
+            "multilingual_numbered_label_parity",
+        )
+    )
+    metric = report.metrics["multilingual_heading_audit"]
+    assert metric["status"] == "blocked_by_invalid_interval"
+    assert metric["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": code,
+            "message": "interval resolution failed",
+            "context": {"path": [1, 0], "reason": "missing_start_path"},
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("component", "failed_gate"),
+    (
+        ("count", "multilingual_heading_count_parity"),
+        ("level", "multilingual_heading_level_parity"),
+        ("origin", "multilingual_heading_origin_parity"),
+        ("numbered_label", "multilingual_numbered_label_parity"),
+    ),
+)
+def test_each_signature_mismatch_fails_only_its_matching_gate(
+    component: str,
+    failed_gate: str,
+) -> None:
+    report = _evaluate_with_audit(_audit(component=component))
+
+    failed = [name for name, passed in report.hard_gates.items() if not passed]
+    assert failed == [failed_gate]
+    assert report.status == "fail"
+    assert report.metrics["multilingual_heading_audit"]["status"] == "failed"
+
+
+def test_mismatch_metric_contains_expected_and_observed_entries_without_wording() -> None:
+    metric = _evaluate_with_audit(_audit(component="level")).metrics[
+        "multilingual_heading_audit"
+    ]
+
+    assert metric["mismatch_positions"] == [
+        {
+            "language": "C-FRA",
+            "position": 1,
+            "component": "level",
+            "expected": {
+                "heading_level": 2,
+                "heading_origin": "promoted",
+                "numbered_label": "01",
+            },
+            "observed": {
+                "heading_level": 3,
+                "heading_origin": "promoted",
+                "numbered_label": "01",
+            },
+        }
+    ]
+    assert "wording" not in repr(metric).lower()
+
+
+def test_passing_audit_report_has_exact_deterministic_json_ready_shape() -> None:
+    report = _evaluate_with_audit(_audit())
+
+    assert report.status == "pass"
+    assert report.metrics["multilingual_heading_audit"] == {
+        "applicable": True,
+        "status": "passed",
+        "passed": True,
+        "expected_interval_count": 2,
+        "observed_interval_count": 2,
+        "interval_count_matches": True,
+        "total_heading_count_matches": True,
+        "heading_level_sequence_matches": True,
+        "heading_origin_sequence_matches": True,
+        "numbered_label_sequence_matches": True,
+        "languages": [
+            {
+                "ordinal": 1,
+                "language": "ENG",
+                "interval": {
+                    "start_page_index": 0,
+                    "end_page_index": 0,
+                    "start_path": [0],
+                    "end_path": [0],
+                    "evidence_origin": "bookmark",
+                },
+                "heading_total": 2,
+                "heading_levels": [1, 2],
+                "heading_origins": ["source", "promoted"],
+                "numbered_labels": [None, "01"],
+            },
+            {
+                "ordinal": 2,
+                "language": "C-FRA",
+                "interval": {
+                    "start_page_index": 1,
+                    "end_page_index": 1,
+                    "start_path": [1],
+                    "end_path": [1],
+                    "evidence_origin": "structural_language_section",
+                },
+                "heading_total": 2,
+                "heading_levels": [1, 2],
+                "heading_origins": ["source", "promoted"],
+                "numbered_labels": [None, "01"],
+            },
+        ],
+        "mismatch_positions": [],
+        "diagnostics": [],
+    }
 
 
 def test_negative_page_index_is_retained_as_auditable_page_bucket() -> None:

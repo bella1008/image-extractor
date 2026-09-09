@@ -5,7 +5,8 @@ import sys
 import unicodedata
 from bisect import bisect_left
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from tagged_pdf_extractor.domain.heading_promotion_validation import (
@@ -14,6 +15,8 @@ from tagged_pdf_extractor.domain.heading_promotion_validation import (
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     Diagnostic,
+    HeadingSignatureEntry,
+    MultilingualHeadingAudit,
     QualityReport,
     StructureElement,
     TaggedDocument,
@@ -56,6 +59,161 @@ _SPARSE_MATCH_PAIR_BUDGET = 10_000_000
 _SPARSE_MEMORY_BUDGET_BYTES = 16 * 1024 * 1024
 _PREPASS_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
 _PREPASS_CHECK_INTERVAL = 1_024
+
+_MULTILINGUAL_GATE_NAMES = (
+    "multilingual_interval_count_valid",
+    "multilingual_heading_count_parity",
+    "multilingual_heading_level_parity",
+    "multilingual_heading_origin_parity",
+    "multilingual_numbered_label_parity",
+)
+
+
+def multilingual_heading_audit_to_data(
+    audit: MultilingualHeadingAudit | None,
+) -> dict[str, Any]:
+    """Return the canonical report/XML view of the approved audit model."""
+    if audit is None:
+        return {
+            "applicable": None,
+            "status": "not_configured",
+            "passed": None,
+            "expected_interval_count": None,
+            "observed_interval_count": None,
+            "interval_count_matches": None,
+            "total_heading_count_matches": None,
+            "heading_level_sequence_matches": None,
+            "heading_origin_sequence_matches": None,
+            "numbered_label_sequence_matches": None,
+            "languages": [],
+            "mismatch_positions": [],
+            "diagnostics": [],
+        }
+
+    replace(audit)  # Re-run the approved model invariants at the output boundary.
+    pending = audit.applicable and audit.total_heading_count_matches is None
+    status = (
+        "not_applicable"
+        if not audit.applicable
+        else "blocked_by_invalid_interval"
+        if pending
+        else "passed"
+        if audit.passed
+        else "failed"
+    )
+
+    def entry_data(
+        entry: HeadingSignatureEntry | None,
+    ) -> dict[str, object] | None:
+        if entry is None:
+            return None
+        return {
+            "heading_level": entry.heading_level,
+            "heading_origin": entry.heading_origin,
+            "numbered_label": entry.numbered_label,
+        }
+
+    languages = []
+    for ordinal, signature in enumerate(audit.signatures, start=1):
+        interval = signature.interval
+        languages.append(
+            {
+                "ordinal": ordinal,
+                "language": signature.language,
+                "interval": {
+                    "start_page_index": interval.start_page_index,
+                    "end_page_index": interval.end_page_index,
+                    "start_path": list(interval.start_path),
+                    "end_path": list(interval.end_path),
+                    "evidence_origin": interval.evidence_origin,
+                },
+                "heading_total": len(signature.entries),
+                "heading_levels": [
+                    entry.heading_level for entry in signature.entries
+                ],
+                "heading_origins": [
+                    entry.heading_origin for entry in signature.entries
+                ],
+                "numbered_labels": [
+                    entry.numbered_label for entry in signature.entries
+                ],
+            }
+        )
+    return {
+        "applicable": audit.applicable,
+        "status": status,
+        "passed": audit.passed,
+        "expected_interval_count": audit.expected_interval_count,
+        "observed_interval_count": audit.observed_interval_count,
+        "interval_count_matches": audit.interval_count_matches,
+        "total_heading_count_matches": audit.total_heading_count_matches,
+        "heading_level_sequence_matches": audit.heading_level_sequence_matches,
+        "heading_origin_sequence_matches": audit.heading_origin_sequence_matches,
+        "numbered_label_sequence_matches": audit.numbered_label_sequence_matches,
+        "languages": languages,
+        "mismatch_positions": [
+            {
+                "language": mismatch.language,
+                "position": mismatch.position,
+                "component": mismatch.component,
+                "expected": entry_data(mismatch.expected),
+                "observed": entry_data(mismatch.observed),
+            }
+            for mismatch in audit.mismatch_positions
+        ],
+        "diagnostics": [
+            {
+                "severity": diagnostic.severity,
+                "code": diagnostic.code,
+                "message": diagnostic.message,
+                "context": _stable_json_value(diagnostic.context),
+            }
+            for diagnostic in audit.diagnostics
+        ],
+    }
+
+
+def _stable_json_value(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            item.name: _stable_json_value(getattr(value, item.name))
+            for item in fields(value)
+        }
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("multilingual audit diagnostic keys must be strings")
+        return {
+            key: _stable_json_value(value[key]) for key in sorted(value)
+        }
+    if isinstance(value, (tuple, list)):
+        return [_stable_json_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(
+        "unsupported multilingual audit diagnostic value: "
+        f"{type(value).__name__}"
+    )
+
+
+def _multilingual_hard_gates(
+    audit_data: dict[str, Any],
+) -> dict[str, bool]:
+    status = audit_data["status"]
+    if status in {"not_configured", "not_applicable"}:
+        values = (True, True, True, True, True)
+    elif status == "blocked_by_invalid_interval":
+        values = (False, True, True, True, True)
+    else:
+        values = (
+            True,
+            bool(audit_data["total_heading_count_matches"]),
+            bool(audit_data["heading_level_sequence_matches"]),
+            bool(audit_data["heading_origin_sequence_matches"]),
+            bool(audit_data["numbered_label_sequence_matches"]),
+        )
+    return dict(zip(_MULTILINGUAL_GATE_NAMES, values, strict=True))
 
 
 class QualityEvaluationLimitError(RuntimeError):
@@ -212,6 +370,9 @@ class QualityEvaluator:
             }
             for character in _SPECIAL_CHARACTERS
         }
+        multilingual_audit = multilingual_heading_audit_to_data(
+            document.multilingual_heading_audit
+        )
         hard_gates = {
             "is_marked": document.marked,
             "has_structure": traversal.element_count > 0,
@@ -244,6 +405,7 @@ class QualityEvaluator:
                 in NUMBERED_HEADING_TYPOGRAPHY_DIAGNOSTIC_CODES
                 for diagnostic in document.diagnostics
             ),
+            **_multilingual_hard_gates(multilingual_audit),
         }
         metrics = {
             "element_count": traversal.element_count,
@@ -289,6 +451,7 @@ class QualityEvaluator:
                 str(page_index): traversal.text_quality_by_page[page_index]
                 for page_index in sorted(traversal.text_quality_by_page)
             },
+            "multilingual_heading_audit": multilingual_audit,
         }
         return QualityReport(
             status="pass" if all(hard_gates.values()) else "fail",

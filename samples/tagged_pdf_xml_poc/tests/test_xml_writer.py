@@ -12,9 +12,15 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     ContinuationHint,
     ContinuationTypographyEvidence,
+    Diagnostic,
+    HeadingMismatchPosition,
     HeadingPromotion,
+    HeadingSignatureEntry,
     InlineIconHint,
     LineBreakHint,
+    LanguageHeadingSignature,
+    LanguageIntervalEvidence,
+    MultilingualHeadingAudit,
     QualityReport,
     SentenceBreakHint,
     StructureElement,
@@ -33,6 +39,235 @@ from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitle
 from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 from tagged_pdf_extractor.infrastructure.xml_writer import XmlDocumentWriter
+
+
+def _xml_audit(state: str) -> MultilingualHeadingAudit:
+    if state == "not_applicable":
+        return MultilingualHeadingAudit(
+            False, True, 1, 0, None, None, None, None, None
+        )
+    if state == "pending":
+        return MultilingualHeadingAudit(
+            True,
+            False,
+            2,
+            2,
+            True,
+            None,
+            None,
+            None,
+            None,
+            diagnostics=(
+                Diagnostic(
+                    "error",
+                    "multilingual_heading_interval_boundary_invalid",
+                    "invalid boundary",
+                    {"reason": "missing_start_path", "path": (1, 0)},
+                ),
+            ),
+        )
+    expected = HeadingSignatureEntry(1, "source", None)
+    observed = (
+        HeadingSignatureEntry(2, "source", None)
+        if state == "failed"
+        else expected
+    )
+    signatures = tuple(
+        LanguageHeadingSignature(
+            language,
+            LanguageIntervalEvidence(
+                language,
+                ordinal - 1,
+                ordinal - 1,
+                (ordinal - 1,),
+                (ordinal - 1,),
+                "bookmark" if ordinal == 1 else "structural_language_section",
+            ),
+            (entry,),
+        )
+        for ordinal, (language, entry) in enumerate(
+            (("ENG", expected), ("C-FRA", observed)), start=1
+        )
+    )
+    mismatch = (
+        HeadingMismatchPosition("C-FRA", 0, "level", expected, observed),
+    ) if state == "failed" else ()
+    return MultilingualHeadingAudit(
+        True,
+        state == "passed",
+        2,
+        2,
+        True,
+        True,
+        state == "passed",
+        True,
+        True,
+        signatures,
+        mismatch,
+    )
+
+
+@pytest.mark.parametrize(
+    ("audit", "status", "applicable", "passed"),
+    (
+        (None, "not_configured", None, None),
+        (_xml_audit("not_applicable"), "not_applicable", False, True),
+        (_xml_audit("pending"), "blocked_by_invalid_interval", True, False),
+        (_xml_audit("failed"), "failed", True, False),
+        (_xml_audit("passed"), "passed", True, True),
+    ),
+    ids=("no-audit", "not-applicable", "pending", "failed", "passed"),
+)
+def test_semantic_xml_contains_derived_multilingual_heading_audit_only(
+    tmp_path: Path,
+    audit: MultilingualHeadingAudit | None,
+    status: str,
+    applicable: bool | None,
+    passed: bool | None,
+) -> None:
+    source_text = "Localized wording stays unchanged."
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "ENG",
+        (),
+        (
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(ContentFragment(0, 1, (source_text,)),),
+            ),
+        ),
+        multilingual_heading_audit=audit,
+    )
+    raw_path = tmp_path / "raw.xml"
+    semantic_path = tmp_path / "semantic.xml"
+
+    writer = XmlDocumentWriter()
+    writer.write_raw(document, raw_path)
+    writer.write_semantic(document, semantic_path)
+
+    raw_root = ET.parse(raw_path).getroot()
+    semantic_root = ET.parse(semantic_path).getroot()
+    assert raw_root.find("multilingual-heading-audit") is None
+    node = semantic_root.find("multilingual-heading-audit")
+    assert node is not None
+    assert node.get("status") == status
+    assert node.get("applicable") == (
+        None if applicable is None else str(applicable).lower()
+    )
+    assert node.get("passed") == (None if passed is None else str(passed).lower())
+    semantic_text = semantic_root.find("paragraph/text")
+    assert semantic_text is not None
+    assert xml_writer_module.decode_data_element(semantic_text) == source_text
+    assert "Localized wording" not in ET.tostring(node, encoding="unicode")
+
+
+def test_semantic_xml_serializes_exact_audit_evidence_in_stable_order(
+    tmp_path: Path,
+) -> None:
+    audit = _xml_audit("failed")
+    document = TaggedDocument(
+        Path("manual.pdf"), True, "ENG", (), (), multilingual_heading_audit=audit
+    )
+    path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, path)
+
+    node = ET.parse(path).getroot().find("multilingual-heading-audit")
+    assert node is not None
+    assert node.attrib == {
+        "applicable": "true",
+        "status": "failed",
+        "passed": "false",
+        "expected-interval-count": "2",
+        "observed-interval-count": "2",
+        "interval-count-matches": "true",
+        "total-heading-count-matches": "true",
+        "heading-level-sequence-matches": "false",
+        "heading-origin-sequence-matches": "true",
+        "numbered-label-sequence-matches": "true",
+    }
+    languages = node.findall("language")
+    assert [item.attrib for item in languages] == [
+        {
+            "ordinal": "1",
+            "code": "ENG",
+            "start-page-index": "0",
+            "end-page-index": "0",
+            "start-path": "0",
+            "end-path": "0",
+            "evidence-origin": "bookmark",
+            "heading-total": "1",
+        },
+        {
+            "ordinal": "2",
+            "code": "C-FRA",
+            "start-page-index": "1",
+            "end-page-index": "1",
+            "start-path": "1",
+            "end-path": "1",
+            "evidence-origin": "structural_language_section",
+            "heading-total": "1",
+        },
+    ]
+    assert [entry.attrib for entry in languages[0].findall("heading")] == [
+        {"position": "0", "level": "1", "origin": "source"}
+    ]
+    assert [entry.attrib for entry in languages[1].findall("heading")] == [
+        {"position": "0", "level": "2", "origin": "source"}
+    ]
+    mismatch = node.find("mismatch")
+    assert mismatch is not None
+    assert mismatch.attrib == {
+        "language": "C-FRA", "position": "0", "component": "level"
+    }
+    assert mismatch.find("expected").attrib == {
+        "level": "1", "origin": "source"
+    }
+    assert mismatch.find("observed").attrib == {
+        "level": "2", "origin": "source"
+    }
+
+
+def test_pending_semantic_xml_serializes_diagnostic_context_stably(
+    tmp_path: Path,
+) -> None:
+    document = TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "ENG",
+        (),
+        (),
+        multilingual_heading_audit=_xml_audit("pending"),
+    )
+    path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, path)
+
+    diagnostic = ET.parse(path).getroot().find(
+        "multilingual-heading-audit/diagnostic"
+    )
+    assert diagnostic is not None
+    assert diagnostic.attrib == {
+        "severity": "error",
+        "code": "multilingual_heading_interval_boundary_invalid",
+        "message": "invalid boundary",
+        "context-json": '{"path":[1,0],"reason":"missing_start_path"}',
+    }
+
+
+def test_semantic_xml_revalidates_approved_audit_model_before_serializing(
+    tmp_path: Path,
+) -> None:
+    audit = _xml_audit("passed")
+    object.__setattr__(audit, "passed", False)
+    document = TaggedDocument(
+        Path("manual.pdf"), True, "ENG", (), (), multilingual_heading_audit=audit
+    )
+
+    with pytest.raises(ValueError, match="passed contradicts"):
+        XmlDocumentWriter().write_semantic(document, tmp_path / "semantic.xml")
 
 
 def _promotion(

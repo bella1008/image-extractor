@@ -7,8 +7,12 @@ import os
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree as ET
 
+from tagged_pdf_extractor.application.evaluate_quality import (
+    multilingual_heading_audit_to_data,
+)
 from tagged_pdf_extractor.domain.heading_promotion_validation import (
     HeadingPromotionTracker,
 )
@@ -242,6 +246,13 @@ class XmlDocumentWriter:
                 decisions=decisions,
             )
 
+        self._append_multilingual_heading_audit(
+            root,
+            multilingual_heading_audit_to_data(
+                document.multilingual_heading_audit
+            ),
+        )
+
         promotion_tracker.assert_all_applied()
         unresolved_subtitle_paths = set(subtitle_by_path) - consumed_subtitle_paths
         if unresolved_subtitle_paths:
@@ -280,6 +291,112 @@ class XmlDocumentWriter:
             text_data_tags=frozenset({"text"}),
         )
         return tuple(decisions)
+
+    @staticmethod
+    def _append_multilingual_heading_audit(
+        root: ET.Element,
+        audit: dict[str, Any],
+    ) -> None:
+        def scalar(value: object) -> str:
+            if isinstance(value, bool):
+                return str(value).lower()
+            return str(value)
+
+        attribute_names = (
+            ("applicable", "applicable"),
+            ("status", "status"),
+            ("passed", "passed"),
+            ("expected_interval_count", "expected-interval-count"),
+            ("observed_interval_count", "observed-interval-count"),
+            ("interval_count_matches", "interval-count-matches"),
+            ("total_heading_count_matches", "total-heading-count-matches"),
+            ("heading_level_sequence_matches", "heading-level-sequence-matches"),
+            ("heading_origin_sequence_matches", "heading-origin-sequence-matches"),
+            ("numbered_label_sequence_matches", "numbered-label-sequence-matches"),
+        )
+        node = ET.SubElement(
+            root,
+            "multilingual-heading-audit",
+            {
+                xml_name: scalar(audit[data_name])
+                for data_name, xml_name in attribute_names
+                if audit[data_name] is not None
+            },
+        )
+        for language in audit["languages"]:
+            interval = language["interval"]
+            language_node = ET.SubElement(
+                node,
+                "language",
+                {
+                    "ordinal": scalar(language["ordinal"]),
+                    "code": scalar(language["language"]),
+                    "start-page-index": scalar(interval["start_page_index"]),
+                    "end-page-index": scalar(interval["end_page_index"]),
+                    "start-path": "/".join(map(str, interval["start_path"])),
+                    "end-path": "/".join(map(str, interval["end_path"])),
+                    "evidence-origin": scalar(interval["evidence_origin"]),
+                    "heading-total": scalar(language["heading_total"]),
+                },
+            )
+            for position, (level, origin, label) in enumerate(
+                zip(
+                    language["heading_levels"],
+                    language["heading_origins"],
+                    language["numbered_labels"],
+                    strict=True,
+                )
+            ):
+                attributes = {
+                    "position": str(position),
+                    "level": scalar(level),
+                    "origin": scalar(origin),
+                }
+                if label is not None:
+                    attributes["numbered-label"] = scalar(label)
+                ET.SubElement(language_node, "heading", attributes)
+
+        for mismatch in audit["mismatch_positions"]:
+            mismatch_node = ET.SubElement(
+                node,
+                "mismatch",
+                {
+                    "language": scalar(mismatch["language"]),
+                    "position": scalar(mismatch["position"]),
+                    "component": scalar(mismatch["component"]),
+                },
+            )
+            for name in ("expected", "observed"):
+                entry = mismatch[name]
+                if entry is None:
+                    continue
+                attributes = {
+                    "level": scalar(entry["heading_level"]),
+                    "origin": scalar(entry["heading_origin"]),
+                }
+                if entry["numbered_label"] is not None:
+                    attributes["numbered-label"] = scalar(
+                        entry["numbered_label"]
+                    )
+                ET.SubElement(mismatch_node, name, attributes)
+
+        for diagnostic in audit["diagnostics"]:
+            ET.SubElement(
+                node,
+                "diagnostic",
+                {
+                    "severity": scalar(diagnostic["severity"]),
+                    "code": scalar(diagnostic["code"]),
+                    "message": scalar(diagnostic["message"]),
+                    "context-json": json.dumps(
+                        diagnostic["context"],
+                        ensure_ascii=False,
+                        allow_nan=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                },
+            )
 
     def _append_raw_child(
         self,

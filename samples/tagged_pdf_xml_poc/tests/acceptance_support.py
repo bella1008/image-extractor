@@ -18,6 +18,11 @@ HEADING_ONLY_FAILURE_HARD_GATES = {
     "numbered_heading_series_valid": True,
     "numbered_heading_series_counts_consistent": True,
     "numbered_heading_typography_valid": True,
+    "multilingual_interval_count_valid": True,
+    "multilingual_heading_count_parity": True,
+    "multilingual_heading_level_parity": True,
+    "multilingual_heading_origin_parity": True,
+    "multilingual_numbered_label_parity": True,
 }
 
 

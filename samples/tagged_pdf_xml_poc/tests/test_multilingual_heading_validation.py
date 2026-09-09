@@ -17,6 +17,7 @@ from tagged_pdf_extractor.domain.models import (
     PdfProfile,
     StructureElement,
     TaggedDocument,
+    TextDisplayHint,
 )
 from tagged_pdf_extractor.domain.multilingual_heading_validation import (
     validate_multilingual_headings,
@@ -208,6 +209,85 @@ def test_signature_is_wording_independent_and_contains_only_structural_fields() 
         ),
     )
     assert audit.mismatch_positions == ()
+
+
+def test_source_role_heading_candidates_mapped_to_paragraph_join_signature() -> None:
+    def candidate(text: str, page_index: int) -> StructureElement:
+        return StructureElement(
+            "Heading3_0_2",
+            "paragraph",
+            page_index=page_index,
+            children=(_text(text, page_index),),
+        )
+
+    document = _document(
+        _section("ENG", 0, candidate("Warranty wording", 0)),
+        _section("FRA", 1, candidate("Texte sans traduction runtime", 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    expected = (HeadingSignatureEntry(4, "source", None),)
+    assert tuple(signature.entries for signature in audit.signatures) == (
+        expected,
+        expected,
+    )
+    assert audit.passed is True
+
+
+def test_unlevelled_title_candidate_is_outside_structural_signature() -> None:
+    def title(text: str, page_index: int) -> StructureElement:
+        return StructureElement(
+            "Cover_Title",
+            "paragraph",
+            page_index=page_index,
+            children=(_text(text, page_index),),
+        )
+
+    document = _document(
+        _section("ENG", 0, title("English title wording", 0)),
+        _section("FRA", 1, title("Different localized title wording", 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is True
+    assert tuple(signature.entries for signature in audit.signatures) == ((), ())
+
+
+def test_structurally_detected_section_heading_joins_full_signature() -> None:
+    document = _document(
+        _section("ENG", 0, _paragraph("Declaration title", 0)),
+        _section("FRA", 1, _paragraph("Titre de déclaration", 1)),
+    )
+    hints = tuple(
+        TextDisplayHint(
+            child_path=(index, 0),
+            display_role="section_heading",
+            font_weight=600,
+            font_size=10.0,
+            comparison_body_font_weight=400,
+            comparison_body_font_size=8.0,
+            reason="structural_test_evidence",
+        )
+        for index in range(2)
+    )
+    document = replace(document, text_display_hints=hints)
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    expected = (HeadingSignatureEntry(2, "source", None),)
+    assert tuple(signature.entries for signature in audit.signatures) == (
+        expected,
+        expected,
+    )
+    assert audit.passed is True
 
 
 @pytest.mark.parametrize(

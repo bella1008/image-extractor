@@ -68,9 +68,15 @@ class ExtractDocument:
 
         document = self.reader.read(pdf_path)
         document = promote_numbered_chapter_headings(document)
+        profile_resolution = None
         if self.profile_repository is not None:
             profile = self.profile_repository.lookup(pdf_path)
             resolution = resolve_language_intervals(profile, document)
+            profile_resolution = (profile, resolution)
+        document = detect_table_subtitles(document)
+        document = apply_profile_review_formatting(document)
+        if profile_resolution is not None:
+            profile, resolution = profile_resolution
             if resolution.diagnostic is None:
                 audit = validate_multilingual_headings(
                     profile, resolution.intervals, document
@@ -91,8 +97,6 @@ class ExtractDocument:
                     diagnostics=(resolution.diagnostic,),
                 )
             document = replace(document, multilingual_heading_audit=audit)
-        document = detect_table_subtitles(document)
-        document = apply_profile_review_formatting(document)
         document = _detect_list_continuations(document)
         document = apply_readability_formatting(document)
         document = _remove_continuation_sentence_break_conflicts(document)

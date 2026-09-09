@@ -126,7 +126,7 @@ def _candidate_hint(
         and target.semantic_role == "paragraph"
         and isinstance(following, StructureElement)
         and following.semantic_role == "list"
-        and _resolves_to_list_body(target.source_role, role_map)
+        and _is_list_associated_source_role(target.source_role, role_map)
         and is_nonempty_inline_paragraph(target)
         and not _VISIBLE_MARKER.match(_normalized_text(target))
         and not any(_paths_overlap(target_path, path) for path in conflicts)
@@ -235,13 +235,15 @@ def _candidate_hint(
     )
 
 
-def _resolves_to_list_body(source_role: str, role_map: dict[str, str]) -> bool:
+def _is_list_associated_source_role(
+    source_role: str, role_map: dict[str, str]
+) -> bool:
     seen: set[str] = set()
     role = source_role
     while role in role_map and role not in seen:
         seen.add(role)
         role = role_map[role]
-    return role == _LIST_BODY_ROLE
+    return role == _LIST_BODY_ROLE or (source_role != "P" and role == "P")
 
 
 def _single_language(

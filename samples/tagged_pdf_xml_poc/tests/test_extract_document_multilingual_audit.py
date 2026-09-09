@@ -317,7 +317,7 @@ def test_unrelated_profiles_are_looked_up_and_audited_only_for_their_own_pdf(
     assert repository.paths == [tmp_path / first_name, tmp_path / second_name]
 
 
-def test_audit_runs_after_promotion_and_before_formatting_or_evaluation(
+def test_audit_runs_after_heading_evidence_formatting_and_before_evaluation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -337,7 +337,8 @@ def test_audit_runs_after_promotion_and_before_formatting_or_evaluation(
     events: list[str] = []
     actual_resolve = use_case_module.resolve_language_intervals
     actual_validate = use_case_module.validate_multilingual_headings
-    actual_format = use_case_module.detect_table_subtitles
+    actual_subtitle_format = use_case_module.detect_table_subtitles
+    actual_profile_format = use_case_module.apply_profile_review_formatting
 
     def promote(actual: TaggedDocument) -> TaggedDocument:
         events.append("promote")
@@ -351,9 +352,13 @@ def test_audit_runs_after_promotion_and_before_formatting_or_evaluation(
         events.append("validate")
         return actual_validate(actual_profile, intervals, actual)
 
-    def format_document(actual: TaggedDocument) -> TaggedDocument:
-        events.append("format")
-        return actual_format(actual)
+    def subtitle_format(actual: TaggedDocument) -> TaggedDocument:
+        events.append("subtitle_format")
+        return actual_subtitle_format(actual)
+
+    def profile_format(actual: TaggedDocument) -> TaggedDocument:
+        events.append("profile_format")
+        return actual_profile_format(actual)
 
     class OrderedRepository(_Repository):
         def lookup(self, pdf_path: str | Path) -> PdfProfile:
@@ -370,7 +375,10 @@ def test_audit_runs_after_promotion_and_before_formatting_or_evaluation(
     )
     monkeypatch.setattr(use_case_module, "resolve_language_intervals", resolve)
     monkeypatch.setattr(use_case_module, "validate_multilingual_headings", validate)
-    monkeypatch.setattr(use_case_module, "detect_table_subtitles", format_document)
+    monkeypatch.setattr(use_case_module, "detect_table_subtitles", subtitle_format)
+    monkeypatch.setattr(
+        use_case_module, "apply_profile_review_formatting", profile_format
+    )
     evaluator = OrderedEvaluator()
 
     ExtractDocument(
@@ -381,4 +389,12 @@ def test_audit_runs_after_promotion_and_before_formatting_or_evaluation(
         OrderedRepository({filename: profile}),
     ).run(source, tmp_path / "out")
 
-    assert events == ["promote", "lookup", "resolve", "validate", "format", "evaluate"]
+    assert events == [
+        "promote",
+        "lookup",
+        "resolve",
+        "subtitle_format",
+        "profile_format",
+        "validate",
+        "evaluate",
+    ]

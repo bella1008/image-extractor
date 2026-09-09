@@ -332,6 +332,18 @@ def test_role_map_alias_resolving_to_list_body_returns_hint() -> None:
     assert hints[0].source_role == "CustomListBody"
 
 
+def test_custom_paragraph_role_keeps_structural_list_association_evidence() -> None:
+    source = _document(
+        target_source_role="CustomParagraphStyle",
+        role_map=(("CustomParagraphStyle", "P"),),
+    )
+
+    hints = detect_list_continuation_hints(source)
+
+    assert len(hints) == 1
+    assert hints[0].source_role == "CustomParagraphStyle"
+
+
 def test_different_page_returns_no_hint() -> None:
     assert detect_list_continuation_hints(_document(target_page=1)) == ()
 

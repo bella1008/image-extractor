@@ -18,6 +18,7 @@ from tagged_pdf_extractor.domain.models import (
     StructureElement,
     TaggedDocument,
 )
+from tagged_pdf_extractor.domain.role_mapping import heading_candidate_level
 
 
 _BCP47_LANGUAGE_MARKER = re.compile(
@@ -113,6 +114,11 @@ def validate_multilingual_headings(
         )
 
     signatures: list[LanguageHeadingSignature] = []
+    display_heading_paths = frozenset(
+        hint.child_path
+        for hint in document.text_display_hints
+        if hint.display_role == "section_heading"
+    )
     for interval in intervals:
         bounded_elements = tuple(
             (path, element)
@@ -142,7 +148,10 @@ def validate_multilingual_headings(
             )
         try:
             entries = _signature_entries(
-                bounded_elements, promotion_by_path, interval
+                bounded_elements,
+                promotion_by_path,
+                display_heading_paths,
+                interval,
             )
         except ValueError as error:
             return _failed_interval_audit(
@@ -309,21 +318,32 @@ def _is_at_or_below(path: tuple[int, ...], ancestor: tuple[int, ...]) -> bool:
 def _signature_entries(
     elements: tuple[tuple[tuple[int, ...], StructureElement], ...],
     promotion_by_path: dict[tuple[int, ...], HeadingPromotion],
+    display_heading_paths: frozenset[tuple[int, ...]],
     interval: LanguageIntervalEvidence,
 ) -> tuple[HeadingSignatureEntry, ...]:
     entries: list[HeadingSignatureEntry] = []
     for path, element in elements:
         promotion = promotion_by_path.get(path)
-        is_source_heading = element.semantic_role == "heading"
-        if promotion is not None and is_source_heading:
-            raise ValueError(f"heading at {path} has both source and promoted origins")
-        if is_source_heading:
+        candidate_level = heading_candidate_level(element.source_role)
+        is_semantic_heading = element.semantic_role == "heading"
+        is_source_heading = is_semantic_heading or candidate_level is not None
+        is_display_heading = path in display_heading_paths
+        if sum((promotion is not None, is_source_heading, is_display_heading)) > 1:
+            raise ValueError(f"heading at {path} has multiple structural origins")
+        if is_source_heading or is_display_heading:
             page_indices = _element_page_indices(element)
             _validate_heading_pages(page_indices, interval, path)
-            if element.heading_level is None:
+            if is_display_heading:
+                source_level = 2
+            elif is_semantic_heading:
+                source_level = element.heading_level
+            else:
+                assert candidate_level is not None
+                source_level = min(candidate_level + 1, 6)
+            if source_level is None:
                 raise ValueError(f"source heading at {path} lacks a heading level")
             entries.append(
-                HeadingSignatureEntry(element.heading_level, "source", None)
+                HeadingSignatureEntry(source_level, "source", None)
             )
         elif promotion is not None:
             page_indices = _element_page_indices(element)

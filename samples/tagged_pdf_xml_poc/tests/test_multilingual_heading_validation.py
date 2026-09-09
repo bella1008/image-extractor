@@ -796,10 +796,10 @@ def test_invalid_numbered_promotion_path_fails_closed() -> None:
     assert audit.diagnostics[-1].code == "multilingual_heading_promotion_paths_invalid"
 
 
-def test_standard_locale_markers_match_canonical_interval_languages() -> None:
+def test_bcp47_markers_are_not_translated_to_profile_language_codes() -> None:
     document = _document(
-        _section("en-US", 0, _heading("source", 2, 0)),
-        _section("fr-FR", 1, _heading("localized", 2, 1)),
+        _section("fr-FR", 0, _heading("source", 2, 0)),
+        _section("en-US", 1, _heading("localized", 2, 1)),
     )
 
     audit = validate_multilingual_headings(
@@ -826,11 +826,12 @@ def test_absent_element_language_markers_do_not_fail_validation() -> None:
     assert audit.passed is True
 
 
-def test_nested_elements_inherit_nearest_structural_language_marker() -> None:
+def test_interval_local_bcp47_markers_are_normalized_only_for_consistency() -> None:
     nested = StructureElement(
         "Div",
         "division",
         page_index=0,
+        language="EN-us",
         children=(_heading("source", 2, 0),),
     )
     document = _document(
@@ -845,7 +846,7 @@ def test_nested_elements_inherit_nearest_structural_language_marker() -> None:
     assert audit.passed is True
 
 
-def test_interval_inherits_conflicting_language_from_ancestor_outside_bounds() -> None:
+def test_language_inherited_only_from_ancestor_outside_interval_is_ignored() -> None:
     wrapper = StructureElement(
         "Part",
         "part",
@@ -873,18 +874,11 @@ def test_interval_inherits_conflicting_language_from_ancestor_outside_bounds() -
         _profile("ENG", "FRA"), intervals, document
     )
 
-    assert audit.passed is False
-    assert audit.signatures == ()
-    assert audit.diagnostics[-1].context == {
-        "language": "FRA",
-        "child_path": (0, 1),
-        "observed_marker": "en-US",
-        "inherited_marker": "en-US",
-        "reason": "conflicting_canonical_language",
-    }
+    assert audit.passed is True
+    assert audit.diagnostics == ()
 
 
-def test_interval_inherits_ambiguous_language_from_ancestor_outside_bounds() -> None:
+def test_malformed_language_on_ancestor_outside_interval_is_ignored() -> None:
     wrapper = StructureElement(
         "Part",
         "part",
@@ -912,15 +906,8 @@ def test_interval_inherits_ambiguous_language_from_ancestor_outside_bounds() -> 
         _profile("ENG", "FRA"), intervals, document
     )
 
-    assert audit.passed is False
-    assert audit.signatures == ()
-    assert audit.diagnostics[-1].context == {
-        "language": "ENG",
-        "child_path": (0, 0),
-        "observed_marker": "English (US)",
-        "inherited_marker": "English (US)",
-        "reason": "ambiguous_language_marker",
-    }
+    assert audit.passed is True
+    assert audit.diagnostics == ()
 
 
 def test_explicit_interval_markers_unambiguously_override_outer_language() -> None:
@@ -981,11 +968,11 @@ def test_conflicting_nested_body_language_marker_fails_closed() -> None:
         "child_path": (0, 1),
         "observed_marker": "fr-FR",
         "inherited_marker": "en-US",
-        "reason": "conflicting_canonical_language",
+        "reason": "conflicting_language_markers",
     }
 
 
-def test_unrecognized_locale_marker_is_ambiguous_not_guessed() -> None:
+def test_malformed_interval_language_marker_fails_closed() -> None:
     document = _document(
         _section("English (US)", 0, _heading("source", 2, 0)),
         _section("fr-FR", 1, _heading("localized", 2, 1)),
@@ -996,7 +983,7 @@ def test_unrecognized_locale_marker_is_ambiguous_not_guessed() -> None:
     )
 
     assert audit.passed is False
-    assert audit.diagnostics[-1].context["reason"] == "ambiguous_language_marker"
+    assert audit.diagnostics[-1].context["reason"] == "malformed_language_marker"
 
 
 @pytest.mark.parametrize("heading_origin", ["source", "promoted"])
@@ -1045,38 +1032,33 @@ def test_document_level_pdf_language_is_not_interval_evidence() -> None:
     assert audit.passed is True
 
 
-@pytest.mark.parametrize(
-    ("profile_language", "matching_marker", "conflicting_marker"),
-    [
-        ("C-FRA", "fr-CA", "fr-FR"),
-        ("M-SPA", "es-MX", "es-ES"),
-        ("B-POR", "pt-BR", "pt-PT"),
-    ],
-)
-def test_region_specific_canonical_languages_require_matching_standard_region(
-    profile_language: str, matching_marker: str, conflicting_marker: str
-) -> None:
-    matching = _document(
+def test_exact_canonical_interval_markers_confirm_supplied_languages() -> None:
+    document = _document(
         _section("ENG", 0, _heading("source", 2, 0)),
-        _section(matching_marker, 1, _heading("localized", 2, 1)),
+        _section("C-FRA", 1, _heading("localized", 2, 1)),
     )
-    conflicting = replace(
-        matching,
-        children=(
-            matching.children[0],
-            replace(matching.children[1], language=conflicting_marker),
-        ),
-    )
-    intervals = _intervals("ENG", profile_language)
 
-    assert validate_multilingual_headings(
-        _profile("ENG", profile_language), intervals, matching
-    ).passed
-    failed = validate_multilingual_headings(
-        _profile("ENG", profile_language), intervals, conflicting
+    audit = validate_multilingual_headings(
+        _profile("ENG", "C-FRA"), _intervals("ENG", "C-FRA"), document
     )
-    assert failed.passed is False
-    assert failed.diagnostics[-1].context["reason"] == "conflicting_canonical_language"
+
+    assert audit.passed is True
+
+
+def test_other_exact_profile_language_marker_conflicts_with_interval() -> None:
+    document = _document(
+        _section("C-FRA", 0, _heading("source", 2, 0)),
+        _section("C-FRA", 1, _heading("localized", 2, 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "C-FRA"), _intervals("ENG", "C-FRA"), document
+    )
+
+    assert audit.passed is False
+    assert audit.diagnostics[-1].context["reason"] == (
+        "conflicting_canonical_language"
+    )
 
 
 @pytest.mark.parametrize(

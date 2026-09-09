@@ -20,58 +20,8 @@ from tagged_pdf_extractor.domain.models import (
 )
 
 
-_CANONICAL_BY_PRIMARY = {
-    "AR": "ARA",
-    "BG": "BUL",
-    "CA": "CAT",
-    "CS": "CZE",
-    "DA": "DAN",
-    "DE": "DEU",
-    "EL": "GRE",
-    "EN": "ENG",
-    "ES": "SPA",
-    "ET": "EST",
-    "EU": "EUS",
-    "FI": "FIN",
-    "FR": "FRA",
-    "GL": "GLG",
-    "HE": "HEB",
-    "HR": "CRO",
-    "HU": "HUN",
-    "ID": "INS",
-    "IT": "ITA",
-    "KK": "KAZ",
-    "KO": "KOR",
-    "KY": "KYR",
-    "LT": "LTU",
-    "LV": "LAT",
-    "MK": "MKD",
-    "MN": "MON",
-    "NL": "DUT",
-    "NO": "NOR",
-    "PL": "POL",
-    "PT": "POR",
-    "RO": "ROM",
-    "RU": "RUS",
-    "SK": "SLK",
-    "SL": "SLV",
-    "SQ": "ALB",
-    "SR": "SER",
-    "SV": "SWE",
-    "TH": "THA",
-    "TR": "TUR",
-}
-_REGIONAL_CANONICAL = {
-    ("ES", "MX"): "M-SPA",
-    ("FR", "CA"): "C-FRA",
-    ("PT", "BR"): "B-POR",
-    ("ZH", "TW"): "TPE",
-}
-_KNOWN_CANONICAL_LANGUAGES = frozenset(_CANONICAL_BY_PRIMARY.values()) | frozenset(
-    _REGIONAL_CANONICAL.values()
-)
-_STANDARD_LANGUAGE_MARKER = re.compile(
-    r"^(?P<primary>[A-Za-z]{2})(?:-(?P<region>[A-Za-z]{2}))?$"
+_BCP47_LANGUAGE_MARKER = re.compile(
+    r"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"
 )
 
 
@@ -134,7 +84,6 @@ def validate_multilingual_headings(
         for path, node in nodes
         if isinstance(node, StructureElement)
     )
-    effective_markers, inherited_markers = _language_marker_states(elements)
     node_by_path = dict(nodes)
     for interval in intervals:
         boundary_failure = _interval_boundary_failure(interval, node_by_path)
@@ -181,15 +130,14 @@ def validate_multilingual_headings(
         marker_failure = _language_marker_failure(
             bounded_elements,
             interval,
-            effective_markers,
-            inherited_markers,
+            profile.languages,
         )
         if marker_failure is not None:
             return _failed_interval_audit(
                 expected_count,
                 observed_count,
                 "multilingual_heading_language_marker_invalid",
-                "Structural language marker conflicts with its language interval.",
+                "Structural language marker evidence is invalid within its interval.",
                 marker_failure,
             )
         try:
@@ -271,24 +219,19 @@ def _interval_boundary_failure(
 def _language_marker_failure(
     elements: tuple[tuple[tuple[int, ...], StructureElement], ...],
     interval: LanguageIntervalEvidence,
-    effective_markers: dict[tuple[int, ...], str | None],
-    inherited_markers: dict[tuple[int, ...], str | None],
+    canonical_languages: tuple[str, ...],
 ) -> dict[str, object] | None:
-    for path, _element in elements:
-        inherited_marker = inherited_markers[path]
-        marker = effective_markers[path]
+    effective_by_path: dict[tuple[int, ...], str | None] = {}
+    normalized_bcp47_marker: str | None = None
+    for path, element in elements:
+        inherited_marker = effective_by_path.get(path[:-1])
+        marker = element.language
+        effective_by_path[path] = marker if marker is not None else inherited_marker
         if marker is None:
             continue
-        canonical = _canonical_language_marker(marker)
-        if canonical is None:
-            return {
-                "language": interval.language,
-                "child_path": path,
-                "observed_marker": marker,
-                "inherited_marker": inherited_marker,
-                "reason": "ambiguous_language_marker",
-            }
-        if canonical != interval.language:
+        if marker in canonical_languages:
+            if marker == interval.language:
+                continue
             return {
                 "language": interval.language,
                 "child_path": path,
@@ -296,40 +239,29 @@ def _language_marker_failure(
                 "inherited_marker": inherited_marker,
                 "reason": "conflicting_canonical_language",
             }
+        if (
+            not isinstance(marker, str)
+            or _BCP47_LANGUAGE_MARKER.fullmatch(marker) is None
+        ):
+            return {
+                "language": interval.language,
+                "child_path": path,
+                "observed_marker": marker,
+                "inherited_marker": inherited_marker,
+                "reason": "malformed_language_marker",
+            }
+        normalized_marker = marker.casefold()
+        if normalized_bcp47_marker is None:
+            normalized_bcp47_marker = normalized_marker
+        elif normalized_marker != normalized_bcp47_marker:
+            return {
+                "language": interval.language,
+                "child_path": path,
+                "observed_marker": marker,
+                "inherited_marker": inherited_marker,
+                "reason": "conflicting_language_markers",
+            }
     return None
-
-
-def _language_marker_states(
-    elements: tuple[tuple[tuple[int, ...], StructureElement], ...],
-) -> tuple[
-    dict[tuple[int, ...], str | None],
-    dict[tuple[int, ...], str | None],
-]:
-    effective_by_path: dict[tuple[int, ...], str | None] = {}
-    inherited_by_path: dict[tuple[int, ...], str | None] = {}
-    for path, element in elements:
-        inherited = effective_by_path.get(path[:-1])
-        inherited_by_path[path] = inherited
-        effective_by_path[path] = (
-            element.language if element.language is not None else inherited
-        )
-    return effective_by_path, inherited_by_path
-
-
-def _canonical_language_marker(marker: str) -> str | None:
-    upper_marker = marker.upper()
-    if upper_marker in _KNOWN_CANONICAL_LANGUAGES:
-        return upper_marker
-    match = _STANDARD_LANGUAGE_MARKER.fullmatch(marker)
-    if match is None:
-        return None
-    primary = match.group("primary").upper()
-    region = match.group("region")
-    if region is not None:
-        regional = _REGIONAL_CANONICAL.get((primary, region.upper()))
-        if regional is not None:
-            return regional
-    return _CANONICAL_BY_PRIMARY.get(primary)
 
 
 def _ordered_nonoverlapping(

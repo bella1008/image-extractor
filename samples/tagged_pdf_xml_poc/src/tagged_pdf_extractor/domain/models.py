@@ -330,9 +330,24 @@ class MultilingualHeadingAudit:
             raise ValueError("signature components cannot be evaluated for invalid intervals")
         if len(self.signatures) != self.observed_interval_count:
             raise ValueError("signature count must match observed interval count")
+        if self.diagnostics:
+            raise ValueError("an evaluated audit cannot contain failure diagnostics")
         expected_passed = all(component_states)
         if self.passed != expected_passed:
             raise ValueError("passed contradicts the evaluated component results")
+        mismatch_components = {
+            mismatch.component for mismatch in self.mismatch_positions
+        }
+        for state, component in (
+            (self.total_heading_count_matches, "count"),
+            (self.heading_level_sequence_matches, "level"),
+            (self.heading_origin_sequence_matches, "origin"),
+            (self.numbered_label_sequence_matches, "numbered_label"),
+        ):
+            if state == (component in mismatch_components):
+                raise ValueError(
+                    f"{component} component result contradicts mismatch positions"
+                )
         if self.passed and self.mismatch_positions:
             raise ValueError("a passed audit cannot contain mismatch positions")
         if not self.passed and not self.mismatch_positions:

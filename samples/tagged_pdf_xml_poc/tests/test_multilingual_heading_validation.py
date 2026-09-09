@@ -282,18 +282,19 @@ def test_middle_deletion_reports_only_the_true_missing_position() -> None:
 
 def test_repeated_adjacent_entries_do_not_hide_a_later_aligned_mismatch() -> None:
     repeated = HeadingSignatureEntry(2, "source", None)
+    anchor = HeadingSignatureEntry(6, "source", None)
     expected_tail = HeadingSignatureEntry(3, "promoted", "01")
     observed_tail = HeadingSignatureEntry(4, "promoted", "01")
 
     audit = _audit_for_signatures(
-        (repeated, repeated, expected_tail),
-        (repeated, repeated, repeated, observed_tail),
+        (repeated, repeated, anchor, expected_tail),
+        (repeated, repeated, repeated, anchor, observed_tail),
     )
 
     assert audit.mismatch_positions == (
         HeadingMismatchPosition("FRA", 2, "count", None, repeated),
         HeadingMismatchPosition(
-            "FRA", 2, "level", expected_tail, observed_tail
+            "FRA", 3, "level", expected_tail, observed_tail
         ),
     )
     assert audit.heading_origin_sequence_matches is True
@@ -323,27 +324,73 @@ def test_alignment_ties_choose_the_same_rightmost_duplicate_gap(
 def test_alignment_compares_components_only_after_middle_gap_alignment() -> None:
     first = HeadingSignatureEntry(2, "source", None)
     inserted = HeadingSignatureEntry(6, "promoted", "09")
+    anchor = HeadingSignatureEntry(7, "promoted", "07")
     expected_middle = HeadingSignatureEntry(3, "promoted", "01")
     observed_middle = HeadingSignatureEntry(3, "source", None)
     expected_tail = HeadingSignatureEntry(4, "promoted", "02")
     observed_tail = HeadingSignatureEntry(5, "promoted", "03")
 
     audit = _audit_for_signatures(
-        (first, expected_middle, expected_tail),
-        (first, inserted, observed_middle, observed_tail),
+        (first, anchor, expected_middle, expected_tail),
+        (first, inserted, anchor, observed_middle, observed_tail),
     )
 
     assert audit.mismatch_positions == (
         HeadingMismatchPosition("FRA", 1, "count", None, inserted),
         HeadingMismatchPosition(
-            "FRA", 1, "origin", expected_middle, observed_middle
+            "FRA", 2, "origin", expected_middle, observed_middle
         ),
         HeadingMismatchPosition(
-            "FRA", 2, "level", expected_tail, observed_tail
+            "FRA", 3, "level", expected_tail, observed_tail
         ),
         HeadingMismatchPosition(
-            "FRA", 2, "numbered_label", expected_tail, observed_tail
+            "FRA", 3, "numbered_label", expected_tail, observed_tail
         ),
+    )
+
+
+def test_exact_anchor_prevents_cascade_when_weighted_substitution_ties() -> None:
+    exact = HeadingSignatureEntry(2, "source", None)
+    expected_tail = HeadingSignatureEntry(3, "source", None)
+    additional = HeadingSignatureEntry(8, "source", None)
+    observed_tail = HeadingSignatureEntry(9, "promoted", "09")
+
+    audit = _audit_for_signatures(
+        (exact, expected_tail), (additional, exact, observed_tail)
+    )
+
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 0, "count", None, additional),
+        HeadingMismatchPosition(
+            "FRA", 1, "level", expected_tail, observed_tail
+        ),
+        HeadingMismatchPosition(
+            "FRA", 1, "origin", expected_tail, observed_tail
+        ),
+    )
+    assert audit.numbered_label_sequence_matches is True
+
+
+def test_no_exact_anchor_pairs_unmatched_segment_positionally() -> None:
+    expected = (
+        HeadingSignatureEntry(2, "source", None),
+        HeadingSignatureEntry(3, "promoted", "01"),
+    )
+    observed = (
+        HeadingSignatureEntry(8, "source", None),
+        HeadingSignatureEntry(9, "promoted", "09"),
+        HeadingSignatureEntry(10, "source", None),
+    )
+
+    audit = _audit_for_signatures(expected, observed)
+
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 0, "level", expected[0], observed[0]),
+        HeadingMismatchPosition("FRA", 1, "level", expected[1], observed[1]),
+        HeadingMismatchPosition(
+            "FRA", 1, "numbered_label", expected[1], observed[1]
+        ),
+        HeadingMismatchPosition("FRA", 2, "count", None, observed[2]),
     )
 
 
@@ -489,6 +536,34 @@ def _valid_multilingual_audit() -> MultilingualHeadingAudit:
     )
 
 
+def _component_mismatch(component: str) -> HeadingMismatchPosition:
+    source = HeadingSignatureEntry(2, "source", None)
+    promoted = HeadingSignatureEntry(2, "promoted", "01")
+    if component == "count":
+        return HeadingMismatchPosition("FRA", 0, "count", None, source)
+    if component == "level":
+        return HeadingMismatchPosition(
+            "FRA", 0, "level", source, HeadingSignatureEntry(3, "source", None)
+        )
+    if component == "origin":
+        return HeadingMismatchPosition("FRA", 0, "origin", source, promoted)
+    return HeadingMismatchPosition(
+        "FRA",
+        0,
+        "numbered_label",
+        promoted,
+        HeadingSignatureEntry(2, "promoted", "02"),
+    )
+
+
+_COMPONENT_FIELDS = {
+    "count": "total_heading_count_matches",
+    "level": "heading_level_sequence_matches",
+    "origin": "heading_origin_sequence_matches",
+    "numbered_label": "numbered_label_sequence_matches",
+}
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -554,6 +629,47 @@ def test_multilingual_heading_audit_preserves_valid_failed_and_not_applicable_st
 
     assert failed.diagnostics == (diagnostic,)
     assert not_applicable.passed is True
+
+
+@pytest.mark.parametrize("component", tuple(_COMPONENT_FIELDS))
+def test_audit_true_component_flag_forbids_its_mismatch_kind(
+    component: str,
+) -> None:
+    support = "level" if component != "level" else "origin"
+    changes = {
+        "passed": False,
+        _COMPONENT_FIELDS[support]: False,
+        "mismatch_positions": (
+            _component_mismatch(support),
+            _component_mismatch(component),
+        ),
+    }
+
+    with pytest.raises(ValueError, match="contradicts mismatch positions"):
+        replace(_valid_multilingual_audit(), **changes)
+
+
+@pytest.mark.parametrize("component", tuple(_COMPONENT_FIELDS))
+def test_audit_false_component_flag_requires_its_mismatch_kind(
+    component: str,
+) -> None:
+    support = "level" if component != "level" else "origin"
+    changes = {
+        "passed": False,
+        _COMPONENT_FIELDS[component]: False,
+        _COMPONENT_FIELDS[support]: False,
+        "mismatch_positions": (_component_mismatch(support),),
+    }
+
+    with pytest.raises(ValueError, match="contradicts mismatch positions"):
+        replace(_valid_multilingual_audit(), **changes)
+
+
+def test_evaluated_audit_rejects_interval_failure_diagnostics() -> None:
+    diagnostic = Diagnostic("error", "interval_invalid", "invalid interval")
+
+    with pytest.raises(ValueError):
+        replace(_valid_multilingual_audit(), diagnostics=(diagnostic,))
 
 
 @pytest.mark.parametrize(

@@ -494,83 +494,82 @@ def _align_signature_entries(
 ) -> tuple[tuple[int | None, int | None], ...]:
     """Align structural entries without consulting heading wording.
 
-    Equal-length sequences are compared positionally. For unequal lengths, a
-    deterministic edit-distance alignment preserves exact structural matches and
-    locates interior additions/deletions. Diagonal edits win ties, followed by a
-    missing observed entry and then an additional observed entry.
+    Exact structural entries are preserved as deterministic LCS anchors. Entries
+    between anchors are paired positionally for component comparison, with any
+    remainder represented as missing or additional entries.
     """
-    if len(expected) == len(observed):
-        return tuple((index, index) for index in range(len(expected)))
-
-    expected_count = len(expected)
-    observed_count = len(observed)
-    distances = [
-        [0] * (observed_count + 1) for _ in range(expected_count + 1)
-    ]
-    for expected_index in range(expected_count, -1, -1):
-        for observed_index in range(observed_count, -1, -1):
-            if expected_index == expected_count:
-                distances[expected_index][observed_index] = (
-                    observed_count - observed_index
-                )
-                continue
-            if observed_index == observed_count:
-                distances[expected_index][observed_index] = (
-                    expected_count - expected_index
-                )
-                continue
-            substitution_cost = _signature_substitution_cost(
-                expected[expected_index], observed[observed_index]
-            )
-            distances[expected_index][observed_index] = min(
-                substitution_cost
-                + distances[expected_index + 1][observed_index + 1],
-                1 + distances[expected_index + 1][observed_index],
-                1 + distances[expected_index][observed_index + 1],
-            )
-
     alignment: list[tuple[int | None, int | None]] = []
-    expected_index = 0
-    observed_index = 0
-    while expected_index < expected_count or observed_index < observed_count:
-        if expected_index == expected_count:
-            alignment.append((None, observed_index))
-            observed_index += 1
-            continue
-        if observed_index == observed_count:
-            alignment.append((expected_index, None))
-            expected_index += 1
-            continue
-
-        diagonal_cost = _signature_substitution_cost(
-            expected[expected_index], observed[observed_index]
-        ) + distances[expected_index + 1][observed_index + 1]
-        if distances[expected_index][observed_index] == diagonal_cost:
-            alignment.append((expected_index, observed_index))
-            expected_index += 1
-            observed_index += 1
-            continue
-        deletion_cost = 1 + distances[expected_index + 1][observed_index]
-        if distances[expected_index][observed_index] == deletion_cost:
-            alignment.append((expected_index, None))
-            expected_index += 1
-            continue
-        alignment.append((None, observed_index))
-        observed_index += 1
+    expected_start = 0
+    observed_start = 0
+    anchors = _exact_signature_anchors(expected, observed)
+    for expected_end, observed_end in (
+        *anchors,
+        (len(expected), len(observed)),
+    ):
+        expected_segment_length = expected_end - expected_start
+        observed_segment_length = observed_end - observed_start
+        paired_count = min(expected_segment_length, observed_segment_length)
+        alignment.extend(
+            (expected_start + offset, observed_start + offset)
+            for offset in range(paired_count)
+        )
+        alignment.extend(
+            (expected_index, None)
+            for expected_index in range(
+                expected_start + paired_count, expected_end
+            )
+        )
+        alignment.extend(
+            (None, observed_index)
+            for observed_index in range(
+                observed_start + paired_count, observed_end
+            )
+        )
+        if expected_end < len(expected) and observed_end < len(observed):
+            alignment.append((expected_end, observed_end))
+            expected_start = expected_end + 1
+            observed_start = observed_end + 1
     return tuple(alignment)
 
 
-def _signature_substitution_cost(
-    expected: HeadingSignatureEntry, observed: HeadingSignatureEntry
-) -> int:
-    cost = int(expected.heading_level != observed.heading_level)
-    cost += int(expected.heading_origin != observed.heading_origin)
-    if (
-        expected.heading_origin == "promoted"
-        and observed.heading_origin == "promoted"
-    ):
-        cost += int(expected.numbered_label != observed.numbered_label)
-    return cost
+def _exact_signature_anchors(
+    expected: tuple[HeadingSignatureEntry, ...],
+    observed: tuple[HeadingSignatureEntry, ...],
+) -> tuple[tuple[int, int], ...]:
+    expected_count = len(expected)
+    observed_count = len(observed)
+    lengths = [
+        [0] * (observed_count + 1) for _ in range(expected_count + 1)
+    ]
+    for expected_index in range(expected_count - 1, -1, -1):
+        for observed_index in range(observed_count - 1, -1, -1):
+            if expected[expected_index] == observed[observed_index]:
+                lengths[expected_index][observed_index] = (
+                    1 + lengths[expected_index + 1][observed_index + 1]
+                )
+            else:
+                lengths[expected_index][observed_index] = max(
+                    lengths[expected_index + 1][observed_index],
+                    lengths[expected_index][observed_index + 1],
+                )
+
+    anchors: list[tuple[int, int]] = []
+    expected_index = 0
+    observed_index = 0
+    while expected_index < expected_count and observed_index < observed_count:
+        if expected[expected_index] == observed[observed_index]:
+            anchors.append((expected_index, observed_index))
+            expected_index += 1
+            observed_index += 1
+        elif (
+            lengths[expected_index + 1][observed_index]
+            > lengths[expected_index][observed_index + 1]
+        ):
+            expected_index += 1
+        else:
+            # Prefer the earliest expected anchor when equally long LCS paths exist.
+            observed_index += 1
+    return tuple(anchors)
 
 
 def _failed_interval_audit(

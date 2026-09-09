@@ -134,6 +134,7 @@ def validate_multilingual_headings(
         for path, node in nodes
         if isinstance(node, StructureElement)
     )
+    effective_markers, inherited_markers = _language_marker_states(elements)
     node_by_path = dict(nodes)
     for interval in intervals:
         boundary_failure = _interval_boundary_failure(interval, node_by_path)
@@ -177,7 +178,12 @@ def validate_multilingual_headings(
                 "Language interval does not contain document structure.",
                 {"language": interval.language, "interval": interval},
             )
-        marker_failure = _language_marker_failure(bounded_elements, interval)
+        marker_failure = _language_marker_failure(
+            bounded_elements,
+            interval,
+            effective_markers,
+            inherited_markers,
+        )
         if marker_failure is not None:
             return _failed_interval_audit(
                 expected_count,
@@ -265,13 +271,13 @@ def _interval_boundary_failure(
 def _language_marker_failure(
     elements: tuple[tuple[tuple[int, ...], StructureElement], ...],
     interval: LanguageIntervalEvidence,
+    effective_markers: dict[tuple[int, ...], str | None],
+    inherited_markers: dict[tuple[int, ...], str | None],
 ) -> dict[str, object] | None:
-    inherited_by_path: dict[tuple[int, ...], str | None] = {}
-    for path, element in elements:
-        inherited_marker = inherited_by_path.get(path[:-1])
-        marker = element.language
+    for path, _element in elements:
+        inherited_marker = inherited_markers[path]
+        marker = effective_markers[path]
         if marker is None:
-            inherited_by_path[path] = inherited_marker
             continue
         canonical = _canonical_language_marker(marker)
         if canonical is None:
@@ -290,8 +296,24 @@ def _language_marker_failure(
                 "inherited_marker": inherited_marker,
                 "reason": "conflicting_canonical_language",
             }
-        inherited_by_path[path] = marker
     return None
+
+
+def _language_marker_states(
+    elements: tuple[tuple[tuple[int, ...], StructureElement], ...],
+) -> tuple[
+    dict[tuple[int, ...], str | None],
+    dict[tuple[int, ...], str | None],
+]:
+    effective_by_path: dict[tuple[int, ...], str | None] = {}
+    inherited_by_path: dict[tuple[int, ...], str | None] = {}
+    for path, element in elements:
+        inherited = effective_by_path.get(path[:-1])
+        inherited_by_path[path] = inherited
+        effective_by_path[path] = (
+            element.language if element.language is not None else inherited
+        )
+    return effective_by_path, inherited_by_path
 
 
 def _canonical_language_marker(marker: str) -> str | None:

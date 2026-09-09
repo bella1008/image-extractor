@@ -452,6 +452,117 @@ def test_nested_elements_inherit_nearest_structural_language_marker() -> None:
     assert audit.passed is True
 
 
+def test_interval_inherits_conflicting_language_from_ancestor_outside_bounds() -> None:
+    wrapper = StructureElement(
+        "Part",
+        "part",
+        language="en-US",
+        children=(
+            _section("ENG", 0, _heading("source", 2, 0)),
+            _section("FRA", 1, _heading("localized", 2, 1)),
+        ),
+    )
+    wrapper = replace(
+        wrapper,
+        children=tuple(replace(section, language=None) for section in wrapper.children),
+    )
+    document = TaggedDocument(Path("wrapped.pdf"), True, None, (), (wrapper,))
+    intervals = (
+        LanguageIntervalEvidence(
+            "ENG", 0, 0, (0, 0), (0, 0), "structural_language_section"
+        ),
+        LanguageIntervalEvidence(
+            "FRA", 1, 1, (0, 1), (0, 1), "structural_language_section"
+        ),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), intervals, document
+    )
+
+    assert audit.passed is False
+    assert audit.signatures == ()
+    assert audit.diagnostics[-1].context == {
+        "language": "FRA",
+        "child_path": (0, 1),
+        "observed_marker": "en-US",
+        "inherited_marker": "en-US",
+        "reason": "conflicting_canonical_language",
+    }
+
+
+def test_interval_inherits_ambiguous_language_from_ancestor_outside_bounds() -> None:
+    wrapper = StructureElement(
+        "Part",
+        "part",
+        language="English (US)",
+        children=(
+            _section("ENG", 0, _heading("source", 2, 0)),
+            _section("FRA", 1, _heading("localized", 2, 1)),
+        ),
+    )
+    wrapper = replace(
+        wrapper,
+        children=tuple(replace(section, language=None) for section in wrapper.children),
+    )
+    document = TaggedDocument(Path("wrapped.pdf"), True, None, (), (wrapper,))
+    intervals = (
+        LanguageIntervalEvidence(
+            "ENG", 0, 0, (0, 0), (0, 0), "structural_language_section"
+        ),
+        LanguageIntervalEvidence(
+            "FRA", 1, 1, (0, 1), (0, 1), "structural_language_section"
+        ),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), intervals, document
+    )
+
+    assert audit.passed is False
+    assert audit.signatures == ()
+    assert audit.diagnostics[-1].context == {
+        "language": "ENG",
+        "child_path": (0, 0),
+        "observed_marker": "English (US)",
+        "inherited_marker": "English (US)",
+        "reason": "ambiguous_language_marker",
+    }
+
+
+def test_explicit_interval_markers_unambiguously_override_outer_language() -> None:
+    wrapper = StructureElement(
+        "Part",
+        "part",
+        language="English (US)",
+        children=(
+            _section("en-US", 0, _heading("source", 2, 0)),
+            _section("fr-FR", 1, _heading("localized", 2, 1)),
+        ),
+    )
+    document = TaggedDocument(
+        Path("wrapped.pdf"),
+        True,
+        "de-DE",
+        (),
+        (wrapper,),
+    )
+    intervals = (
+        LanguageIntervalEvidence(
+            "ENG", 0, 0, (0, 0), (0, 0), "structural_language_section"
+        ),
+        LanguageIntervalEvidence(
+            "FRA", 1, 1, (0, 1), (0, 1), "structural_language_section"
+        ),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), intervals, document
+    )
+
+    assert audit.passed is True
+
+
 def test_conflicting_nested_body_language_marker_fails_closed() -> None:
     conflicting = StructureElement(
         "P",

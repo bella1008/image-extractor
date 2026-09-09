@@ -498,6 +498,9 @@ def _align_signature_entries(
     between anchors are paired positionally for component comparison, with any
     remainder represented as missing or additional entries.
     """
+    if len(expected) == len(observed):
+        return tuple((index, index) for index in range(len(expected)))
+
     alignment: list[tuple[int | None, int | None]] = []
     expected_start = 0
     observed_start = 0

@@ -394,6 +394,48 @@ def test_no_exact_anchor_pairs_unmatched_segment_positionally() -> None:
     )
 
 
+def test_equal_length_level_reorder_is_compared_positionally_without_count_gaps() -> None:
+    expected = (
+        HeadingSignatureEntry(2, "source", None),
+        HeadingSignatureEntry(3, "source", None),
+    )
+    observed = tuple(reversed(expected))
+
+    audit = _audit_for_signatures(expected, observed)
+
+    assert audit.total_heading_count_matches is True
+    assert audit.heading_level_sequence_matches is False
+    assert audit.heading_origin_sequence_matches is True
+    assert audit.numbered_label_sequence_matches is True
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 0, "level", expected[0], observed[0]),
+        HeadingMismatchPosition("FRA", 1, "level", expected[1], observed[1]),
+    )
+
+
+def test_equal_length_origin_and_label_reorder_has_only_component_mismatches() -> None:
+    expected = (
+        HeadingSignatureEntry(2, "promoted", "01"),
+        HeadingSignatureEntry(2, "promoted", "02"),
+        HeadingSignatureEntry(2, "source", None),
+    )
+    observed = (expected[1], expected[2], expected[0])
+
+    audit = _audit_for_signatures(expected, observed)
+
+    assert audit.total_heading_count_matches is True
+    assert audit.heading_level_sequence_matches is True
+    assert audit.heading_origin_sequence_matches is False
+    assert audit.numbered_label_sequence_matches is False
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition(
+            "FRA", 0, "numbered_label", expected[0], observed[0]
+        ),
+        HeadingMismatchPosition("FRA", 1, "origin", expected[1], observed[1]),
+        HeadingMismatchPosition("FRA", 2, "origin", expected[2], observed[2]),
+    )
+
+
 def test_expected_and_observed_interval_count_mismatch_is_independent() -> None:
     document = _document(
         _section("ENG", 0, _heading("One", 2, 0)),

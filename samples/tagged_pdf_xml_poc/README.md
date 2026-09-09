@@ -52,7 +52,7 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 
 $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
+  "..\SUG_RAW\TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
 ).Path
 
 .venv\Scripts\tagged-pdf-extract.exe `
@@ -67,30 +67,36 @@ $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
 
 - `TAGGED_PDF_ZC_SAMPLE`: ZC 기준 PDF
 - `TAGGED_PDF_ZG_SAMPLE`: ZG BOOK 레이아웃 회귀 PDF
+- `TAGGED_PDF_LATIN_SAMPLE`: LATIN 다국어 A2 레이아웃 회귀 PDF
 - `TAGGED_PDF_KR_SAMPLE`: KR 레이아웃 회귀 PDF
+- `TAGGED_PDF_XU_SAMPLE`: XU 영문 A3 레이아웃 회귀 PDF
 - `TAGGED_PDF_ZA_SAMPLE`: ZA 레이아웃 회귀 PDF(테스트 코드는 유지하지만 현재 필수 게이트에서는 optional)
 - `TAGGED_PDF_XY_SAMPLE`: XY 레이아웃 회귀 PDF(테스트 코드는 유지하지만 현재 필수 게이트에서는 optional)
 
 각 테스트는 해당 환경변수, 저장소 상대 `samples/SUG_RAW`, 사용자 홈의 개발용 `image-extractor/samples/SUG_RAW` 순서로 자기 샘플을 찾습니다. 기본 휴대용 테스트 모드에서는 샘플이 없으면 그 샘플의 테스트만 독립적으로 건너뛰며, 다른 단위 테스트와 사용 가능한 샘플 테스트는 계속 실행합니다.
 
-현재 필수 실물 PDF 검수 대상은 ZC, ZG, KR 세 개입니다. 아래 명령은 `samples\SUG_RAW` 원본이 있는 기본 저장소 루트에서 시작해야 합니다(원본 PDF를 복제하지 않은 Git worktree에서는 샘플 경로를 별도로 지정하세요). 필수 샘플 모드에서는 이 세 샘플 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다. ZA/XY 실물 테스트 노드는 코드와 선택 실행 방법을 유지하지만, 현재 게이트에서는 명시적으로 제외하며 해당 환경변수도 요구하지 않습니다.
+현재 필수 실물 PDF 검수 대상은 ZG, ZC, LATIN, KR, XU 다섯 개입니다. 아래 명령은 `samples\SUG_RAW` 원본이 있는 기본 저장소 루트에서 시작해야 합니다(원본 PDF를 복제하지 않은 Git worktree에서는 샘플 경로를 별도로 지정하세요). 필수 샘플 모드에서는 이 다섯 샘플 중 하나라도 찾지 못하면 테스트가 skip되지 않고 실패합니다. ZA/XY 실물 테스트 노드는 코드와 선택 실행 방법을 유지하지만 현재 게이트에서는 optional이며, 해당 환경변수도 요구하지 않습니다.
 
 ```powershell
 Set-Location .\samples\tagged_pdf_xml_poc
-# Current mandatory gate: ZC, ZG, and KR only.
+# Current mandatory gate: ZG, ZC, LATIN, KR, and XU.
 $env:TAGGED_PDF_REQUIRE_SAMPLES = "1"
 $env:TAGGED_PDF_ZC_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\0_TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
+  "..\SUG_RAW\TV_ZC\BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf" `
 ).Path
 $env:TAGGED_PDF_ZG_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\1_TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf" `
+  "..\SUG_RAW\TV_ZG\BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf" `
+).Path
+$env:TAGGED_PDF_LATIN_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\TV_LATIN\BN68-24972A-00_SUG_Y26 TV ALL_LATIN_L02_250105.0.pdf" `
 ).Path
 $env:TAGGED_PDF_KR_SAMPLE = (Resolve-Path `
-  "..\SUG_RAW\1_TV_KR\BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf" `
+  "..\SUG_RAW\TV_KR\BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf" `
 ).Path
-.\.venv\Scripts\python -m pytest tests -v `
-  --deselect tests/test_layout_regression.py::test_za_retains_complete_structure_and_clean_page_text `
-  --deselect tests/test_layout_regression.py::test_xy_retains_structure_without_zg_display_rules
+$env:TAGGED_PDF_XU_SAMPLE = (Resolve-Path `
+  "..\SUG_RAW\TV_XU\BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf" `
+).Path
+.\.venv\Scripts\python -m pytest tests/test_layout_regression.py tests/test_zc_integration.py -q
 ```
 
 ZA 또는 XY 실물 회귀를 별도로 수행할 때만 해당 optional 환경변수를 지정하고 그 노드를 선택 실행합니다. 일반 개발 PC에서는 `TAGGED_PDF_REQUIRE_SAMPLES`를 설정하지 않으면 없는 샘플만 독립적으로 skip됩니다.
@@ -136,7 +142,30 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 `special_character_counts_preserved`와 각 문자의 `count_preserved`는 문서 전체 문자 개수만 비교하는 보수적인 집계 proxy입니다. 특정 OSD 경로의 순서·문맥·문장 연결이 보존됐다는 뜻은 아닙니다. 지정 ZC OSD 경로의 문맥 보존은 아래 표본을 통합 테스트에서 직접 찾아 별도로 검증합니다.
 
-## 현재 샘플 검증 결과
+## 교차 프로필 가독성 근거 정책
+
+문장 경계, 목록 continuation, inline subtitle, 다국어 heading parity는 원문 문구나 번역 사전이 아니라 공통 구조·기하·글꼴 근거로만 판정합니다. BBox는 PDF에서 관찰될 때 XML과 보고서의 선택적 감사 근거로 보존하되 Raw XML 원문이나 Markdown에는 판정 속성을 섞지 않습니다. BBox 등 필수 근거가 없으면 해당 표시를 만들지 않는 fail-closed 방식입니다.
+
+- 목록 continuation은 목록과의 인접성, 같은 페이지와 언어, 수평 정렬, 세로 간격, 글꼴 크기, 충돌 구조 부재를 각각 통과해야 합니다. 표준 `P`가 아닌 사용자 정의 source role이 semantic `P`로 해석되는 경우에도 나머지 조건을 모두 통과해야 합니다.
+- inline subtitle은 단독 table wrapper, 유일한 inline leaf paragraph, offset 경계, 상대 굵기 근거가 모두 있을 때만 표시합니다.
+- 다국어 heading audit은 승격 heading, level이 확인된 source-role heading 후보, 구조적으로 검출된 section heading의 전체 level/origin/번호 label 서명을 비교합니다. heading 문구와 level 없는 문서 title은 서명에 포함하지 않습니다.
+- Runtime에는 buyer, 문구, 언어별 번역 heading을 추가하지 않습니다. 감사 근거는 `extraction_report.json`과 `semantic_document.xml`에 남고, 원문 보존용 `raw_structure.xml` 및 검토용 Markdown에는 audit 속성이 노출되지 않습니다.
+
+## 2026-09-08 교차 프로필 검증 결과
+
+동일 구현으로 아래 다섯 실물 PDF를 `--overwrite`로 새로 추출했고 네 산출물을 각각 확인했습니다. 모두 `status=pass`이며 failed hard gate와 quality diagnostic은 0개입니다.
+
+- `outputs/cross_profile_readability_zg_260908`: audit `passed`, 5개 언어 서명이 각각 26개이고 H2=9, H3=8, H4=9로 전체 구조 서명이 동일합니다.
+- `outputs/cross_profile_readability_zc_260908`: audit `passed`, 2개 언어 구간의 전체 구조 서명이 동일합니다.
+- `outputs/cross_profile_readability_latin_260908`: audit `passed`, 2개 언어 구간의 전체 구조 서명이 동일합니다.
+- `outputs/cross_profile_readability_kr_260908`: 단일 언어이므로 audit `not_applicable`입니다.
+- `outputs/cross_profile_readability_xu_260908`: 단일 언어이므로 audit `not_applicable`입니다.
+
+ZG에서는 normal space와 NBSP가 들어간 `z. B.`를 문장 내부에서 나누지 않았고, 검토된 DEU/FRA leaf 문장 경계와 FRA continuation을 원문 검색으로 확인했습니다. FRA continuation 대상은 text-equivalent한 한 문단만 검출됩니다. ITA 폐기 subtitle은 offset과 굵기 근거가 있는 inline 표시이며, DEU 대응 구간은 원문 구조대로 별도 제목과 qualifier로 유지됩니다. KR과 XU의 continuation은 각각 두 건이며 모든 검출 조건을 독립적으로 통과한 실제 구조 근거가 있습니다. 두 프로필에는 inline-subtitle hint가 없습니다.
+
+XU의 `Warranty Card`와 `WARRANTY CONDITIONS`는 PDF source role `Heading2`이며 report에서는 `source_role_candidate`, Markdown에서는 각각 `###`로 보존됩니다. 문구 기반 승격 규칙은 추가하지 않았습니다. RF maximum-transmitter-power 행과 `[QN990H]` 모델 코드가 같은 표 구조에 남아 있어 페이지의 RF/model-code 관계도 유지됩니다. 고위험 navigation 경로와 이름 없는 icon 위치를 다섯 Markdown에서 확인했고, Semantic XML inline icon 수와 Markdown `[아이콘]` 수가 프로필별로 일치합니다. 현재 blocker는 없습니다.
+
+## 이전 샘플 검증 결과
 
 2026-09-04에 ZC, ZA, ZG 원본 PDF를 직접 읽어 확인했습니다. 세 샘플 모두 marked PDF이며 구조와 body가 있고, unresolved MCID와 XML 금지 제어문자는 0개입니다. 번호형 장 제목의 구조·순서·글자 크기 검증을 포함한 모든 하드 게이트가 통과해 세 샘플 모두 `status=pass`입니다.
 

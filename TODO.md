@@ -216,14 +216,27 @@ Notes
 
 ### Tagged PDF XML/Markdown Review Follow-ups
 
-- Implement the approved cross-profile readability and multilingual-heading
-  parity design. Capture optional MCID text BBoxes, protect spaced
-  abbreviations, split eligible leaf-body sentences, recover only fully
-  evidenced list-continuation paragraphs, support single-paragraph table
-  subtitles, and apply heading parity to every canonical profile with
-  `language_count >= 2`.
+- [x] Task 8: gate cross-profile readability and multilingual-heading parity
+  against the exact ZG, ZC, LATIN, KR, and XU real PDFs. Shared evidence policy:
+  BBoxes and detector reasons remain optional XML/report audit evidence; Raw XML
+  text and Markdown stay free of detector attributes; sentence, continuation,
+  subtitle, and heading-parity decisions fail closed unless every generic
+  structure/geometry/typography condition is present. Runtime contains no
+  buyer, phrase, language, translation, or localized-heading mapping.
   - Design: `docs/superpowers/specs/2026-09-08-cross-profile-readability-and-heading-parity-design.md`
   - Korean review copy: `docs/superpowers/specs/2026-09-08-cross-profile-readability-and-heading-parity-design_kr.md`
+  - Real-PDF gate: `37 passed`; all five reports are `status=pass`, with ZG/ZC/LATIN
+    multilingual audits `passed` and KR/XU `not_applicable`; no failed hard gate,
+    text-quality page, or quality diagnostic remains.
+  - Outputs: `samples/tagged_pdf_xml_poc/outputs/cross_profile_readability_zg_260908`,
+    `..._zc_260908`, `..._latin_260908`, `..._kr_260908`, and `..._xu_260908`.
+  - ZG manual review confirmed protected `z. B.`, reviewed DEU/FRA sentence
+    boundaries, one FRA target continuation, the evidenced ITA inline disposal
+    subtitle, navigation paths, icon parity, and clean localized text.
+  - XU manual review confirmed that `Warranty Card` and `WARRANTY CONDITIONS`
+    remain PDF `Heading2` source-role candidates rendered as Markdown `###`, and
+    that RF maximum-transmitter-power plus `[QN990H]` remain in one table. No
+    translated heading mapping was added. Current blocker: none.
 - [x] Preserve complex table structure in `samples/tagged_pdf_xml_poc` Markdown output instead of flattening nested paragraphs and lists into a single `- 행 N:` line.
 - [x] Add typography-backed subtitle display hints. Do not hardcode `Correct Disposal...` wording; use verified structure plus relative PDF font weight and keep uncertain cases as separate plain paragraphs.
 - Add a conservative verified-icon catalog for recurring icon-only figures. Name only verified matches, retain evidence, and leave unknown icons for human review.

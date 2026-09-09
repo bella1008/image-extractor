@@ -12,6 +12,9 @@ from tagged_pdf_extractor.domain.readability_formatting import (
     verified_subtitle_linked_body_paths,
 )
 from tagged_pdf_extractor.infrastructure.output_bundle import OutputBundleWriter
+from tagged_pdf_extractor.infrastructure.json_profile_repository import (
+    JsonProfileRepository,
+)
 from tagged_pdf_extractor.infrastructure.pymupdf_baseline import (
     PyMuPdfBaselineReader,
 )
@@ -24,6 +27,9 @@ from .readability_assertions import (
     assert_profile_readability_controls as _assert_profile_readability_controls,
     assert_raw_has_no_readability_display_attributes as _assert_raw_has_no_readability_display_attributes,
     assert_sentence_breaks_do_not_create_source_units as _assert_sentence_breaks_do_not_create_source_units,
+    assert_multilingual_heading_audit as _assert_multilingual_heading_audit,
+    assert_multilingual_heading_audit_not_applicable as _assert_multilingual_heading_audit_not_applicable,
+    assert_structure_hints_are_independently_validated as _assert_structure_hints_are_independently_validated,
 )
 
 
@@ -39,8 +45,22 @@ _SAMPLES = {
         "TAGGED_PDF_ZG_SAMPLE",
         Path("samples")
         / "SUG_RAW"
-        / "1_TV_ZG"
+        / "TV_ZG"
         / "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf",
+    ),
+    "ZC": (
+        "TAGGED_PDF_ZC_SAMPLE",
+        Path("samples")
+        / "SUG_RAW"
+        / "TV_ZC"
+        / "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf",
+    ),
+    "LATIN": (
+        "TAGGED_PDF_LATIN_SAMPLE",
+        Path("samples")
+        / "SUG_RAW"
+        / "TV_LATIN"
+        / "BN68-24972A-00_SUG_Y26 TV ALL_LATIN_L02_250105.0.pdf",
     ),
     "XY": (
         "TAGGED_PDF_XY_SAMPLE",
@@ -56,8 +76,21 @@ _SAMPLES = {
         / "TV_KR"
         / "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
     ),
+    "XU": (
+        "TAGGED_PDF_XU_SAMPLE",
+        Path("samples")
+        / "SUG_RAW"
+        / "TV_XU"
+        / "BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf",
+    ),
 }
 _README = Path(__file__).parents[1] / "README.md"
+_PROFILE_MAPPING = (
+    Path(__file__).resolve().parents[3]
+    / "metadata"
+    / "pdf_profile_mapping"
+    / "pdf_profile_mapping.json"
+)
 _ZA_NUMBERED_HEADINGS = (
     ("01", "Initial Setup"),
     ("02", "Troubleshooting and Maintenance"),
@@ -198,6 +231,22 @@ _DEU_BATTERY_SENTENCES = (
     "Wenn Batterien nicht ordnungsgemäß entsorgt werden, können diese "
     "Substanzen die Gesundheit von Menschen oder die Umwelt gefährden.",
 )
+_DEU_STAND_SENTENCES = (
+    "Wenn Sie ein Fernsehgerät mit Standfuß installieren, dürfen Sie den "
+    "Standfuß nicht auf den hinteren Teil der Tischfläche stellen.",
+    "Andernfalls arbeitet der Bewegungssensor unten am Fernsehgerät "
+    "möglicherweise nicht ordnungsgemäß.",
+)
+_DEU_SETUP_SENTENCES = (
+    "Wenn Sie das Fernsehgerät zum ersten Mal einschalten, wird sofort die "
+    "Ersteinrichtung gestartet.",
+    "Befolgen Sie die Anweisungen auf dem Bildschirm und konfigurieren Sie die "
+    "Grundeinstellungen des Fernsehgeräts so, dass er an die bei Ihnen "
+    "herrschenden Lichtverhältnisse angepasst ist.",
+)
+_FRA_CONTINUATION_PREFIX = (
+    "Reportez-vous à la section sur les caractéristiques électriques"
+)
 
 
 def _resolve_sample(
@@ -235,12 +284,13 @@ def _extract_report(path: Path, output: Path):
         PyMuPdfBaselineReader(),
         QualityEvaluator(),
         OutputBundleWriter(),
+        JsonProfileRepository(_PROFILE_MAPPING),
     ).run(path, output)
 
 
 @pytest.fixture(scope="module")
 def za_bundle(tmp_path_factory: pytest.TempPathFactory):
-    path = require_sample(_resolve_sample("ZA"), "ZA")
+    path = require_sample(_resolve_sample("ZA"), "ZA", required=False)
     return _extract_report(path, tmp_path_factory.mktemp("layout-za") / "bundle")
 
 
@@ -251,8 +301,20 @@ def zg_bundle(tmp_path_factory: pytest.TempPathFactory):
 
 
 @pytest.fixture(scope="module")
+def zc_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("ZC"), "ZC")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-zc") / "bundle")
+
+
+@pytest.fixture(scope="module")
+def latin_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("LATIN"), "LATIN")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-latin") / "bundle")
+
+
+@pytest.fixture(scope="module")
 def xy_bundle(tmp_path_factory: pytest.TempPathFactory):
-    path = require_sample(_resolve_sample("XY"), "XY")
+    path = require_sample(_resolve_sample("XY"), "XY", required=False)
     return _extract_report(path, tmp_path_factory.mktemp("layout-xy") / "bundle")
 
 
@@ -260,6 +322,12 @@ def xy_bundle(tmp_path_factory: pytest.TempPathFactory):
 def kr_bundle(tmp_path_factory: pytest.TempPathFactory):
     path = require_sample(_resolve_sample("KR"), "KR")
     return _extract_report(path, tmp_path_factory.mktemp("layout-kr") / "bundle")
+
+
+@pytest.fixture(scope="module")
+def xu_bundle(tmp_path_factory: pytest.TempPathFactory):
+    path = require_sample(_resolve_sample("XU"), "XU")
+    return _extract_report(path, tmp_path_factory.mktemp("layout-xu") / "bundle")
 
 
 def _series_labels(report) -> list[tuple[str, ...]]:
@@ -460,6 +528,116 @@ def _assert_zg_sentence_readability(
     assert deu_lines[1].endswith("<br>")
     deu_visual_lines = tuple(_normalized_markdown_line(line) for line in deu_lines)
     assert deu_visual_lines == _DEU_BATTERY_SENTENCES
+
+    for expected in (_DEU_STAND_SENTENCES, _DEU_SETUP_SENTENCES):
+        paragraphs = _elements_starting_with(root, "paragraph", expected[0])
+        assert len(paragraphs) == 1
+        assert paragraphs[0].find(
+            ".//text[@display-role='sentence-break-source']"
+        ) is not None
+        start = next(
+            index
+            for index, line in enumerate(markdown_lines)
+            if _normalized_markdown_line(line).startswith(expected[0])
+        )
+        assert tuple(
+            _normalized_markdown_line(line)
+            for line in markdown_lines[start : start + 2]
+        ) == expected
+
+
+def _assert_zg_spaced_abbreviations_remain_intact(
+    raw_xml: Path, markdown: str
+) -> None:
+    raw_text = "".join(ET.parse(raw_xml).getroot().itertext())
+    variants = ("z. B.", "z.\u00a0B.")
+    source_count = sum(raw_text.count(value) for value in variants)
+    assert source_count > 0
+    assert sum(markdown.count(value) for value in variants) == source_count
+    assert re.search(r"z\.\s*<br>\s*B\.", markdown) is None
+
+
+def _assert_zg_continuation_source_equivalence(
+    document, raw_xml: Path, semantic_root: ET.Element, markdown: str
+) -> None:
+    semantic_targets = _elements_starting_with(
+        semantic_root, "paragraph", _FRA_CONTINUATION_PREFIX
+    )
+    assert len(semantic_targets) == 1
+    target = semantic_targets[0]
+    assert target.attrib["display-role"] == "list-continuation"
+    assert sum(
+        1
+        for hint in document.continuation_hints
+        if _resolve_semantic_child_path(semantic_root, hint.child_path) is target
+    ) == 1
+
+    raw_root = ET.parse(raw_xml).getroot()
+    raw_targets = [
+        element
+        for element in raw_root.iter("element")
+        if element.attrib.get("semantic-role") == "paragraph"
+        and _raw_element_text(element).startswith(_FRA_CONTINUATION_PREFIX)
+    ]
+    assert len(raw_targets) == 1
+    assert _raw_element_text(raw_targets[0]) == _element_text(target)
+    assert re.sub(r"\s+", " ", markdown).count(_element_text(target)) == 1
+
+
+def _resolve_semantic_child_path(
+    root: ET.Element, child_path: tuple[int, ...]
+) -> ET.Element:
+    current = root
+    for index in child_path:
+        current = [child for child in current if child.tag != "attributes"][index]
+    return current
+
+
+def _raw_element_text(element: ET.Element) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        "".join(decode_data_element(part) for part in element.iter("part")),
+    ).strip()
+
+
+def _assert_zg_inline_disposal_subtitle_evidence(
+    root: ET.Element, markdown: str
+) -> None:
+    ita_title = (
+        "Corretto smaltimento del prodotto "
+        "(rifiuti elettrici ed elettronici)"
+    )
+    ita_qualifier = (
+        "(Applicabile nei Paesi con sistemi di raccolta differenziata)"
+    )
+    ita = [
+        element
+        for element in _elements_starting_with(root, "paragraph", ita_title)
+        if element.attrib.get("display-role") == "subtitle"
+    ]
+    assert len(ita) == 1
+    assert ita[0].attrib["display-role"] == "subtitle"
+    assert int(ita[0].attrib["title-end-offset"]) == 70
+    assert int(ita[0].attrib["qualifier-start-offset"]) == 71
+    assert f"**{ita_title}**<br>" in markdown
+    assert ita_qualifier in markdown
+
+    deu_title = "Ordnungsgemäße Entsorgung der Batterien in diesem Gerät"
+    deu_qualifier = (
+        "(Anwendbar in Ländern mit Systemen zur getrennten Sammlung von "
+        "Wertstoffen)"
+    )
+    deu = [
+        element
+        for element in _elements_starting_with(root, "paragraph", deu_title)
+        if element.attrib.get("display-role") == "subtitle"
+    ]
+    assert len(deu) == 1
+    assert deu[0].attrib["display-role"] == "subtitle"
+    assert "title-end-offset" not in deu[0].attrib
+    assert f"**{deu_title}**" in markdown
+    assert deu_qualifier in markdown
 
 
 def _assert_zg_inline_osd_icons(root: ET.Element, markdown: str) -> None:
@@ -714,33 +892,32 @@ def test_readme_documents_sample_overrides_and_independent_skips() -> None:
     assert "TAGGED_PDF_ZC_SAMPLE" in readme
     assert "TAGGED_PDF_ZA_SAMPLE" in readme
     assert "TAGGED_PDF_ZG_SAMPLE" in readme
+    assert "TAGGED_PDF_LATIN_SAMPLE" in readme
     assert "TAGGED_PDF_XY_SAMPLE" in readme
     assert "TAGGED_PDF_KR_SAMPLE" in readme
+    assert "TAGGED_PDF_XU_SAMPLE" in readme
     assert "TAGGED_PDF_REQUIRE_SAMPLES" in readme
     assert "그 샘플의 테스트만 독립적으로 건너뛰" in readme
     assert "Set-Location .\\samples\\tagged_pdf_xml_poc" in readme
     required_command = readme.split(
-        "# Current mandatory gate: ZC, ZG, and KR only.", 1
+        "# Current mandatory gate: ZG, ZC, LATIN, KR, and XU.", 1
     )[1].split("```", 1)[0]
     for variable in (
         "TAGGED_PDF_ZC_SAMPLE",
         "TAGGED_PDF_ZG_SAMPLE",
+        "TAGGED_PDF_LATIN_SAMPLE",
         "TAGGED_PDF_KR_SAMPLE",
+        "TAGGED_PDF_XU_SAMPLE",
     ):
         assert f'$env:{variable} = (Resolve-Path `' in required_command
     assert "TAGGED_PDF_ZA_SAMPLE" not in required_command
     assert "TAGGED_PDF_XY_SAMPLE" not in required_command
-    assert '"..\\SUG_RAW\\0_TV_ZC\\BN68-25100B-00_' in readme
-    assert '"..\\SUG_RAW\\1_TV_ZG\\BN68-25448A-00_' in readme
-    assert '"..\\SUG_RAW\\1_TV_KR\\BN68-25108A-00_' in readme
-    assert (
-        "--deselect tests/test_layout_regression.py::"
-        "test_za_retains_complete_structure_and_clean_page_text"
-    ) in required_command
-    assert (
-        "--deselect tests/test_layout_regression.py::"
-        "test_xy_retains_structure_without_zg_display_rules"
-    ) in required_command
+    assert '"..\\SUG_RAW\\TV_ZG\\BN68-25448A-00_' in readme
+    assert '"..\\SUG_RAW\\TV_ZC\\BN68-25100B-00_' in readme
+    assert '"..\\SUG_RAW\\TV_LATIN\\BN68-24972A-00_' in readme
+    assert '"..\\SUG_RAW\\TV_KR\\BN68-25108A-00_' in readme
+    assert '"..\\SUG_RAW\\TV_XU\\BN68-24437C-01_' in readme
+    assert "--deselect" not in required_command
     assert "ZA/XY" in readme and "optional" in readme
     assert "Set-Location C:\\Users\\bella" not in readme
 
@@ -787,12 +964,28 @@ def test_available_sample_is_returned_in_required_sample_mode(tmp_path: Path) ->
     ("sample", "environment_name", "relative_path"),
     (
         (
-            "XY",
-            "TAGGED_PDF_XY_SAMPLE",
+            "ZG",
+            "TAGGED_PDF_ZG_SAMPLE",
             Path("samples")
             / "SUG_RAW"
-            / "TV_XY"
-            / "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
+            / "TV_ZG"
+            / "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf",
+        ),
+        (
+            "ZC",
+            "TAGGED_PDF_ZC_SAMPLE",
+            Path("samples")
+            / "SUG_RAW"
+            / "TV_ZC"
+            / "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf",
+        ),
+        (
+            "LATIN",
+            "TAGGED_PDF_LATIN_SAMPLE",
+            Path("samples")
+            / "SUG_RAW"
+            / "TV_LATIN"
+            / "BN68-24972A-00_SUG_Y26 TV ALL_LATIN_L02_250105.0.pdf",
         ),
         (
             "KR",
@@ -802,9 +995,17 @@ def test_available_sample_is_returned_in_required_sample_mode(tmp_path: Path) ->
             / "TV_KR"
             / "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
         ),
+        (
+            "XU",
+            "TAGGED_PDF_XU_SAMPLE",
+            Path("samples")
+            / "SUG_RAW"
+            / "TV_XU"
+            / "BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf",
+        ),
     ),
 )
-def test_xy_and_kr_sample_resolver_searches_repository_and_environment(
+def test_required_sample_resolver_searches_repository_and_environment(
     sample: str,
     environment_name: str,
     relative_path: Path,
@@ -846,8 +1047,8 @@ def test_xy_and_kr_sample_resolver_searches_repository_and_environment(
     ) == home_sample
 
 
-@pytest.mark.parametrize("sample", ("XY", "KR"))
-def test_xy_and_kr_missing_samples_fail_in_required_mode(
+@pytest.mark.parametrize("sample", ("ZG", "ZC", "LATIN", "KR", "XU"))
+def test_required_samples_fail_in_required_mode(
     sample: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -933,6 +1134,11 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         document, semantic_root, markdown
     )
     _assert_zg_sentence_readability(semantic_root, markdown)
+    _assert_zg_spaced_abbreviations_remain_intact(artifacts.raw_xml, markdown)
+    _assert_zg_continuation_source_equivalence(
+        document, artifacts.raw_xml, semantic_root, markdown
+    )
+    _assert_zg_inline_disposal_subtitle_evidence(semantic_root, markdown)
     _assert_zg_inline_osd_icons(semantic_root, markdown)
     _assert_zg_note_markers_and_plain_model_labels(semantic_root, markdown)
     _assert_preserved_breaks_are_physical_markdown_lines(semantic_root, markdown)
@@ -978,6 +1184,17 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         }
     ) == expected_form_labels
     _assert_form_labels_and_details_remain_separate(semantic_root, markdown)
+
+    _assert_multilingual_heading_audit(
+        document,
+        report,
+        ("ENG", "DEU", "FRA", "ITA", "DUT"),
+        expected_level_counts=Counter({2: 9, 3: 8, 4: 9}),
+    )
+    assert all(
+        len(signature.entries) == 26
+        for signature in document.multilingual_heading_audit.signatures
+    )
 
     assert markdown.count(
         "(Applicable in countries with separate collection systems)"
@@ -1051,7 +1268,69 @@ def test_xy_retains_structure_without_zg_display_rules(xy_bundle) -> None:
 def test_kr_retains_structure_without_zg_display_rules(kr_bundle) -> None:
     _assert_non_zg_profile_bundle(kr_bundle, _KR_NUMBERED_HEADINGS)
     document, report, artifacts = kr_bundle
+    _assert_multilingual_heading_audit_not_applicable(document, report)
+    _assert_structure_hints_are_independently_validated(document)
+    assert all(hint.title_end_offset is None for hint in document.subtitle_hints)
     _assert_profile_readability_controls(document, report, artifacts)
+
+
+@pytest.mark.parametrize(
+    ("bundle_name", "expected_languages"),
+    (
+        ("zc_bundle", ("ENG", "C-FRA")),
+        ("latin_bundle", ("ENG", "M-SPA")),
+    ),
+)
+def test_multilingual_sheet_profiles_have_full_heading_signature_parity(
+    bundle_name: str,
+    expected_languages: tuple[str, ...],
+    request: pytest.FixtureRequest,
+) -> None:
+    document, report, artifacts = request.getfixturevalue(bundle_name)
+    _assert_common_layout_quality(document, report, {"0", "1"})
+    _assert_multilingual_heading_audit(document, report, expected_languages)
+    _assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
+
+
+def test_xu_retains_source_warranty_and_rf_model_structure(xu_bundle) -> None:
+    document, report, artifacts = xu_bundle
+    _assert_common_layout_quality(document, report, {"0", "1"})
+    _assert_multilingual_heading_audit_not_applicable(document, report)
+    _assert_structure_hints_are_independently_validated(document)
+    assert all(hint.title_end_offset is None for hint in document.subtitle_hints)
+    _assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
+
+    warranty = [
+        entry
+        for entry in report.heading_hierarchy
+        if entry["joined_text"].strip()
+        in {"Warranty Card", "WARRANTY CONDITIONS"}
+    ]
+    assert [entry["joined_text"].strip() for entry in warranty] == [
+        "Warranty Card",
+        "WARRANTY CONDITIONS",
+    ]
+    assert all(entry["source_role"] == "Heading2" for entry in warranty)
+    assert all(entry["classification"] == "source_role_candidate" for entry in warranty)
+    assert all(entry["title"] is None for entry in warranty)
+
+    semantic_root = ET.parse(artifacts.semantic_xml).getroot()
+    rf_tables = [
+        table
+        for table in semantic_root.iter("table")
+        if "RF max transmitter power" in _element_text(table)
+        and "[QN990H]" in _element_text(table)
+    ]
+    assert len(rf_tables) == 1
+    assert len(list(rf_tables[0].iter("table_row"))) >= 2
+    assert _elements_starting_with(
+        semantic_root, "list_body", "The RF antenna(s) must be installed"
+    )
+    markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert markdown.count("### Warranty Card") == 1
+    assert markdown.count("### WARRANTY CONDITIONS") == 1
+    assert "RF max transmitter power :" in markdown
+    assert "[QN990H]" in markdown
 
 
 def test_form_detection_runtime_has_no_title_or_model_dictionary() -> None:

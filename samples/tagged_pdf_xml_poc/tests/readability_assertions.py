@@ -8,6 +8,10 @@ import pytest
 from tagged_pdf_extractor.domain.readability_formatting import (
     verified_subtitle_linked_body_paths,
 )
+from tagged_pdf_extractor.domain.subtitle_detection import detect_subtitle_hints
+from tagged_pdf_extractor.domain.display_hint_validation import (
+    validate_review_formatting_hints,
+)
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
 from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
@@ -28,6 +32,21 @@ READABILITY_DISPLAY_ATTRIBUTES = frozenset(
         "comparison-body-font-weight",
         "observed-line-count",
         "display-level",
+        "title-end-offset",
+        "qualifier-start-offset",
+        "continuation-reason",
+        "preceding-list-item-path",
+        "preceding-list-body-path",
+        "paragraph-bbox",
+        "list-body-bbox",
+        "left-delta",
+        "vertical-gap",
+        "preceding-body-font-weight",
+        "preceding-body-font-size",
+        "preceding-body-observed-lines",
+        "target-font-weight",
+        "target-font-size",
+        "target-observed-lines",
     }
 )
 
@@ -290,3 +309,67 @@ def assert_profile_readability_controls(document, report, artifacts) -> None:
     assert_navigation_flows_preserved(semantic_root, markdown)
     assert_generic_figure_fallback(semantic_root, markdown)
     assert_image_only_table_cells_remain_figures(semantic_root)
+
+
+def assert_multilingual_heading_audit(
+    document,
+    report,
+    expected_languages: tuple[str, ...],
+    *,
+    expected_level_counts: Counter[int] | None = None,
+) -> None:
+    audit = document.multilingual_heading_audit
+    assert audit is not None
+    assert audit.applicable is True
+    assert audit.passed is True
+    assert audit.expected_interval_count == len(expected_languages)
+    assert audit.observed_interval_count == len(expected_languages)
+    assert audit.interval_count_matches is True
+    assert audit.total_heading_count_matches is True
+    assert audit.heading_level_sequence_matches is True
+    assert audit.heading_origin_sequence_matches is True
+    assert audit.numbered_label_sequence_matches is True
+    assert tuple(signature.language for signature in audit.signatures) == (
+        expected_languages
+    )
+    entries = tuple(signature.entries for signature in audit.signatures)
+    assert entries and all(entry == entries[0] for entry in entries[1:])
+    if expected_level_counts is not None:
+        for signature in audit.signatures:
+            assert Counter(
+                entry.heading_level for entry in signature.entries
+            ) == expected_level_counts
+
+    report_audit = report.metrics["multilingual_heading_audit"]
+    assert report_audit["applicable"] is True
+    assert report_audit["status"] == "passed"
+    assert report_audit["passed"] is True
+    assert len(report_audit["languages"]) == len(expected_languages)
+    assert "title" not in repr(report_audit).lower()
+    assert "wording" not in repr(report_audit).lower()
+
+
+def assert_multilingual_heading_audit_not_applicable(document, report) -> None:
+    audit = document.multilingual_heading_audit
+    assert audit is not None
+    assert audit.applicable is False
+    assert audit.passed is True
+    assert audit.signatures == ()
+    assert audit.diagnostics == ()
+    report_audit = report.metrics["multilingual_heading_audit"]
+    assert report_audit["applicable"] is False
+    assert report_audit["status"] == "not_applicable"
+
+
+def assert_structure_hints_are_independently_validated(document) -> None:
+    validated = validate_review_formatting_hints(document)
+    assert tuple(validated.continuation_by_path.values()) == (
+        document.continuation_hints
+    )
+    promoted_paths = {promotion.child_path for promotion in document.heading_promotions}
+    detected_subtitles = tuple(
+        hint
+        for hint in detect_subtitle_hints(document.children)
+        if hint.child_path not in promoted_paths
+    )
+    assert detected_subtitles == document.subtitle_hints

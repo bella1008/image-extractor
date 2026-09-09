@@ -269,18 +269,74 @@ class MultilingualHeadingAudit:
     diagnostics: tuple[Diagnostic, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.applicable, bool) or not isinstance(self.passed, bool):
+            raise ValueError("applicable and passed must be booleans")
         for name, value in (
             ("expected_interval_count", self.expected_interval_count),
             ("observed_interval_count", self.observed_interval_count),
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-        if not self.applicable and not self.passed:
-            raise ValueError("a not-applicable audit must pass")
-        if not isinstance(self.signatures, tuple) or not isinstance(
-            self.mismatch_positions, tuple
+        component_states = (
+            self.total_heading_count_matches,
+            self.heading_level_sequence_matches,
+            self.heading_origin_sequence_matches,
+            self.numbered_label_sequence_matches,
+        )
+        for state in (self.interval_count_matches, *component_states):
+            if state is not None and not isinstance(state, bool):
+                raise ValueError("audit component states must be booleans or None")
+        for name, values, member_type in (
+            ("signatures", self.signatures, LanguageHeadingSignature),
+            ("mismatch_positions", self.mismatch_positions, HeadingMismatchPosition),
+            ("diagnostics", self.diagnostics, Diagnostic),
         ):
-            raise ValueError("audit evidence collections must be tuples")
+            if not isinstance(values, tuple):
+                raise ValueError(f"{name} must be a tuple")
+            if not all(isinstance(value, member_type) for value in values):
+                raise ValueError(f"{name} contains an invalid member")
+
+        if not self.applicable:
+            if not self.passed:
+                raise ValueError("a not-applicable audit must pass")
+            if self.interval_count_matches is not None or any(
+                state is not None for state in component_states
+            ):
+                raise ValueError("a not-applicable audit cannot have component results")
+            if self.signatures or self.mismatch_positions or self.diagnostics:
+                raise ValueError("a not-applicable audit cannot have evidence")
+            return
+
+        if self.interval_count_matches is None:
+            raise ValueError("an applicable audit requires an interval count result")
+        counts_are_equal = (
+            self.expected_interval_count == self.observed_interval_count
+        )
+        if self.interval_count_matches != counts_are_equal:
+            raise ValueError("interval count result contradicts the interval counts")
+
+        all_pending = all(state is None for state in component_states)
+        all_evaluated = all(isinstance(state, bool) for state in component_states)
+        if not all_pending and not all_evaluated:
+            raise ValueError("signature component states must be all pending or evaluated")
+        if all_pending:
+            if self.passed or self.signatures or self.mismatch_positions:
+                raise ValueError("a pending applicable audit must fail closed")
+            if not self.diagnostics:
+                raise ValueError("a pending applicable audit requires a diagnostic")
+            return
+
+        if not self.interval_count_matches:
+            raise ValueError("signature components cannot be evaluated for invalid intervals")
+        if len(self.signatures) != self.observed_interval_count:
+            raise ValueError("signature count must match observed interval count")
+        expected_passed = all(component_states)
+        if self.passed != expected_passed:
+            raise ValueError("passed contradicts the evaluated component results")
+        if self.passed and self.mismatch_positions:
+            raise ValueError("a passed audit cannot contain mismatch positions")
+        if not self.passed and not self.mismatch_positions:
+            raise ValueError("a failed evaluated audit requires mismatch positions")
 
 
 def _validate_child_path(path: tuple[int, ...], name: str) -> None:

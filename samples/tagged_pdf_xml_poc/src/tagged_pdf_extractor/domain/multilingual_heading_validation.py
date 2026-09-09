@@ -431,19 +431,35 @@ def _compare_signatures(
         observed = signature.entries
         if len(reference) != len(observed):
             counts_match = False
-            common_count = min(len(reference), len(observed))
-            largest_count = max(len(reference), len(observed))
-            for position in range(common_count, largest_count):
+        for expected_index, observed_index in _align_signature_entries(
+            reference, observed
+        ):
+            if expected_index is None or observed_index is None:
                 mismatches.append(
                     HeadingMismatchPosition(
                         signature.language,
-                        position,
+                        (
+                            observed_index
+                            if expected_index is None
+                            else expected_index
+                        ),
                         "count",
-                        reference[position] if position < len(reference) else None,
-                        observed[position] if position < len(observed) else None,
+                        (
+                            None
+                            if expected_index is None
+                            else reference[expected_index]
+                        ),
+                        (
+                            None
+                            if observed_index is None
+                            else observed[observed_index]
+                        ),
                     )
                 )
-        for position, (expected, actual) in enumerate(zip(reference, observed)):
+                continue
+            expected = reference[expected_index]
+            actual = observed[observed_index]
+            position = expected_index
             if expected.heading_level != actual.heading_level:
                 levels_match = False
                 mismatches.append(
@@ -470,6 +486,91 @@ def _compare_signatures(
                     )
                 )
     return counts_match, levels_match, origins_match, labels_match, tuple(mismatches)
+
+
+def _align_signature_entries(
+    expected: tuple[HeadingSignatureEntry, ...],
+    observed: tuple[HeadingSignatureEntry, ...],
+) -> tuple[tuple[int | None, int | None], ...]:
+    """Align structural entries without consulting heading wording.
+
+    Equal-length sequences are compared positionally. For unequal lengths, a
+    deterministic edit-distance alignment preserves exact structural matches and
+    locates interior additions/deletions. Diagonal edits win ties, followed by a
+    missing observed entry and then an additional observed entry.
+    """
+    if len(expected) == len(observed):
+        return tuple((index, index) for index in range(len(expected)))
+
+    expected_count = len(expected)
+    observed_count = len(observed)
+    distances = [
+        [0] * (observed_count + 1) for _ in range(expected_count + 1)
+    ]
+    for expected_index in range(expected_count, -1, -1):
+        for observed_index in range(observed_count, -1, -1):
+            if expected_index == expected_count:
+                distances[expected_index][observed_index] = (
+                    observed_count - observed_index
+                )
+                continue
+            if observed_index == observed_count:
+                distances[expected_index][observed_index] = (
+                    expected_count - expected_index
+                )
+                continue
+            substitution_cost = _signature_substitution_cost(
+                expected[expected_index], observed[observed_index]
+            )
+            distances[expected_index][observed_index] = min(
+                substitution_cost
+                + distances[expected_index + 1][observed_index + 1],
+                1 + distances[expected_index + 1][observed_index],
+                1 + distances[expected_index][observed_index + 1],
+            )
+
+    alignment: list[tuple[int | None, int | None]] = []
+    expected_index = 0
+    observed_index = 0
+    while expected_index < expected_count or observed_index < observed_count:
+        if expected_index == expected_count:
+            alignment.append((None, observed_index))
+            observed_index += 1
+            continue
+        if observed_index == observed_count:
+            alignment.append((expected_index, None))
+            expected_index += 1
+            continue
+
+        diagonal_cost = _signature_substitution_cost(
+            expected[expected_index], observed[observed_index]
+        ) + distances[expected_index + 1][observed_index + 1]
+        if distances[expected_index][observed_index] == diagonal_cost:
+            alignment.append((expected_index, observed_index))
+            expected_index += 1
+            observed_index += 1
+            continue
+        deletion_cost = 1 + distances[expected_index + 1][observed_index]
+        if distances[expected_index][observed_index] == deletion_cost:
+            alignment.append((expected_index, None))
+            expected_index += 1
+            continue
+        alignment.append((None, observed_index))
+        observed_index += 1
+    return tuple(alignment)
+
+
+def _signature_substitution_cost(
+    expected: HeadingSignatureEntry, observed: HeadingSignatureEntry
+) -> int:
+    cost = int(expected.heading_level != observed.heading_level)
+    cost += int(expected.heading_origin != observed.heading_origin)
+    if (
+        expected.heading_origin == "promoted"
+        and observed.heading_origin == "promoted"
+    ):
+        cost += int(expected.numbered_label != observed.numbered_label)
+    return cost
 
 
 def _failed_interval_audit(

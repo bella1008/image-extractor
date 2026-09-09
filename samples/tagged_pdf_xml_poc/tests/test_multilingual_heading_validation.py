@@ -7,11 +7,13 @@ import pytest
 
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
+    Diagnostic,
     HeadingMismatchPosition,
     HeadingPromotion,
     HeadingSignatureEntry,
     LanguageHeadingSignature,
     LanguageIntervalEvidence,
+    MultilingualHeadingAudit,
     PdfProfile,
     StructureElement,
     TaggedDocument,
@@ -136,6 +138,46 @@ def _matching_document(
     return _document(left, right, promotions=tuple(promotions))
 
 
+def _document_with_signatures(
+    expected: tuple[HeadingSignatureEntry, ...],
+    observed: tuple[HeadingSignatureEntry, ...],
+) -> TaggedDocument:
+    sections: list[StructureElement] = []
+    promotions: list[HeadingPromotion] = []
+    for section_index, (language, entries) in enumerate(
+        (("ENG", expected), ("FRA", observed))
+    ):
+        children: list[StructureElement] = []
+        for entry_index, entry in enumerate(entries):
+            text = f"wording-{section_index}-{entry_index}"
+            if entry.heading_origin == "source":
+                children.append(
+                    _heading(text, entry.heading_level, section_index)
+                )
+            else:
+                children.append(_list_item(text, section_index))
+                promotions.append(
+                    _promotion(
+                        (section_index, entry_index),
+                        entry.numbered_label or "",
+                        entry.heading_level,
+                    )
+                )
+        sections.append(_section(language, section_index, *children))
+    return _document(*sections, promotions=tuple(promotions))
+
+
+def _audit_for_signatures(
+    expected: tuple[HeadingSignatureEntry, ...],
+    observed: tuple[HeadingSignatureEntry, ...],
+) -> MultilingualHeadingAudit:
+    return validate_multilingual_headings(
+        _profile("ENG", "FRA"),
+        _intervals("ENG", "FRA"),
+        _document_with_signatures(expected, observed),
+    )
+
+
 def test_signature_is_wording_independent_and_contains_only_structural_fields() -> None:
     document = _document(
         _section("ENG", 0, _heading("Safety instructions", 2, 0)),
@@ -198,6 +240,111 @@ def test_each_signature_mismatch_fails_only_its_own_component(
     assert outcomes.pop(failed_field) is False
     assert all(outcomes.values())
     assert {position.component for position in audit.mismatch_positions} == {component}
+
+
+def test_middle_insertion_reports_only_the_true_additional_position() -> None:
+    first = HeadingSignatureEntry(2, "source", None)
+    inserted = HeadingSignatureEntry(5, "promoted", "09")
+    second = HeadingSignatureEntry(3, "promoted", "01")
+    third = HeadingSignatureEntry(4, "source", None)
+
+    audit = _audit_for_signatures(
+        (first, second, third), (first, inserted, second, third)
+    )
+
+    assert audit.total_heading_count_matches is False
+    assert audit.heading_level_sequence_matches is True
+    assert audit.heading_origin_sequence_matches is True
+    assert audit.numbered_label_sequence_matches is True
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 1, "count", None, inserted),
+    )
+
+
+def test_middle_deletion_reports_only_the_true_missing_position() -> None:
+    first = HeadingSignatureEntry(2, "source", None)
+    missing = HeadingSignatureEntry(5, "promoted", "09")
+    second = HeadingSignatureEntry(3, "promoted", "01")
+    third = HeadingSignatureEntry(4, "source", None)
+
+    audit = _audit_for_signatures(
+        (first, missing, second, third), (first, second, third)
+    )
+
+    assert audit.total_heading_count_matches is False
+    assert audit.heading_level_sequence_matches is True
+    assert audit.heading_origin_sequence_matches is True
+    assert audit.numbered_label_sequence_matches is True
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 1, "count", missing, None),
+    )
+
+
+def test_repeated_adjacent_entries_do_not_hide_a_later_aligned_mismatch() -> None:
+    repeated = HeadingSignatureEntry(2, "source", None)
+    expected_tail = HeadingSignatureEntry(3, "promoted", "01")
+    observed_tail = HeadingSignatureEntry(4, "promoted", "01")
+
+    audit = _audit_for_signatures(
+        (repeated, repeated, expected_tail),
+        (repeated, repeated, repeated, observed_tail),
+    )
+
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 2, "count", None, repeated),
+        HeadingMismatchPosition(
+            "FRA", 2, "level", expected_tail, observed_tail
+        ),
+    )
+    assert audit.heading_origin_sequence_matches is True
+    assert audit.numbered_label_sequence_matches is True
+
+
+@pytest.mark.parametrize(
+    ("expected_count", "observed_count", "expected_position"),
+    [(2, 3, 2), (3, 2, 2)],
+)
+def test_alignment_ties_choose_the_same_rightmost_duplicate_gap(
+    expected_count: int, observed_count: int, expected_position: int
+) -> None:
+    repeated = HeadingSignatureEntry(2, "source", None)
+
+    audits = tuple(
+        _audit_for_signatures(
+            (repeated,) * expected_count, (repeated,) * observed_count
+        )
+        for _ in range(3)
+    )
+
+    assert audits[0] == audits[1] == audits[2]
+    assert audits[0].mismatch_positions[0].position == expected_position
+
+
+def test_alignment_compares_components_only_after_middle_gap_alignment() -> None:
+    first = HeadingSignatureEntry(2, "source", None)
+    inserted = HeadingSignatureEntry(6, "promoted", "09")
+    expected_middle = HeadingSignatureEntry(3, "promoted", "01")
+    observed_middle = HeadingSignatureEntry(3, "source", None)
+    expected_tail = HeadingSignatureEntry(4, "promoted", "02")
+    observed_tail = HeadingSignatureEntry(5, "promoted", "03")
+
+    audit = _audit_for_signatures(
+        (first, expected_middle, expected_tail),
+        (first, inserted, observed_middle, observed_tail),
+    )
+
+    assert audit.mismatch_positions == (
+        HeadingMismatchPosition("FRA", 1, "count", None, inserted),
+        HeadingMismatchPosition(
+            "FRA", 1, "origin", expected_middle, observed_middle
+        ),
+        HeadingMismatchPosition(
+            "FRA", 2, "level", expected_tail, observed_tail
+        ),
+        HeadingMismatchPosition(
+            "FRA", 2, "numbered_label", expected_tail, observed_tail
+        ),
+    )
 
 
 def test_expected_and_observed_interval_count_mismatch_is_independent() -> None:
@@ -319,6 +466,94 @@ def test_new_evidence_models_are_frozen_and_validate_values() -> None:
     with pytest.raises(ValueError, match="differ"):
         HeadingMismatchPosition("FRA", 0, "level", entry, entry)
     assert mismatch.position == 0
+
+
+def _valid_multilingual_audit() -> MultilingualHeadingAudit:
+    interval = LanguageIntervalEvidence(
+        "ENG", 0, 0, (0,), (0,), "structural_language_section"
+    )
+    signature = LanguageHeadingSignature(
+        "ENG", interval, (HeadingSignatureEntry(2, "source", None),)
+    )
+    return MultilingualHeadingAudit(
+        applicable=True,
+        passed=True,
+        expected_interval_count=1,
+        observed_interval_count=1,
+        interval_count_matches=True,
+        total_heading_count_matches=True,
+        heading_level_sequence_matches=True,
+        heading_origin_sequence_matches=True,
+        numbered_label_sequence_matches=True,
+        signatures=(signature,),
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"applicable": False},
+        {"passed": False},
+        {"interval_count_matches": False},
+        {"total_heading_count_matches": None},
+        {"heading_level_sequence_matches": False},
+        {"expected_interval_count": 2},
+        {"observed_interval_count": 2},
+    ],
+)
+def test_multilingual_heading_audit_rejects_contradictory_states(
+    changes: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        replace(_valid_multilingual_audit(), **changes)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("signatures", []),
+        ("signatures", (object(),)),
+        ("mismatch_positions", []),
+        ("mismatch_positions", (object(),)),
+        ("diagnostics", []),
+        ("diagnostics", (object(),)),
+    ],
+)
+def test_multilingual_heading_audit_rejects_invalid_evidence_collections(
+    field_name: str, invalid_value: object
+) -> None:
+    with pytest.raises(ValueError):
+        replace(_valid_multilingual_audit(), **{field_name: invalid_value})
+
+
+def test_multilingual_heading_audit_preserves_valid_failed_and_not_applicable_states() -> None:
+    diagnostic = Diagnostic("error", "invalid", "invalid evidence")
+    failed = MultilingualHeadingAudit(
+        applicable=True,
+        passed=False,
+        expected_interval_count=2,
+        observed_interval_count=1,
+        interval_count_matches=False,
+        total_heading_count_matches=None,
+        heading_level_sequence_matches=None,
+        heading_origin_sequence_matches=None,
+        numbered_label_sequence_matches=None,
+        diagnostics=(diagnostic,),
+    )
+    not_applicable = MultilingualHeadingAudit(
+        applicable=False,
+        passed=True,
+        expected_interval_count=1,
+        observed_interval_count=0,
+        interval_count_matches=None,
+        total_heading_count_matches=None,
+        heading_level_sequence_matches=None,
+        heading_origin_sequence_matches=None,
+        numbered_label_sequence_matches=None,
+    )
+
+    assert failed.diagnostics == (diagnostic,)
+    assert not_applicable.passed is True
 
 
 @pytest.mark.parametrize(

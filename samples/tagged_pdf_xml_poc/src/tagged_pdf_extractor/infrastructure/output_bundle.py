@@ -10,7 +10,9 @@ from typing import Callable
 from xml.etree import ElementTree as ET
 
 from tagged_pdf_extractor.application.evaluate_quality import (
+    MULTILINGUAL_HARD_GATE_NAMES,
     multilingual_heading_audit_to_data,
+    multilingual_heading_hard_gates,
 )
 from tagged_pdf_extractor.domain.models import (
     ExtractionArtifacts,
@@ -793,15 +795,34 @@ class OutputBundleWriter:
         staging: Path,
     ) -> None:
         report_audit = report.metrics.get("multilingual_heading_audit")
-        if (
+        has_multilingual_contract = (
             report_audit is not None
             or document.multilingual_heading_audit is not None
-        ) and report_audit != multilingual_heading_audit_to_data(
-            document.multilingual_heading_audit
-        ):
-            raise ValueError(
-                "report multilingual heading audit does not match document audit"
+            or any(
+                name in report.hard_gates
+                for name in MULTILINGUAL_HARD_GATE_NAMES
             )
+        )
+        if has_multilingual_contract:
+            expected_audit = multilingual_heading_audit_to_data(
+                document.multilingual_heading_audit
+            )
+            if report_audit != expected_audit:
+                raise ValueError(
+                    "report multilingual heading audit does not match document audit"
+                )
+            expected_gates = multilingual_heading_hard_gates(expected_audit)
+            reported_gates = {
+                name: report.hard_gates.get(name)
+                for name in MULTILINGUAL_HARD_GATE_NAMES
+            }
+            if reported_gates != expected_gates:
+                raise ValueError(
+                    "report multilingual hard gates do not match document audit"
+                )
+        expected_status = "pass" if all(report.hard_gates.values()) else "fail"
+        if report.status != expected_status:
+            raise ValueError("report status does not match all hard gates")
         raw_path = staging / RAW_XML_NAME
         semantic_path = staging / SEMANTIC_XML_NAME
         report_path = staging / REPORT_JSON_NAME

@@ -17,7 +17,10 @@ from tagged_pdf_extractor.domain.models import (
     ContinuationTypographyEvidence,
     Diagnostic,
     ExtractionArtifacts,
+    HeadingSignatureEntry,
     HeadingPromotion,
+    LanguageHeadingSignature,
+    LanguageIntervalEvidence,
     LineBreakHint,
     MultilingualHeadingAudit,
     QualityReport,
@@ -32,6 +35,7 @@ from tagged_pdf_extractor.domain.readability_formatting import (
 from tagged_pdf_extractor.infrastructure.json_report_writer import JsonReportWriter
 from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter
 from tagged_pdf_extractor.infrastructure import output_bundle as output_bundle_module
+from tagged_pdf_extractor.infrastructure import xml_writer as xml_writer_module
 from tagged_pdf_extractor.infrastructure.output_bundle import (
     BundlePublicationErrorGroup,
     BundlePublicationStateBaseExceptionGroup,
@@ -82,6 +86,79 @@ def _owned_temporary_paths(parent: Path, output_name: str) -> list[Path]:
     ) + list(parent.glob(f".{output_name}.lock-candidate-*"))
     lock = parent / f".{output_name}.lock"
     return paths + ([lock] if lock.exists() else [])
+
+
+def _bundle_document(
+    audit: MultilingualHeadingAudit | None,
+) -> TaggedDocument:
+    return TaggedDocument(
+        Path("manual.pdf"),
+        True,
+        "ENG",
+        (),
+        (
+            StructureElement(
+                "H1",
+                "heading",
+                1,
+                children=(ContentFragment(0, 1, ("Source heading",)),),
+            ),
+            StructureElement(
+                "P",
+                "paragraph",
+                children=(ContentFragment(0, 2, ("Source body",)),),
+            ),
+        ),
+        multilingual_heading_audit=audit,
+    )
+
+
+def _bundle_audit(state: str) -> MultilingualHeadingAudit | None:
+    if state == "none":
+        return None
+    if state == "not_applicable":
+        return MultilingualHeadingAudit(
+            False, True, 1, 0, None, None, None, None, None
+        )
+    if state == "pending":
+        return MultilingualHeadingAudit(
+            True,
+            False,
+            2,
+            2,
+            True,
+            None,
+            None,
+            None,
+            None,
+            diagnostics=(
+                Diagnostic(
+                    "error",
+                    "interval_failure",
+                    "bad\x01message",
+                    {"nested": {"value": "bad\x02context"}},
+                ),
+            ),
+        )
+    entry = HeadingSignatureEntry(1, "source", None)
+    signatures = tuple(
+        LanguageHeadingSignature(
+            language,
+            LanguageIntervalEvidence(
+                language,
+                ordinal - 1,
+                ordinal - 1,
+                (ordinal - 1,),
+                (ordinal - 1,),
+                "structural_language_section",
+            ),
+            (entry,),
+        )
+        for ordinal, language in enumerate(("ENG", "C-FRA"), start=1)
+    )
+    return MultilingualHeadingAudit(
+        True, True, 2, 2, True, True, True, True, True, signatures
+    )
 
 
 def test_required_output_names_are_the_four_transaction_artifacts() -> None:
@@ -170,6 +247,75 @@ def test_output_bundle_rejects_report_audit_inconsistent_with_document(
 
     with pytest.raises(ValueError, match="multilingual heading audit"):
         OutputBundleWriter().write(document, report, tmp_path / "output")
+
+
+@pytest.mark.parametrize("state", ("none", "not_applicable", "pending", "pass"))
+def test_output_bundle_accepts_canonical_multilingual_gate_states(
+    tmp_path: Path,
+    state: str,
+) -> None:
+    document = _bundle_document(_bundle_audit(state))
+    report = QualityEvaluator().evaluate(
+        document, "Source heading Source body", xml_round_trip_ok=True
+    )
+
+    artifacts = OutputBundleWriter().write(document, report, tmp_path / state)
+
+    payload = json.loads(artifacts.report_json.read_text(encoding="utf-8"))
+    assert payload["status"] == report.status
+    assert payload["hard_gates"] == report.hard_gates
+    ET.parse(artifacts.semantic_xml)
+    if state == "pending":
+        diagnostic = ET.parse(artifacts.semantic_xml).getroot().find(
+            "multilingual-heading-audit/diagnostic"
+        )
+        assert diagnostic is not None
+        decoded = dict(xml_writer_module._decoded_attributes(diagnostic))
+        assert decoded["message"] == "bad\x01message"
+        assert json.loads(decoded["context-json"]) == {
+            "nested": {"value": "bad\x02context"}
+        }
+        assert payload["metrics"]["multilingual_heading_audit"]["diagnostics"][
+            0
+        ]["message"] == "bad\x01message"
+
+
+@pytest.mark.parametrize(
+    ("state", "gate", "tampered_value", "tampered_status"),
+    (
+        ("pass", "multilingual_heading_level_parity", False, "fail"),
+        ("pending", "multilingual_interval_count_valid", True, "pass"),
+    ),
+)
+def test_output_bundle_rejects_tampered_multilingual_gate(
+    tmp_path: Path,
+    state: str,
+    gate: str,
+    tampered_value: bool,
+    tampered_status: str,
+) -> None:
+    document = _bundle_document(_bundle_audit(state))
+    report = QualityEvaluator().evaluate(
+        document, "Source heading Source body", xml_round_trip_ok=True
+    )
+    report.hard_gates[gate] = tampered_value
+    object.__setattr__(report, "status", tampered_status)
+
+    with pytest.raises(ValueError, match="multilingual hard gates"):
+        OutputBundleWriter().write(document, report, tmp_path / f"bad-{state}")
+
+
+def test_output_bundle_rejects_status_inconsistent_with_all_hard_gates(
+    tmp_path: Path,
+) -> None:
+    document = _bundle_document(_bundle_audit("pass"))
+    report = QualityEvaluator().evaluate(
+        document, "Source heading Source body", xml_round_trip_ok=True
+    )
+    object.__setattr__(report, "status", "fail")
+
+    with pytest.raises(ValueError, match="status does not match all hard gates"):
+        OutputBundleWriter().write(document, report, tmp_path / "bad-status")
 
 
 def test_output_bundle_keeps_raw_list_and_renders_one_promoted_heading(

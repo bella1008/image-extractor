@@ -60,7 +60,7 @@ _SPARSE_MEMORY_BUDGET_BYTES = 16 * 1024 * 1024
 _PREPASS_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
 _PREPASS_CHECK_INTERVAL = 1_024
 
-_MULTILINGUAL_GATE_NAMES = (
+MULTILINGUAL_HARD_GATE_NAMES = (
     "multilingual_interval_count_valid",
     "multilingual_heading_count_parity",
     "multilingual_heading_level_parity",
@@ -213,7 +213,7 @@ def _stable_json_value(value: Any) -> Any:
     )
 
 
-def _multilingual_hard_gates(
+def multilingual_heading_hard_gates(
     audit_data: dict[str, Any],
 ) -> dict[str, bool]:
     status = audit_data["status"]
@@ -229,7 +229,7 @@ def _multilingual_hard_gates(
             bool(audit_data["heading_origin_sequence_matches"]),
             bool(audit_data["numbered_label_sequence_matches"]),
         )
-    return dict(zip(_MULTILINGUAL_GATE_NAMES, values, strict=True))
+    return dict(zip(MULTILINGUAL_HARD_GATE_NAMES, values, strict=True))
 
 
 class QualityEvaluationLimitError(RuntimeError):
@@ -421,7 +421,7 @@ class QualityEvaluator:
                 in NUMBERED_HEADING_TYPOGRAPHY_DIAGNOSTIC_CODES
                 for diagnostic in document.diagnostics
             ),
-            **_multilingual_hard_gates(multilingual_audit),
+            **multilingual_heading_hard_gates(multilingual_audit),
         }
         metrics = {
             "element_count": traversal.element_count,

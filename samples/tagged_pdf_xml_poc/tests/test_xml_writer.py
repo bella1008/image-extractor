@@ -1,5 +1,6 @@
 import base64
 from dataclasses import replace
+import json
 import math
 from pathlib import Path
 from types import MappingProxyType
@@ -306,6 +307,43 @@ def test_pending_semantic_xml_serializes_diagnostic_context_stably(
         "message": "invalid boundary",
         "context-json": '{"path":[1,0],"reason":"missing_start_path"}',
     }
+
+
+def test_semantic_audit_diagnostic_attributes_round_trip_xml_controls(
+    tmp_path: Path,
+) -> None:
+    audit = replace(
+        _xml_audit("pending"),
+        diagnostics=(
+            Diagnostic(
+                "error",
+                "interval_failure",
+                "bad\x01message",
+                {
+                    "nested": {"value": "bad\x02context"},
+                    "sequence": ("safe", "bad\x03item"),
+                },
+            ),
+        ),
+    )
+    document = TaggedDocument(
+        Path("manual.pdf"), True, "ENG", (), (), multilingual_heading_audit=audit
+    )
+    path = tmp_path / "semantic.xml"
+
+    XmlDocumentWriter().write_semantic(document, path)
+
+    root = ET.parse(path).getroot()
+    diagnostic = root.find("multilingual-heading-audit/diagnostic")
+    assert diagnostic is not None
+    decoded = dict(xml_writer_module._decoded_attributes(diagnostic))
+    assert decoded["message"] == "bad\x01message"
+    assert json.loads(decoded["context-json"]) == {
+        "nested": {"value": "bad\x02context"},
+        "sequence": ["safe", "bad\x03item"],
+    }
+    assert diagnostic.get("message-encoding") == "base64-utf8"
+    assert "\x01" not in path.read_text(encoding="utf-8")
 
 
 def test_semantic_xml_revalidates_approved_audit_model_before_serializing(

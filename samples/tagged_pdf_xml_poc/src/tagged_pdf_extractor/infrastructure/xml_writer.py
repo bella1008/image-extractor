@@ -302,6 +302,13 @@ class XmlDocumentWriter:
                 return str(value).lower()
             return str(value)
 
+        def add(
+            parent: ET.Element,
+            tag: str,
+            attributes: dict[str, str],
+        ) -> ET.Element:
+            return ET.SubElement(parent, tag, _encoded_attributes(attributes))
+
         attribute_names = (
             ("applicable", "applicable"),
             ("status", "status"),
@@ -314,7 +321,7 @@ class XmlDocumentWriter:
             ("heading_origin_sequence_matches", "heading-origin-sequence-matches"),
             ("numbered_label_sequence_matches", "numbered-label-sequence-matches"),
         )
-        node = ET.SubElement(
+        node = add(
             root,
             "multilingual-heading-audit",
             {
@@ -325,7 +332,7 @@ class XmlDocumentWriter:
         )
         for language in audit["languages"]:
             interval = language["interval"]
-            language_node = ET.SubElement(
+            language_node = add(
                 node,
                 "language",
                 {
@@ -354,10 +361,10 @@ class XmlDocumentWriter:
                 }
                 if label is not None:
                     attributes["numbered-label"] = scalar(label)
-                ET.SubElement(language_node, "heading", attributes)
+                add(language_node, "heading", attributes)
 
         for mismatch in audit["mismatch_positions"]:
-            mismatch_node = ET.SubElement(
+            mismatch_node = add(
                 node,
                 "mismatch",
                 {
@@ -379,10 +386,10 @@ class XmlDocumentWriter:
                     attributes["numbered-label"] = scalar(
                         entry["numbered_label"]
                     )
-                ET.SubElement(mismatch_node, name, attributes)
+                add(mismatch_node, name, attributes)
 
         for diagnostic in audit["diagnostics"]:
-            ET.SubElement(
+            add(
                 node,
                 "diagnostic",
                 {

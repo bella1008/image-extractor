@@ -846,6 +846,58 @@ def test_interval_local_bcp47_markers_are_normalized_only_for_consistency() -> N
     assert audit.passed is True
 
 
+@pytest.mark.parametrize(
+    ("boundary_marker", "nested_marker"),
+    [("ENG", "en-US"), ("en-US", "ENG")],
+    ids=("canonical-then-bcp47", "bcp47-then-canonical"),
+)
+def test_mixed_exact_canonical_and_bcp47_marker_schemes_fail_closed(
+    boundary_marker: str, nested_marker: str
+) -> None:
+    marked_heading = replace(
+        _heading("source", 2, 0), language=nested_marker
+    )
+    document = _document(
+        _section(boundary_marker, 0, marked_heading),
+        _section("FRA", 1, _heading("localized", 2, 1)),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is False
+    assert audit.signatures == ()
+    assert audit.diagnostics[-1].context == {
+        "language": "ENG",
+        "child_path": (0, 0),
+        "observed_marker": nested_marker,
+        "inherited_marker": boundary_marker,
+        "reason": "mixed_language_marker_schemes",
+    }
+
+
+def test_repeated_matching_exact_canonical_markers_are_allowed() -> None:
+    document = _document(
+        _section(
+            "ENG",
+            0,
+            replace(_heading("source", 2, 0), language="ENG"),
+        ),
+        _section(
+            "FRA",
+            1,
+            replace(_heading("localized", 2, 1), language="FRA"),
+        ),
+    )
+
+    audit = validate_multilingual_headings(
+        _profile("ENG", "FRA"), _intervals("ENG", "FRA"), document
+    )
+
+    assert audit.passed is True
+
+
 def test_language_inherited_only_from_ancestor_outside_interval_is_ignored() -> None:
     wrapper = StructureElement(
         "Part",

@@ -222,6 +222,7 @@ def _language_marker_failure(
     canonical_languages: tuple[str, ...],
 ) -> dict[str, object] | None:
     effective_by_path: dict[tuple[int, ...], str | None] = {}
+    observed_exact_canonical = False
     normalized_bcp47_marker: str | None = None
     for path, element in elements:
         inherited_marker = effective_by_path.get(path[:-1])
@@ -231,6 +232,15 @@ def _language_marker_failure(
             continue
         if marker in canonical_languages:
             if marker == interval.language:
+                if normalized_bcp47_marker is not None:
+                    return {
+                        "language": interval.language,
+                        "child_path": path,
+                        "observed_marker": marker,
+                        "inherited_marker": inherited_marker,
+                        "reason": "mixed_language_marker_schemes",
+                    }
+                observed_exact_canonical = True
                 continue
             return {
                 "language": interval.language,
@@ -249,6 +259,14 @@ def _language_marker_failure(
                 "observed_marker": marker,
                 "inherited_marker": inherited_marker,
                 "reason": "malformed_language_marker",
+            }
+        if observed_exact_canonical:
+            return {
+                "language": interval.language,
+                "child_path": path,
+                "observed_marker": marker,
+                "inherited_marker": inherited_marker,
+                "reason": "mixed_language_marker_schemes",
             }
         normalized_marker = marker.casefold()
         if normalized_bcp47_marker is None:

@@ -25,6 +25,16 @@ from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
 )
 
 
+_PYPDF_OUTLINE_DATA_ERRORS = (
+    PdfReadError,
+    LimitReachedError,
+    KeyError,
+    ValueError,
+    TypeError,
+    IndexError,
+)
+
+
 class TaggedPdfError(RuntimeError):
     pass
 
@@ -159,7 +169,7 @@ class TaggedPdfReader:
             return ()
         try:
             outline = reader.outline
-        except (PdfReadError, LimitReachedError) as exc:
+        except _PYPDF_OUTLINE_DATA_ERRORS as exc:
             return self._bookmark_evidence_failure(
                 diagnostics,
                 _BookmarkEvidenceError(
@@ -232,7 +242,7 @@ class TaggedPdfReader:
         for destination in destinations:
             try:
                 page_index = reader.get_destination_page_number(destination)
-            except (PdfReadError, LimitReachedError) as exc:
+            except _PYPDF_OUTLINE_DATA_ERRORS as exc:
                 raise _BookmarkEvidenceError(
                     "pypdf_destination_resolution_error", type(exc).__name__
                 ) from exc

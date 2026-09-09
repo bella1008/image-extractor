@@ -410,6 +410,72 @@ def test_pypdf_outline_read_error_is_optional_and_uses_stable_diagnostic(
     }
 
 
+def test_pypdf_outline_key_error_preserves_extracted_text_with_stable_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class PageReference:
+        idnum = 10
+        generation = 0
+
+    class Page:
+        indirect_reference = PageReference()
+
+    parent = {
+        "/S": NameObject("/P"),
+        "/Pg": PageReference(),
+        "/K": NumberObject(7),
+    }
+
+    class FakeReader:
+        trailer = {"/Root": {"/StructTreeRoot": {"/K": [parent]}}}
+        pages = [Page()]
+
+        @property
+        def outline(self) -> Any:
+            raise KeyError("/S")
+
+    monkeypatch.setattr(
+        "tagged_pdf_extractor.infrastructure.pypdf_reader.PdfReader",
+        lambda _: FakeReader(),
+    )
+
+    result = TaggedPdfReader(
+        RecordingCollector({0: {7: ("Preserved extracted text",)}})
+    ).read(tmp_path / "malformed-outline.pdf")
+
+    paragraph = result.children[0]
+    assert isinstance(paragraph, StructureElement)
+    fragment = paragraph.children[0]
+    assert isinstance(fragment, ContentFragment)
+    assert fragment.text == "Preserved extracted text"
+    assert result.bookmark_page_bounds == ()
+    assert result.diagnostics[-1].context == {
+        "reason": "pypdf_outline_read_error",
+        "exception_type": "KeyError",
+    }
+
+
+def test_own_outline_helper_key_error_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = _destination("Destination")
+    programmer_error = KeyError("helper bug")
+
+    def fail_helper(_outline: Any) -> tuple[Destination, ...]:
+        raise programmer_error
+
+    monkeypatch.setattr(
+        TaggedPdfReader, "_top_level_destinations", staticmethod(fail_helper)
+    )
+
+    with pytest.raises(KeyError) as raised:
+        _read_fake_outline(
+            tmp_path, monkeypatch, [destination], [(destination, 0)], page_count=2
+        )
+
+    assert raised.value is programmer_error
+
+
 def test_pypdf_destination_resolution_error_uses_stable_diagnostic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

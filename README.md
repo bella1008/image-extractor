@@ -14,8 +14,9 @@
 - [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
 - [현재 진행 상태](TODO.md)
 
-첫 단계는 공통 데이터 모델이며, 아직 XML reader·DB v2·Excel·Streamlit 전환은 제공하지 않는다.
-기존 Markdown은 XML POC의 writer로 계속 생성한다. 모델 검증: `python -m pytest tests/test_review_document.py -q`.
+공통 데이터 모델과 XML adapter·품질 gate·새 추출 실행 경로를 구현했다. 아직 DB v2·Excel·Streamlit 전환은 제공하지 않는다.
+기존 Markdown은 XML POC의 writer로 계속 생성한다. 새 실행 경로는 기존 네 파일에 `review_document.json`과 완료 기록 `review_run.json`을 추가한다.
+실행 방법과 실물 검증 결과: [XML adapter 사용 안내](docs/migration/2026-09-10-xml-adapter-validation_kr.md).
 
 ## 1. 프로젝트 목적
 

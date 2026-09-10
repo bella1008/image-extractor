@@ -16,7 +16,7 @@
 | 파일명 및 profile mapping | source_token, 바이어, 예상 언어·문서 유형 확인 |
 | XML adapter | Semantic XML의 구조와 근거를 ReviewDocument로 변환 |
 | ReviewDocument | UI·DB·Excel에 종속되지 않는 공통 내부 데이터 |
-| 검토용 분류기 | 필요할 때 검증된 규칙으로 review_role 부여 |
+| 검토용 분류기 | 필요할 때 현재 XML 구조와 검토 목적에 맞는 review_role 부여 |
 | 체크리스트 평가기 | 적용 기준 선택, 해당 언어와 문서 범위에서 문구/표 검증 |
 | ReviewService | 위 절차와 비교·모델 검토·출력을 순서대로 실행 |
 | Streamlit | 입력 수집, 실행 호출, 진행 상태와 결과 표시 |
@@ -45,7 +45,10 @@ PDF + 파일명/profile mapping
 원본 구조와 업무상의 의미를 나눈다.
 
 - `structure_type`: paragraph, heading, list, list_item, table, table_row, table_cell, figure 등 실제 구조.
-- `review_roles`: specification, navigation_ui, regulatory_note 등 검토 목적. 없으면 빈 목록이며 추측하지 않는다. 각 역할은 적용 규칙과 근거를 갖는다.
+- `review_roles`: 검토 목적을 나타내는 이름표다. 없으면 빈 목록이며 추측하지 않는다. 각 역할은 적용 규칙과 근거를 갖는다.
+- 기존 GridCell 시스템의 `navigation_ui`, `spec_table`, `regulatory_note`, `model_condition`, `safety_warning` 등은 v2의 필수 이름이 아니다. 이 이름들은 과거 결과와 DB를 이해하기 위한 참고값으로만 사용한다.
+- v2의 role 이름은 현재 XML에서 안정적으로 구분되는 구조와 실제 검토 업무를 기준으로 새로 정한다. 예: `ui_path`, `technical_spec`, `legal_notice`, `model_applicability`, `safety_notice`, `contact_info`.
+- 과거 결과를 비교해야 할 때만 legacy role과 v2 role의 대응표를 둔다. 대응표는 마이그레이션 감사용이며, 새 추출기가 예전 role명을 그대로 출력해야 한다는 뜻이 아니다.
 - 원본 순서와 중첩을 보존한다. 표 셀 안의 여러 문단·목록·그림도 자식 노드로 유지한다.
 - 텍스트와 인라인 그림/노드의 순서를 보존하기 위해 node의 content에 문자열과 child node를 순서대로 둔다.
 - heading의 관찰 텍스트, source role, 승격/후보 상태와 근거를 보존한다. Markdown의 `###`만 보고 확정 heading으로 만들지 않는다.
@@ -80,7 +83,7 @@ PDF + 파일명/profile mapping
 
 이 두 종류의 파일을 동일한 Excel이라고 간주하지 않는다. 실제 승인된 출력 파일을 선정하여 시트명, 열명/순서, 셀 값 의미, 색상, 필터, 고정창, 너비 및 근거 링크를 추출한 양식 명세를 만든다. 현재 시트 목록은 유지 후보이며 최종 양식 검수 완료를 의미하지 않는다.
 
-필수 유지 의미: 문서/언어/바이어, 기준 문구, 실제 근거, check_id, 결과/사유, 페이지, 수동 확인 표시. 제거 대상: GridCell 좌표 및 구 추출 전용 디버깅 값. 업무 구조별 시트는 사용성이 확인된 경우 유지하고 새 review_role에 연결한다. 표 헤더 근거와 국가별 행 근거는 분리한다. 일반 Content Review에 topic_id를 추가하지 않는다.
+필수 유지 의미: 문서/언어/바이어, 기준 문구, 실제 근거, check_id, 결과/사유, 페이지, 수동 확인 표시. 제거 대상: GridCell 좌표 및 구 추출 전용 디버깅 값. 업무 구조별 시트는 사용성이 확인된 경우 유지하되, legacy role명에 고정하지 않고 새 v2 review_role에 연결한다. 표 헤더 근거와 국가별 행 근거는 분리한다. 일반 Content Review에 topic_id를 추가하지 않는다.
 
 새 exporter는 ReviewDocument/ReviewResult를 입력받는다. 구 payload를 흉내 내기 위해 구방식의 특수 분리·복구 코드를 이식하지 않는다. Excel 테스트는 업무 값과 양식 유지 여부를 검사하며 파일 바이트 동일성을 요구하지 않는다.
 

@@ -3,6 +3,20 @@
 전자 제품 매뉴얼 PDF를 자동으로 검토하기 위한 내부 도구 기획 문서입니다.  
 이 문서는 개발자뿐 아니라 실제 검토 업무를 수행하는 비개발자도 전체 흐름을 이해할 수 있도록 작성되었습니다.
 
+## XML review v2 작업 안내 — 2026-09-10
+
+현재 브랜치 `codex/xml-review-v2`는 XML 추출기 `8405120`에서 시작한 통합 작업장이다.
+아래의 오래된 MVP 설명은 이력이며, 새 v2의 설계와 진행 상태는 다음 문서를 따른다.
+
+- [복구 커밋과 백업 사용 방법](docs/migration/2026-09-10-recovery_kr.md)
+- [승인된 마이그레이션 방향](docs/superpowers/specs/2026-09-10-xml-review-v2-design_kr.md)
+- [ReviewDocument 구조](docs/architecture/xml-review-v2-architecture_kr.md)
+- [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
+- [현재 진행 상태](TODO.md)
+
+첫 단계는 공통 데이터 모델이며, 아직 XML reader·DB v2·Excel·Streamlit 전환은 제공하지 않는다.
+기존 Markdown은 XML POC의 writer로 계속 생성한다. 모델 검증: `python -m pytest tests/test_review_document.py -q`.
+
 ## 1. 프로젝트 목적
 
 이 시스템의 목적은 신규 매뉴얼 PDF가 기존 기준과 이전 버전에 비해 올바르게 작성되었는지 자동으로 검토하고, 검토자가 확인할 수 있는 결과 리포트를 제공하는 것입니다.

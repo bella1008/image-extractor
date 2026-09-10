@@ -1,5 +1,18 @@
 # Agent Working Notes
 
+## XML review v2 integration policy
+
+- This worktree follows the user-approved `docs/superpowers/specs/2026-09-10-xml-review-v2-design_kr.md` for new v2 code. The older GridCell rules below remain legacy context, not instructions to port GridCell extraction into v2.
+- Keep v2 modules flat under `src/`. `src/review_document.py` is dependency-free and must not import legacy extraction, Streamlit or checklist modules.
+- Preserve XML structure separately from optional evidenced business `review_roles`. Do not require old block_type names or force source paragraphs into legacy special blocks.
+- Do not guess localized headings or translate source text. Preserve unclassified structures and flag unsupported review operations.
+- Preserve the existing XML POC and its Markdown writer; Markdown is never parsed as Excel/DB input. A constructed ReviewDocument is not a quality-gate pass.
+- New v2 execution must fail closed on failed/missing extraction gates and ambiguous language evidence; no GridCell fallback.
+- The v1 checklist master remains a frozen source. v2 migration starts from Excel, exports JSON and keeps a profile/version-specific migration audit. No automatic business approval.
+- Keep existing public legacy imports while legacy callers still exist. New v2 imports must not depend on them. Their removal belongs to the validated cutover milestone already approved by the user.
+- Update only this worktree during migration; original main and XML worktrees may be used by other terminals. Recovery IDs are in `docs/migration/2026-09-10-recovery_kr.md`.
+- After v2 changes, run focused tests, the relevant root suite and compileall for existing src/tests/scripts/apps directories. Record exact scope rather than claiming the separate POC suite ran.
+
 ## Project Context
 
 - This project builds an internal PDF manual review system.

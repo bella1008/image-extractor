@@ -1,5 +1,23 @@
 # TODO
 
+## Active XML review v2 migration — 2026-09-10
+
+이 절이 새 v2 작업의 현재 상태다. 아래 GridCell/MVP 기록은 과거 구현 이력이다.
+
+- [x] 복구 커밋 `4b001ff9a1a4f8ef91bed75a8ab314f4189d9476`, XML 기준 `840512002a80a12b19c712116530ab69b1459c3a` 보존.
+- [x] 두 기준점의 complete Git bundle 검증 및 `codex/xml-review-v2` worktree 생성.
+- [x] 마이그레이션 명세, 복구 안내, ReviewDocument 설계 및 1단계 구현 계획 작성.
+- [x] `src/review_document.py`: 구조/텍스트 순서/근거/선택적 review_role 보존 모델. 새 테스트 46개 통과.
+- [ ] 실제 XML writer/report schema 기반 adapter와 fail-closed gate 설계·구현. 기존 XML POC의 네 산출물과 Markdown 표현 유지.
+- [ ] Master Excel/JSON 일치 확인, v2 이관표/이관 감사 및 체크리스트 evaluator 구현.
+- [ ] 추출 검수 Excel와 최종 검토 Excel의 실제 표본 선정·양식 명세·새 exporter 구현.
+- [ ] ReviewService/CLI, Streamlit 연결 및 프로필별 결과 검증.
+- [ ] 사용자 양식 검수, 설명되지 않는 차이 해소, GridCell active 코드 정리 및 PC 배포.
+
+검증: 루트 `python -m pytest tests -q` 108 passed / 6 subtests passed; `python -m compileall -q src tests` 통과. 변경 범위 검사 통과.
+이번 기준 테스트 범위는 루트 suite다. XML POC 전체 suite를 이번 모델 변경의 결과로 다시 통과했다고 보고하지 않는다.
+메인의 기존 DB와 기존 추출기는 변경하지 않았다. 자세한 복구 범위는 `docs/migration/2026-09-10-recovery_kr.md`를 읽는다.
+
 ## Current Goal
 
 Build a local Python-based PDF manual review engine for SUG manuals.

@@ -1315,6 +1315,9 @@ def test_xu_retains_source_warranty_and_rf_model_structure(xu_bundle) -> None:
     assert all(entry["title"] is None for entry in warranty)
 
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
+    assert len(
+        semantic_root.findall(".//*[@display-role='preserved-line-break']")
+    ) == 18
     rf_tables = [
         table
         for table in semantic_root.iter("table")
@@ -1331,6 +1334,8 @@ def test_xu_retains_source_warranty_and_rf_model_structure(xu_bundle) -> None:
     assert markdown.count("### WARRANTY CONDITIONS") == 1
     assert "RF max transmitter power :" in markdown
     assert "[QN990H]" in markdown
+    assert "100 mW at 2.4 GHz - 2.4835 GHz,\n" in markdown
+    assert "200 mW at 5.15 GHz - 5.25 GHz,\n" in markdown
 
 
 def test_form_detection_runtime_has_no_title_or_model_dictionary() -> None:

@@ -161,6 +161,11 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 - `outputs/cross_profile_readability_kr_260908`: 단일 언어이므로 audit `not_applicable`입니다.
 - `outputs/cross_profile_readability_xu_260908`: 단일 언어이므로 audit `not_applicable`입니다.
 
+RF 사양 줄바꿈은 buyer나 RF 문구를 찾지 않습니다. 표 셀 안에서 PDF가
+`actual-text="\n"`으로 제공한 명시적 개행의 바로 앞 텍스트가 쉼표로 끝날 때만
+Markdown 줄바꿈으로 보존합니다. 실물 회귀 기준은 ZG 90개, XU 18개이며,
+Declaration of Conformity 제목/굵은 라벨 판별은 계속 ZG BOOK 범위에만 적용됩니다.
+
 ZG에서는 normal space와 NBSP가 들어간 `z. B.`를 문장 내부에서 나누지 않았고, 검토된 DEU/FRA leaf 문장 경계와 FRA continuation을 원문 검색으로 확인했습니다. FRA continuation 대상은 text-equivalent한 한 문단만 검출됩니다. ITA 폐기 subtitle은 offset과 굵기 근거가 있는 inline 표시이며, DEU 대응 구간은 원문 구조대로 별도 제목과 qualifier로 유지됩니다. KR과 XU의 continuation은 각각 두 건이며 모든 검출 조건을 독립적으로 통과한 실제 구조 근거가 있습니다. 두 프로필에는 inline-subtitle hint가 없습니다.
 
 XU의 `Warranty Card`와 `WARRANTY CONDITIONS`는 PDF source role `Heading2`이며 report에서는 `source_role_candidate`, Markdown에서는 각각 `###`로 보존됩니다. 문구 기반 승격 규칙은 추가하지 않았습니다. RF maximum-transmitter-power 행과 `[QN990H]` 모델 코드가 같은 표 구조에 남아 있어 페이지의 RF/model-code 관계도 유지됩니다. 고위험 navigation 경로와 이름 없는 icon 위치를 다섯 Markdown에서 확인했고, Semantic XML inline icon 수와 Markdown `[아이콘]` 수가 프로필별로 일치합니다. 현재 blocker는 없습니다.

@@ -2963,7 +2963,7 @@ def test_extract_document_renders_zg_review_formatting_end_to_end(
         "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf",
     ],
 )
-def test_extract_document_keeps_review_formatting_disabled_for_other_profiles(
+def test_extract_document_applies_only_source_line_breaks_for_other_profiles(
     tmp_path: Path,
     filename: str,
 ) -> None:
@@ -2978,7 +2978,8 @@ def test_extract_document_keeps_review_formatting_disabled_for_other_profiles(
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
     assert semantic.find(".//*[@display-role='section-heading']") is None
     assert semantic.find(".//*[@display-role='strong-label']") is None
-    assert semantic.find(".//*[@display-role='preserved-line-break']") is None
+    assert len(semantic.findall(".//*[@display-role='preserved-line-break']")) == 1
+    assert "First specification,\n" in markdown
     assert "## Arbitrary form title" not in markdown
     assert "**Direct label 0**" not in markdown
 

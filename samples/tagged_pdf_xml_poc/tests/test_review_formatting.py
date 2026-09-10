@@ -463,6 +463,18 @@ def test_enabled_profile_sets_both_review_hint_sets_from_source_truth() -> None:
     assert len(formatted.text_display_hints) == 6
 
 
+def test_xu_applies_source_line_break_without_zg_form_formatting() -> None:
+    document = _document(
+        (_fragment("First specification,"), _newline(), _fragment("Second specification")),
+        filename="BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf",
+    )
+
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    assert len(formatted.line_break_hints) == 1
+    assert formatted.text_display_hints == ()
+
+
 @pytest.mark.parametrize(
     "filename",
     [
@@ -731,7 +743,9 @@ def test_enabled_profile_clears_manual_hints_when_source_has_no_evidence() -> No
         "BN68-25108A-00_SUG_Y26 TV ALL_KR_KOR_251218.0.pdf",
     ],
 )
-def test_disabled_profiles_preserve_identity_and_manual_hints(filename: str) -> None:
+def test_non_zg_profiles_replace_manual_hints_with_source_line_breaks(
+    filename: str,
+) -> None:
     document = _document(
         (_fragment("first,"), _newline(), _fragment("second")),
         filename=filename,
@@ -740,21 +754,27 @@ def test_disabled_profiles_preserve_identity_and_manual_hints(filename: str) -> 
 
     formatted = review_formatting.apply_profile_review_formatting(document)
 
-    assert formatted is document
-    assert formatted.line_break_hints == document.line_break_hints
+    assert formatted is not document
+    assert formatted.line_break_hints == detect_rf_line_break_hints(document.children)
+    assert formatted.line_break_hints != document.line_break_hints
+    assert formatted.text_display_hints == document.text_display_hints
 
 
-def test_malformed_filename_preserves_identity_and_manual_hints() -> None:
+def test_malformed_filename_still_uses_source_line_break_evidence() -> None:
     document = _document(
         (_fragment("first,"), _newline(), _fragment("second")),
         filename="BN68-invalid_ZG XN ZT_L05.pdf",
     )
     document = replace(document, line_break_hints=(LineBreakHint((9,), "manual"),))
 
-    assert review_formatting.apply_profile_review_formatting(document) is document
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    assert formatted.line_break_hints == detect_rf_line_break_hints(document.children)
+    assert formatted.line_break_hints != document.line_break_hints
+    assert formatted.text_display_hints == ()
 
 
-def test_parent_folder_cannot_enable_xy_filename() -> None:
+def test_parent_folder_does_not_enable_zg_form_formatting_for_xy_filename() -> None:
     filename = str(
         Path("ZG XN ZT_L05")
         / "BN68-25031B-00_SUG_Y26 TV ALL_XY_ENG_251229.0.pdf"
@@ -764,4 +784,7 @@ def test_parent_folder_cannot_enable_xy_filename() -> None:
         filename=filename,
     )
 
-    assert review_formatting.apply_profile_review_formatting(document) is document
+    formatted = review_formatting.apply_profile_review_formatting(document)
+
+    assert len(formatted.line_break_hints) == 1
+    assert formatted.text_display_hints == ()

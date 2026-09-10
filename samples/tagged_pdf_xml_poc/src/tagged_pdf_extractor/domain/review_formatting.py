@@ -35,11 +35,14 @@ class _ParagraphRecord:
 
 
 def apply_profile_review_formatting(document: TaggedDocument) -> TaggedDocument:
+    line_break_hints = detect_rf_line_break_hints(document.children)
     if not review_formatting_scope(document.source_path).enabled:
-        return document
+        if line_break_hints == document.line_break_hints:
+            return document
+        return replace(document, line_break_hints=line_break_hints)
     return replace(
         document,
-        line_break_hints=detect_rf_line_break_hints(document.children),
+        line_break_hints=line_break_hints,
         text_display_hints=detect_form_cluster_hints(document),
     )
 

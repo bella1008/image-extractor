@@ -228,11 +228,106 @@ def test_report_view_refuses_completion_changed_during_mapping(bundle, tmp_path,
     output = tmp_path / 'review'
     run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
     original = command.build_report_view
-    def change(report):
+    def change(report, **kwargs):
         path = output / 'review_complete.json'
         path.write_bytes(path.read_bytes() + b' ')
-        return original(report)
+        return original(report, **kwargs)
     monkeypatch.setattr(command, 'build_report_view', change)
+    view_path = tmp_path / 'view.json'
+    with pytest.raises(ValueError):
+        command.prepare_view(output, view_path)
+    assert not view_path.exists()
+
+
+def test_report_view_archived_source_without_pdf_uses_verified_xml_metadata(bundle, tmp_path):
+    from src.review_service import ReviewRequest, run_review
+    from scripts.prepare_review_report import prepare_view, load_archived_source
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    expected_nodes = {n.node_id: n for n in read(bundle).iter_nodes()}
+    pdf.unlink()
+    view = prepare_view(output, tmp_path / 'view.json')
+    assert view['source']['pdf_filename'] == pdf.name
+    assert view['source']['pdf_sha256'] == receipt['pdf_sha256']
+    assert view['source']['semantic_xml_sha256'] == receipt['artifacts']['semantic_document.xml']
+    assert view['source']['receipt_ref'] == str((folder / 'review_run.json').resolve())
+    report = json.loads((output / 'observation.json').read_text())
+    metadata, source, snapshots = load_archived_source(report)
+    assert set(metadata) == set(expected_nodes)
+    for key, original in expected_nodes.items():
+        assert metadata[key]['structure_type'] == original.structure_type
+        assert metadata[key]['evidence'][0]['xml_path'] == original.evidence[0].xml_path
+        assert metadata[key]['evidence'][0]['mcid'] == original.evidence[0].mcid
+
+
+def test_archived_metadata_rejects_unrelated_existing_owner_and_preserves_valid_candidates(bundle):
+    from src.checklist_observation import observe_checklist
+    from src.review_report_view import build_report_view
+    from scripts.prepare_review_report import load_archived_source
+    from tests.test_checklist_observation import rule
+    folder, receipt, pdf, *_ = bundle
+    receipt_path = folder / 'review_run.json'
+    receipt_path.write_text(json.dumps(receipt), encoding='utf-8')
+    doc = read(bundle)
+    report = observe_checklist(doc, [rule(section_heading='Title', required_text='First. Second.')])
+    report['inputs'] = {'receipt': str(receipt_path), 'receipt_sha256': digest(receipt_path), 'source_bundle': receipt}
+    metadata, source, _ = load_archived_source(report)
+    good = build_report_view(report, document=metadata, source=source)
+    assert good['evidence'][0]['evidence_kind'] == 'candidate'
+    for parent in doc.iter_nodes():
+        for child in parent.content:
+            if not isinstance(child, str):
+                assert metadata[child.node_id]['parent_id'] == parent.node_id
+    item = report['rows'][0]['candidate_matches'][0]
+    actual = item['owner_ids'][0]
+    unrelated = next(n.node_id for n in doc.iter_nodes() if n.structure_type == 'paragraph' and n.node_id != actual)
+    item['owner_ids'] = [unrelated]
+    with pytest.raises(ValueError, match='relationship'):
+        build_report_view(report, document=metadata, source=source)
+
+
+@pytest.mark.parametrize('name', ['review_run.json', 'semantic_document.xml', 'extraction_report.json'])
+@pytest.mark.parametrize('timing', ['before', 'during', 'missing'])
+def test_report_view_rejects_corrupt_or_changed_source(bundle, tmp_path, monkeypatch, name, timing):
+    from src.review_service import ReviewRequest, run_review
+    from scripts import prepare_review_report as command
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    target = folder / name
+    if timing == 'missing':
+        target.unlink()
+    elif timing == 'before':
+        target.write_bytes(target.read_bytes() + b' ')
+    else:
+        original = command.build_report_view
+        def changed(report, **kwargs):
+            target.write_bytes(target.read_bytes() + b' ')
+            return original(report, **kwargs)
+        monkeypatch.setattr(command, 'build_report_view', changed)
+    view_path = tmp_path / 'view.json'
+    with pytest.raises((ValueError, OSError)):
+        command.prepare_view(output, view_path)
+    assert not view_path.exists()
+
+
+@pytest.mark.parametrize('name', ['observation.json', 'review.html', 'review_failed.json'])
+def test_report_view_rechecks_completed_outputs_during_mapping(bundle, tmp_path, monkeypatch, name):
+    from src.review_service import ReviewRequest, run_review
+    from scripts import prepare_review_report as command
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    original = command.build_report_view
+    def changed(report, **kwargs):
+        target = output / name
+        target.write_bytes((target.read_bytes() if target.exists() else b'') + b' ')
+        return original(report, **kwargs)
+    monkeypatch.setattr(command, 'build_report_view', changed)
     view_path = tmp_path / 'view.json'
     with pytest.raises(ValueError):
         command.prepare_view(output, view_path)

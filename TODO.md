@@ -19,7 +19,9 @@
 - [x] Windows Python3.12 전용 `.venv`와 `requirements-review-v2.txt` 검증. pypdf6.16.2 사전 확인, 공용6.10.0 환경의 새 PDF 추출 실패를 진단하고 다른 작업장 변경 없이 해결.
 - [x] 기존 추출 Excel/최종 리포트 실물 양식 조사와 `review_report_view.py` 표시용 변환, 테스트 구현. 새 Excel 양식 초안 59규칙/40근거/488제외 행 전체 값·4시트 렌더·수식·필터·A2 고정창 확인.
 - [x] 후속 사용자 피드백 기록: observation/reason 중복을 줄이는 판정+설명 두 열 권고안, 원본 PDF/추출본 출처 패널과 노드ID+태그+페이지 추적, item별 DB 단위 설계 진행 승인. `docs/superpowers/specs/2026-09-11-item-review-and-evidence-display-design_kr.md` 참고. 기존 코드/Excel 초안은 아직 이전 구성.
-- [ ] DB 검토 단위 분류와 CHK-002 item별 대응 초안: 조건/수량/범위/원문/출처 보존, 기존 승인과 새 적용 조건 승인 구분. 검토 단위를 먼저 정한 후 결과 양식/검사기 연결.
+- [x] DB 구조 조사 547행 보존: item 분리 후보10/표 관계126/유지 또는 정의411. CHK-002-ZC-ENG 14개 명시적 하위 항목 초안과 원문 구간 보존, 실제 XML 목록 항목14개 대응 및 별표12개의 모델 조건 안내 후보 연결. 조건 적용/업무 승인 없음.
+- [x] result+한국어 설명 두 열의 표시 변환과 출처 패널, 노드/태그/페이지 상세 추적 구현. 원문/기존 엄격 관찰 결과 변경 없음. `docs/migration/2026-09-11-item-proposal-and-display_kr.md` 참고.
+- [ ] 항목별 조건/적용 구조 확정 후 별도 v2 Excel 원장→JSON exporter 연결. 현재 item_proposal.json은 근거 감사이며 runtime DB가 아님. 다른 9개 item_list 행은 아직 분리 정의 전.
 - [ ] 사용자 Excel 개정 실물 검수 및 배포용 writer 연결. 최초 양식을 최종 승인본으로 간주하지 않음.
 - [ ] XML 위치 선택·문구 매칭을 검증한 뒤 evaluator 구현. 모든 approved 545행의 XML 호환 상태는 아직 pending이며 자동 판정 미연결.
 - [ ] 추출 검수 Excel와 최종 검토 Excel의 실제 표본 선정·양식 명세·새 exporter 구현.
@@ -27,6 +29,7 @@
 - [ ] 사용자 양식 검수, 설명되지 않는 차이 해소, GridCell active 코드 정리 및 PC 배포.
 
 검증(2026-09-11): 루트 `python -m pytest tests -q` 285 passed / 6 subtests passed; 전용 `.venv`에서도 285 passed. `python -m compileall -q src tests scripts` 통과. 이번 연속 구현 신규55개. 독립 리뷰의 구역 경계·출력 변경·완료 기록 부분 저장 지적을 회귀 테스트로 수정.
+후속 항목/표시 구현 검증: 전용 `.venv` 전체333 passed, 항목 집중17 passed, compileall 통과. 6시트 개정본의 59/40/488/14/547행 전체 열 값 대조와 렌더 완료. 기존 원본 DB 해시 유지. 노드 소속 관계 오류7개 회귀 테스트 포함.
 XML POC 관련 writer/output-bundle/language-interval/Markdown 테스트 511 passed, 1 skipped (Windows symlink). POC 전체 suite 재실행은 아님.
 사용 방법·산출물·지원 범위: `docs/migration/2026-09-10-xml-adapter-validation_kr.md`.
 DB 초안·사용 방법: `docs/migration/2026-09-11-checklist-draft-validation_kr.md`.
@@ -36,6 +39,7 @@ DB 초안·사용 방법: `docs/migration/2026-09-11-checklist-draft-validation_
 최신 전체 실행: `outputs/review_service_zc_20260911_r2/` (JSON/HTML/새 XML 추출 묶음).
 최신 표시 구분: 엄격 근거28 / 구조 후보9 / 분산 근거1 / 미연결21. 적용59개는 모두 needs_review/pending 유지.
 Excel 양식 초안: `outputs/review_excel_prototype_20260911/review_report_prototype.xlsx`.
+최신 항목/출처 개정본: `outputs/review_item_layout_20260911/review_report_prototype.xlsx` (runtime DB 활성화/배포본 아님).
 자세한 사용법: `docs/migration/2026-09-11-structured-evidence-and-service_kr.md`.
 초안 보존 위치: `metadata/checklist_v2/drafts/20260911/`. 메인의 기존 master와 교체하지 않음.
 개발용 Artifact Tool 작성 프로세스의 저장 후 exit 1 원인은 반복 생성 도구 배포 전에 조사한다. 저장물 자체의 전체 값 대조/수식 캐시/Excel→JSON 검증은 통과했다.

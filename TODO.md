@@ -11,14 +11,18 @@
 - [x] 실제 XML writer/report schema 기반 adapter와 fail-closed gate 구현. 새 실행마다 PDF/mapping/추출기/네 산출물 hash를 기록하고, receipt 없는 과거 폴더는 자동 검토 입력으로 사용하지 않음.
 - [x] ZC ENG/C-FRA, XU ENG, ZG BOOK 5언어 실물 변환. 기존 Semantic XML/MD 바이트 동일, raw/report는 원본 경로 제외 동일. ZG 공통 표지 텍스트 조각 9개는 언어 미배정으로 보존.
 - [ ] v2 review_role은 실제 검토 규칙에 필요한 시점에 XML 구조/현재 검토 목적 기준으로 정의. legacy role명은 감사 참고만 하며 현재 adapter의 review_roles는 빈 tuple 유지.
-- [ ] Master Excel/JSON 일치 확인, v2 이관표/이관 감사 및 체크리스트 evaluator 구현.
+- [x] Master Excel/JSON 547행 일치 확인, 17필드 가역 이관, 별도 v2 초안 Excel→JSON 및 이관 감사 생성. 출처 열은 source_reference_token으로 보존(빈 값 허용), 적용 제한에 사용하지 않음.
+- [ ] XML 위치 선택·문구 매칭을 검증한 뒤 evaluator 구현. 모든 approved 545행의 XML 호환 상태는 아직 pending이며 자동 판정 미연결.
 - [ ] 추출 검수 Excel와 최종 검토 Excel의 실제 표본 선정·양식 명세·새 exporter 구현.
 - [ ] ReviewService/CLI, Streamlit 연결 및 프로필별 결과 검증.
 - [ ] 사용자 양식 검수, 설명되지 않는 차이 해소, GridCell active 코드 정리 및 PC 배포.
 
-검증: 루트 `python -m pytest tests -q` 138 passed / 6 subtests passed (adapter 신규 30개 포함); `python -m compileall -q src tests` 통과.
+검증(2026-09-11): 루트 `python -m pytest tests -q` 169 passed / 6 subtests passed (이관 신규 31개 포함); `python -m compileall -q src tests scripts` 통과.
 XML POC 관련 writer/output-bundle/language-interval/Markdown 테스트 511 passed, 1 skipped (Windows symlink). POC 전체 suite 재실행은 아님.
 사용 방법·산출물·지원 범위: `docs/migration/2026-09-10-xml-adapter-validation_kr.md`.
+DB 초안·사용 방법: `docs/migration/2026-09-11-checklist-draft-validation_kr.md`.
+초안 보존 위치: `metadata/checklist_v2/drafts/20260911/`. 메인의 기존 master와 교체하지 않음.
+개발용 Artifact Tool 작성 프로세스의 저장 후 exit 1 원인은 반복 생성 도구 배포 전에 조사한다. 저장물 자체의 전체 값 대조/수식 캐시/Excel→JSON 검증은 통과했다.
 메인의 기존 DB와 기존 추출기는 변경하지 않았다. 자세한 복구 범위는 `docs/migration/2026-09-10-recovery_kr.md`를 읽는다.
 
 ## Current Goal

@@ -18,6 +18,10 @@
 기존 Markdown은 XML POC의 writer로 계속 생성한다. 새 실행 경로는 기존 네 파일에 `review_document.json`과 완료 기록 `review_run.json`을 추가한다.
 실행 방법과 실물 검증 결과: [XML adapter 사용 안내](docs/migration/2026-09-10-xml-adapter-validation_kr.md).
 
+2026-09-11: 기존 checklist 547행을 대조하고, 원본과 별개인 **자동 검토 미연결 DB 초안**을 만들었다.
+출처 열은 `source_reference_token`으로 보존하며 적용 제한으로 사용하지 않는다.
+[DB 이관 초안·검증 결과·다음 단계](docs/migration/2026-09-11-checklist-draft-validation_kr.md)를 읽는다.
+
 ## 1. 프로젝트 목적
 
 이 시스템의 목적은 신규 매뉴얼 PDF가 기존 기준과 이전 버전에 비해 올바르게 작성되었는지 자동으로 검토하고, 검토자가 확인할 수 있는 결과 리포트를 제공하는 것입니다.

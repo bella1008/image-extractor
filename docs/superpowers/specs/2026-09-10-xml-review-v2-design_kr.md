@@ -72,6 +72,8 @@ PDF + 파일명/profile mapping
 
 원본의 block_type·section_heading 제약을 제거하면 검출 범위가 넓어질 수 있으므로 필드별 대응표와 결과 차이 감사가 필요하다. 원래 승인된 문구를 새 PDF 텍스트로 자동 교체하거나 LLM이 approved를 부여하지 않는다. 외부 API 기반 의미 판정은 사용하지 않는다.
 
+2026-09-11 사용자 확인: 기존 DB의 `source_token`은 후보 문구를 추출한 출처 기록이다. 직접 작성한 행은 비어 있을 수 있다. v2 DB에서는 `source_reference_token`으로 이름만 바꾸고 값/빈 값을 보존한다. 이 열은 적용 범위 필터로 사용하지 않는다. PDF 문서의 `DocumentContext.source_token`은 별도 메타데이터이며 기존 scope/exclude_scope 판정에 사용한다.
+
 ## 6. Excel 결과 양식
 
 여기서 Excel은 두 종류다: 사람이 편집하는 checklist master와 프로그램이 생성하는 review report. 역할을 혼동하지 않는다.

@@ -9,6 +9,7 @@
 - Preserve the existing XML POC and its Markdown writer; Markdown is never parsed as Excel/DB input. A constructed ReviewDocument is not a quality-gate pass.
 - New v2 execution must fail closed on failed/missing extraction gates and ambiguous language evidence; no GridCell fallback.
 - The v1 checklist master remains a frozen source. v2 migration starts from Excel, exports JSON and keeps a profile/version-specific migration audit. No automatic business approval.
+- User clarified on 2026-09-11: checklist source_token is source provenance, not an applicability constraint. Rename it source_reference_token in v2 and preserve empty values for manually authored rules. DocumentContext.source_token remains document metadata used by scope/exclude_scope.
 - Keep existing public legacy imports while legacy callers still exist. New v2 imports must not depend on them. Their removal belongs to the validated cutover milestone already approved by the user.
 - Update only this worktree during migration; original main and XML worktrees may be used by other terminals. Recovery IDs are in `docs/migration/2026-09-10-recovery_kr.md`.
 - After v2 changes, run focused tests, the relevant root suite and compileall for existing src/tests/scripts/apps directories. Record exact scope rather than claiming the separate POC suite ran.

@@ -33,6 +33,8 @@
 
 ## 초안의 시트
 
+아래는 이미 생성된 최초 초안의 구성이다. 후속 사용자 피드백은 `docs/superpowers/specs/2026-09-11-item-review-and-evidence-display-design_kr.md`에 기록했다. 다음 개정은 판정/설명 두 열 권고안, 문서 단위 출처 패널, 노드 ID+태그+페이지 추적, CHK-002 item별 검토 단위에 맞춘다. 최초 초안 파일 자체는 아직 변경하지 않았다.
+
 1. `Summary`: 적용 수, 엄격한 근거/구조 후보/분산 근거/미해결 수, 지원 범위와 미구현 기능.
 2. `Checklist Results`: 적용 59개. 기준과 실제 문구, needs_review, 관찰 종류/사유, 페이지, 근거 ID, 빈 reviewer_note.
 3. `Source Evidence`: 원문 근거를 별도 행으로 보존. strict/candidate/fragment를 구별하며 XML 위치로 추적한다.

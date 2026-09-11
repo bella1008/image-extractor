@@ -18,7 +18,9 @@
 - [x] ReviewService/CLI: 새 PDF 또는 검증 bundle → 동결 DB → 관찰 JSON/오프라인 HTML. 입력 변경/저장 중 변경/완료 기록 중단 방어, 완료 snapshot 소비자 검증. 전체 신규 ZC 실행 XML/MD는 기존과 바이트 동일.
 - [x] Windows Python3.12 전용 `.venv`와 `requirements-review-v2.txt` 검증. pypdf6.16.2 사전 확인, 공용6.10.0 환경의 새 PDF 추출 실패를 진단하고 다른 작업장 변경 없이 해결.
 - [x] 기존 추출 Excel/최종 리포트 실물 양식 조사와 `review_report_view.py` 표시용 변환, 테스트 구현. 새 Excel 양식 초안 59규칙/40근거/488제외 행 전체 값·4시트 렌더·수식·필터·A2 고정창 확인.
-- [ ] 사용자 Excel 열 배치 확인: 기준↔근거 유지, 구 좌표 대신 페이지/근거ID/사유/메모. 2026-09-11 비차단 질문 발송. 양식 확정 전 배포용 Excel writer로 간주하지 않음.
+- [x] 후속 사용자 피드백 기록: observation/reason 중복을 줄이는 판정+설명 두 열 권고안, 원본 PDF/추출본 출처 패널과 노드ID+태그+페이지 추적, item별 DB 단위 설계 진행 승인. `docs/superpowers/specs/2026-09-11-item-review-and-evidence-display-design_kr.md` 참고. 기존 코드/Excel 초안은 아직 이전 구성.
+- [ ] DB 검토 단위 분류와 CHK-002 item별 대응 초안: 조건/수량/범위/원문/출처 보존, 기존 승인과 새 적용 조건 승인 구분. 검토 단위를 먼저 정한 후 결과 양식/검사기 연결.
+- [ ] 사용자 Excel 개정 실물 검수 및 배포용 writer 연결. 최초 양식을 최종 승인본으로 간주하지 않음.
 - [ ] XML 위치 선택·문구 매칭을 검증한 뒤 evaluator 구현. 모든 approved 545행의 XML 호환 상태는 아직 pending이며 자동 판정 미연결.
 - [ ] 추출 검수 Excel와 최종 검토 Excel의 실제 표본 선정·양식 명세·새 exporter 구현.
 - [ ] ReviewService/CLI, Streamlit 연결 및 프로필별 결과 검증.

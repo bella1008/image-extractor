@@ -22,6 +22,8 @@
 - [x] DB 구조 조사 547행 보존: item 분리 후보10/표 관계126/유지 또는 정의411. CHK-002-ZC-ENG 14개 명시적 하위 항목 초안과 원문 구간 보존, 실제 XML 목록 항목14개 대응 및 별표12개의 모델 조건 안내 후보 연결. 조건 적용/업무 승인 없음.
 - [x] result+한국어 설명 두 열의 표시 변환과 출처 패널, 노드/태그/페이지 상세 추적 구현. 원문/기존 엄격 관찰 결과 변경 없음. `docs/migration/2026-09-11-item-proposal-and-display_kr.md` 참고.
 - [x] CHK-002 부모1/하위14 별도 v2 작성용 Excel 원장→JSON exporter 구현. 출처/원문과 담당자 제안 세 열 분리, 모델 적용 unknown/조건 unverified 유지. 26개 근거와 별표12개 조건 참조 보존. 동결547행 DB나 ReviewService에는 미연결. `docs/migration/2026-09-11-item-master_kr.md` 참고.
+- [x] 별도 ItemReviewService/CLI: 원장 Excel/JSON/고정 seed 대조 → 현재 XML에서 하위14개 다시 조사 → JSON/오프라인 HTML/완료 기록. 원장 과거 근거와 검토 대상 근거 분리, 복수 근거/미발견/범위 미확정 구분. 실물 PDF 새 추출·검증 묶음 재사용 모두 14개 발견/12개 조건 안내 후보, 전부 needs_review. 기존547행 경로 미변경. `docs/migration/2026-09-11-item-observation-service_kr.md` 참고.
+- [ ] 항목별 HTML 실물 렌더 검수: 자동 검사 통과, 이 세션 브라우저 도구의 로컬 파일 정책 제한으로 직접 화면 검수 미수행. 배포 양식 승인으로 간주하지 않음.
 - [ ] 모델 적용 자료/사람 승인 절차와 실제 항목 evaluator 연결. 현재 원장의 제안문은 실행하지 않음. 다른 9개 item_list 행은 아직 분리 정의 전.
 - [ ] 사용자 Excel 개정 실물 검수 및 배포용 writer 연결. 최초 양식을 최종 승인본으로 간주하지 않음.
 - [ ] XML 위치 선택·문구 매칭을 검증한 뒤 evaluator 구현. 모든 approved 545행의 XML 호환 상태는 아직 pending이며 자동 판정 미연결.
@@ -32,6 +34,7 @@
 검증(2026-09-11): 루트 `python -m pytest tests -q` 285 passed / 6 subtests passed; 전용 `.venv`에서도 285 passed. `python -m compileall -q src tests scripts` 통과. 이번 연속 구현 신규55개. 독립 리뷰의 구역 경계·출력 변경·완료 기록 부분 저장 지적을 회귀 테스트로 수정.
 후속 항목/표시 구현 검증: 전용 `.venv` 전체333 passed, 항목 집중17 passed, compileall 통과. 6시트 개정본의 59/40/488/14/547행 전체 열 값 대조와 렌더 완료. 기존 원본 DB 해시 유지. 노드 소속 관계 오류7개 회귀 테스트 포함.
 항목 원장 후속 검증: 전체362 passed, 신규 원장 집중29 passed(기존 항목과 합쳐46), compileall 통과. CHK-002 원장5시트 전체 값 대조·렌더, Excel→draft JSON 통과. 독립 명세/품질 검토 통과. 보관본 `metadata/checklist_v2/item_master_drafts/20260911/`, 편집본 `outputs/item_master_20260911/checklist_item_master.xlsx`. 기존 DB 변경/운영 활성화 없음.
+현재 PDF 항목 연결 후속 검증: 전체435 passed, 신규 집중73 passed, compileall 통과. 독립 명세/코드 품질 검토 통과, 두 실행의 XML로 항목 근거를 전부 재계산해 일치 확인. 실물 결과 `outputs/item_review_zc_20260911_fresh/`, 검증 묶음 재사용 `outputs/item_review_zc_20260911_reuse_r2/`. 원본 DB/동결 DB/항목 원장 해시 유지. HTML 실물 렌더 검수는 위 제한 참고.
 XML POC 관련 writer/output-bundle/language-interval/Markdown 테스트 511 passed, 1 skipped (Windows symlink). POC 전체 suite 재실행은 아님.
 사용 방법·산출물·지원 범위: `docs/migration/2026-09-10-xml-adapter-validation_kr.md`.
 DB 초안·사용 방법: `docs/migration/2026-09-11-checklist-draft-validation_kr.md`.

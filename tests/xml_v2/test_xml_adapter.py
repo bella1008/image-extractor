@@ -74,6 +74,42 @@ def refresh(bundle, name):
     bundle[1]["artifacts"][name] = digest(bundle[0] / name)
 
 
+def test_text_unit_inventory_uses_checked_bundle_and_fresh_output(bundle, tmp_path):
+    from scripts.audit_review_text_units import audit_text_units
+    folder, receipt, pdf, *_ = bundle
+    (folder / "review_run.json").write_text(json.dumps(receipt), encoding="utf-8")
+    output = tmp_path / "inventory.json"
+    result = audit_text_units(folder, pdf, MAPPING, output)
+    assert result["decision_status"] == "not_evaluated"
+    assert result["context"]["source_token"] == "ZC_L02"
+    assert result["summary"]["unit_count"] > 0
+    assert any("visual_content_requires_review" in unit["issues"] for unit in result["units"])
+    assert json.loads(output.read_text(encoding="utf-8"))["summary"] == result["summary"]
+    with pytest.raises(FileExistsError):
+        audit_text_units(folder, pdf, MAPPING, output)
+
+
+@pytest.mark.parametrize("fault", ["missing_receipt", "changed_xml", "changed_during_index"])
+def test_text_unit_inventory_rejects_untrusted_or_changed_input(bundle, tmp_path, monkeypatch, fault):
+    from scripts import audit_review_text_units as command
+    folder, receipt, pdf, *_ = bundle
+    if fault != "missing_receipt":
+        (folder / "review_run.json").write_text(json.dumps(receipt), encoding="utf-8")
+    target = folder / "semantic_document.xml"
+    if fault == "changed_xml":
+        target.write_bytes(target.read_bytes() + b" ")
+    if fault == "changed_during_index":
+        original = command.build_text_unit_index
+        def change(document):
+            target.write_bytes(target.read_bytes() + b" ")
+            return original(document)
+        monkeypatch.setattr(command, "build_text_unit_index", change)
+    output = tmp_path / "inventory.json"
+    with pytest.raises((OSError, ValueError)):
+        command.audit_text_units(folder, pdf, MAPPING, output)
+    assert not output.exists()
+
+
 def test_exact_hierarchy_text_evidence_and_languages(bundle):
     document = read(bundle)
     assert document.context.source_token == "ZC_L02"

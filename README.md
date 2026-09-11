@@ -22,6 +22,9 @@
 출처 열은 `source_reference_token`으로 보존하며 적용 제한으로 사용하지 않는다.
 [DB 이관 초안·검증 결과·다음 단계](docs/migration/2026-09-11-checklist-draft-validation_kr.md)를 읽는다.
 
+이어 ReviewDocument의 원문을 문단/표/목록 경계별 검토 단위로 연결했다. 아직 체크리스트 판정은 하지 않는다.
+[source_token 설명과 검토 단위 실행 안내](docs/migration/2026-09-11-review-text-units_kr.md).
+
 ## 1. 프로젝트 목적
 
 이 시스템의 목적은 신규 매뉴얼 PDF가 기존 기준과 이전 버전에 비해 올바르게 작성되었는지 자동으로 검토하고, 검토자가 확인할 수 있는 결과 리포트를 제공하는 것입니다.

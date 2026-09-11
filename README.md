@@ -33,6 +33,10 @@ ZC ENG의 동결 DB를 연결한 [체크리스트 관찰 파일럿](docs/migrati
 [기존 Excel 조사와 새 양식 계약 초안](docs/migration/2026-09-11-excel-contract-inventory_kr.md).
 Excel은 양식 검수용 초안이며, 배포용 Excel writer/Streamlit 및 자동 업무 판정은 아직 전환하지 않았다.
 
+CHK-002 구성품을 14개 하위 항목으로 관리하는 별도 작성용 원장과 Excel→JSON 내보내기를 제공한다.
+[항목별 원장과 편집 범위](docs/migration/2026-09-11-item-master_kr.md)를 참고한다.
+전체 547행 DB를 교체하거나 모델별 적용 조건을 자동 승인하는 작업은 아니다.
+
 ## 1. 프로젝트 목적
 
 이 시스템의 목적은 신규 매뉴얼 PDF가 기존 기준과 이전 버전에 비해 올바르게 작성되었는지 자동으로 검토하고, 검토자가 확인할 수 있는 결과 리포트를 제공하는 것입니다.

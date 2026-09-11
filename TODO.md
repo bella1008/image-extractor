@@ -21,7 +21,8 @@
 - [x] 후속 사용자 피드백 기록: observation/reason 중복을 줄이는 판정+설명 두 열 권고안, 원본 PDF/추출본 출처 패널과 노드ID+태그+페이지 추적, item별 DB 단위 설계 진행 승인. `docs/superpowers/specs/2026-09-11-item-review-and-evidence-display-design_kr.md` 참고. 기존 코드/Excel 초안은 아직 이전 구성.
 - [x] DB 구조 조사 547행 보존: item 분리 후보10/표 관계126/유지 또는 정의411. CHK-002-ZC-ENG 14개 명시적 하위 항목 초안과 원문 구간 보존, 실제 XML 목록 항목14개 대응 및 별표12개의 모델 조건 안내 후보 연결. 조건 적용/업무 승인 없음.
 - [x] result+한국어 설명 두 열의 표시 변환과 출처 패널, 노드/태그/페이지 상세 추적 구현. 원문/기존 엄격 관찰 결과 변경 없음. `docs/migration/2026-09-11-item-proposal-and-display_kr.md` 참고.
-- [ ] 항목별 조건/적용 구조 확정 후 별도 v2 Excel 원장→JSON exporter 연결. 현재 item_proposal.json은 근거 감사이며 runtime DB가 아님. 다른 9개 item_list 행은 아직 분리 정의 전.
+- [x] CHK-002 부모1/하위14 별도 v2 작성용 Excel 원장→JSON exporter 구현. 출처/원문과 담당자 제안 세 열 분리, 모델 적용 unknown/조건 unverified 유지. 26개 근거와 별표12개 조건 참조 보존. 동결547행 DB나 ReviewService에는 미연결. `docs/migration/2026-09-11-item-master_kr.md` 참고.
+- [ ] 모델 적용 자료/사람 승인 절차와 실제 항목 evaluator 연결. 현재 원장의 제안문은 실행하지 않음. 다른 9개 item_list 행은 아직 분리 정의 전.
 - [ ] 사용자 Excel 개정 실물 검수 및 배포용 writer 연결. 최초 양식을 최종 승인본으로 간주하지 않음.
 - [ ] XML 위치 선택·문구 매칭을 검증한 뒤 evaluator 구현. 모든 approved 545행의 XML 호환 상태는 아직 pending이며 자동 판정 미연결.
 - [ ] 추출 검수 Excel와 최종 검토 Excel의 실제 표본 선정·양식 명세·새 exporter 구현.
@@ -30,6 +31,7 @@
 
 검증(2026-09-11): 루트 `python -m pytest tests -q` 285 passed / 6 subtests passed; 전용 `.venv`에서도 285 passed. `python -m compileall -q src tests scripts` 통과. 이번 연속 구현 신규55개. 독립 리뷰의 구역 경계·출력 변경·완료 기록 부분 저장 지적을 회귀 테스트로 수정.
 후속 항목/표시 구현 검증: 전용 `.venv` 전체333 passed, 항목 집중17 passed, compileall 통과. 6시트 개정본의 59/40/488/14/547행 전체 열 값 대조와 렌더 완료. 기존 원본 DB 해시 유지. 노드 소속 관계 오류7개 회귀 테스트 포함.
+항목 원장 후속 검증: 전체362 passed, 신규 원장 집중29 passed(기존 항목과 합쳐46), compileall 통과. CHK-002 원장5시트 전체 값 대조·렌더, Excel→draft JSON 통과. 독립 명세/품질 검토 통과. 보관본 `metadata/checklist_v2/item_master_drafts/20260911/`, 편집본 `outputs/item_master_20260911/checklist_item_master.xlsx`. 기존 DB 변경/운영 활성화 없음.
 XML POC 관련 writer/output-bundle/language-interval/Markdown 테스트 511 passed, 1 skipped (Windows symlink). POC 전체 suite 재실행은 아님.
 사용 방법·산출물·지원 범위: `docs/migration/2026-09-10-xml-adapter-validation_kr.md`.
 DB 초안·사용 방법: `docs/migration/2026-09-11-checklist-draft-validation_kr.md`.

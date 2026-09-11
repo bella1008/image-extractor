@@ -1,0 +1,750 @@
+{
+  "schema_version": "checklist-item-master-seed/1",
+  "activation_status": "draft_only",
+  "sheets": [
+    {
+      "name": "Items",
+      "headers": [
+        "source_check_id",
+        "item_key",
+        "required_text",
+        "model_applicability",
+        "condition_state",
+        "proposed_model_rule",
+        "proposal_evidence",
+        "reviewer_note",
+        "start",
+        "end",
+        "common_id",
+        "language",
+        "scope",
+        "exclude_scope",
+        "source_marker",
+        "evidence_refs",
+        "condition_refs"
+      ],
+      "rows": [
+        [
+          "CHK-002-ZC-ENG",
+          "simple_user_guide",
+          "Simple User Guide",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "0",
+          "17",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "",
+          "[\"simple_user_guide:item:1\"]",
+          "[]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "warranty_regulatory_guide",
+          "Warranty Card / Regulatory Guide (Not available in some locations)",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "18",
+          "84",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "",
+          "[\"warranty_regulatory_guide:item:1\"]",
+          "[]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "samsung_smart_remote",
+          "Samsung Smart Remote",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "85",
+          "105",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"samsung_smart_remote:item:1\"]",
+          "[\"samsung_smart_remote:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "remote_control",
+          "Remote Control",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "106",
+          "120",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"remote_control:item:1\"]",
+          "[\"remote_control:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "standard_remote_control",
+          "Standard Remote Control",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "121",
+          "144",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"standard_remote_control:item:1\"]",
+          "[\"standard_remote_control:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "batteries",
+          "Batteries",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "145",
+          "154",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"batteries:item:1\"]",
+          "[\"batteries:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "tv_power_cord",
+          "TV Power Cord",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "155",
+          "168",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"tv_power_cord:item:1\"]",
+          "[\"tv_power_cord:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "wall_mount_adapter",
+          "Wall Mount Adapter x 2",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "169",
+          "191",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"wall_mount_adapter:item:1\"]",
+          "[\"wall_mount_adapter:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "slim_power_cord",
+          "Slim Power Cord",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "192",
+          "207",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"slim_power_cord:item:1\"]",
+          "[\"slim_power_cord:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "power_box",
+          "Power Box",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "208",
+          "217",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"power_box:item:1\"]",
+          "[\"power_box:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "power_box_cable",
+          "Power Box Cable x 2",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "218",
+          "237",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"power_box_cable:item:1\"]",
+          "[\"power_box_cable:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "c_type_power_adapter",
+          "C-type Power Adapter",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "238",
+          "258",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"c_type_power_adapter:item:1\"]",
+          "[\"c_type_power_adapter:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "c_to_c_cable",
+          "C to C Cable",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "259",
+          "271",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"c_to_c_cable:item:1\"]",
+          "[\"c_to_c_cable:condition_candidate:1\"]"
+        ],
+        [
+          "CHK-002-ZC-ENG",
+          "wireless_one_connect_box",
+          "Wireless One Connect Box",
+          "unknown",
+          "unverified",
+          "",
+          "",
+          "",
+          "272",
+          "296",
+          "CHK-002",
+          "ENG",
+          "WW",
+          "ZA;KR;ASIA;XY;ZG",
+          "*",
+          "[\"wireless_one_connect_box:item:1\"]",
+          "[\"wireless_one_connect_box:condition_candidate:1\"]"
+        ]
+      ]
+    },
+    {
+      "name": "Parent",
+      "headers": [
+        "field",
+        "value"
+      ],
+      "rows": [
+        [
+          "common_id",
+          "CHK-002"
+        ],
+        [
+          "check_id",
+          "CHK-002-ZC-ENG"
+        ],
+        [
+          "topic",
+          "package_content"
+        ],
+        [
+          "scope",
+          "WW"
+        ],
+        [
+          "exclude_scope",
+          "ZA;KR;ASIA;XY;ZG"
+        ],
+        [
+          "source_reference_token",
+          "ZC_L02"
+        ],
+        [
+          "language",
+          "ENG"
+        ],
+        [
+          "doc_type",
+          ""
+        ],
+        [
+          "legacy_section_heading",
+          "01 Package Content"
+        ],
+        [
+          "legacy_block_type",
+          "item_list"
+        ],
+        [
+          "expected_result",
+          "required_present"
+        ],
+        [
+          "required_text",
+          "Simple User Guide\nWarranty Card / Regulatory Guide (Not available in some locations)\nSamsung Smart Remote\nRemote Control\nStandard Remote Control\nBatteries\nTV Power Cord\nWall Mount Adapter x 2\nSlim Power Cord\nPower Box\nPower Box Cable x 2\nC-type Power Adapter\nC to C Cable\nWireless One Connect Box"
+        ],
+        [
+          "match_method",
+          "presence"
+        ],
+        [
+          "importance",
+          "critical"
+        ],
+        [
+          "approval_status",
+          "approved"
+        ],
+        [
+          "evidence_file",
+          "outputs/content_poc_review_zc_cfra_repair_260708_v22/_comparison/zc_eng_cfra_repair_260708_v22.xlsx"
+        ],
+        [
+          "note",
+          "Rebuilt from final confirmed ZC ENG/C-FRA content JSON. Candidate workbook used only for common_id/check_id/order metadata. Applied XY scope candidate from xy_scope_update_candidates_260724.xlsx: exclude_scope 'ZA;KR;ASIA' -> 'ZA;KR;ASIA;XY'. | 260730_172805: exclude ZG BOOK after POC; legacy ZC/global wording is not applicable to confirmed ZG extraction."
+        ]
+      ]
+    },
+    {
+      "name": "Source Evidence",
+      "headers": [
+        "evidence_id",
+        "kind",
+        "item_key",
+        "text",
+        "source_node_ids",
+        "structure_types",
+        "pdf_pages",
+        "details_json"
+      ],
+      "rows": [
+        [
+          "simple_user_guide:item:1",
+          "item",
+          "simple_user_guide",
+          " Simple User Guide",
+          "xml:0/0/1/47/0/0/0/0/0/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/0/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/0/1/0\",\"content_index\":0,\"text\":\" Simple User Guide\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[0]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":531,\"object_ref\":null,\"bbox\":[474.2137,539.3875,530.8507,546.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/0\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" Simple User Guide\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/0/1/0\",\"content_index\":0,\"text\":\" Simple User Guide\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[0]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":531,\"object_ref\":null,\"bbox\":[474.2137,539.3875,530.8507,546.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "warranty_regulatory_guide:item:1",
+          "item",
+          "warranty_regulatory_guide",
+          " Warranty Card / Regulatory Guide (Not available in some  locations)",
+          "xml:0/0/1/47/0/0/0/0/1/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/1/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/1/1/0\",\"content_index\":0,\"text\":\" Warranty Card / Regulatory Guide (Not available in some \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[1]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":534,\"object_ref\":null,\"bbox\":[474.2137,528.3875,650.7047,535.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/1/1/1\",\"content_index\":0,\"text\":\" locations)\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[1]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":535,\"object_ref\":null,\"bbox\":[474.2137,517.3905000000001,504.55170000000004,524.3905000000001]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/1\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" Warranty Card / Regulatory Guide (Not available in some  locations)\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/1/1/0\",\"content_index\":0,\"text\":\" Warranty Card / Regulatory Guide (Not available in some \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[1]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":534,\"object_ref\":null,\"bbox\":[474.2137,528.3875,650.7047,535.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/1/1/1\",\"content_index\":0,\"text\":\" locations)\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[1]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":535,\"object_ref\":null,\"bbox\":[474.2137,517.3905000000001,504.55170000000004,524.3905000000001]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "samsung_smart_remote:item:1",
+          "item",
+          "samsung_smart_remote",
+          " *Samsung Smart Remote",
+          "xml:0/0/1/47/0/0/0/0/2/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/2/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/2/1/0\",\"content_index\":0,\"text\":\" *\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[2]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":538,\"object_ref\":null,\"bbox\":[474.2137,506.3875,477.8747,513.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/2/1/1\",\"content_index\":0,\"text\":\"Samsung Smart Remote\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[2]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":539,\"object_ref\":null,\"bbox\":[474.2137,506.3875,548.7427,513.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/2\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Samsung Smart Remote\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/2/1/0\",\"content_index\":0,\"text\":\" *\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[2]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":538,\"object_ref\":null,\"bbox\":[474.2137,506.3875,477.8747,513.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/2/1/1\",\"content_index\":0,\"text\":\"Samsung Smart Remote\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[2]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":539,\"object_ref\":null,\"bbox\":[474.2137,506.3875,548.7427,513.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "samsung_smart_remote:condition_candidate:1",
+          "condition_candidate",
+          "samsung_smart_remote",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "remote_control:item:1",
+          "item",
+          "remote_control",
+          " *Remote Control",
+          "xml:0/0/1/47/0/0/0/0/3/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/3/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/3/1/0\",\"content_index\":0,\"text\":\" *Remote Control\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[3]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":542,\"object_ref\":null,\"bbox\":[474.2137,495.3875,526.6157000000001,502.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/3\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Remote Control\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/3/1/0\",\"content_index\":0,\"text\":\" *Remote Control\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[3]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":542,\"object_ref\":null,\"bbox\":[474.2137,495.3875,526.6157000000001,502.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "remote_control:condition_candidate:1",
+          "condition_candidate",
+          "remote_control",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "standard_remote_control:item:1",
+          "item",
+          "standard_remote_control",
+          " *Standard Remote Control",
+          "xml:0/0/1/47/0/0/0/0/4/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/4/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/4/1/0\",\"content_index\":0,\"text\":\" *\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[4]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":545,\"object_ref\":null,\"bbox\":[474.2137,484.3875,477.8747,491.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/4/1/1\",\"content_index\":0,\"text\":\"Standard Remote Control\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[4]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":546,\"object_ref\":null,\"bbox\":[474.2137,484.3875,552.7397,491.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/4\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Standard Remote Control\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/4/1/0\",\"content_index\":0,\"text\":\" *\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[4]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":545,\"object_ref\":null,\"bbox\":[474.2137,484.3875,477.8747,491.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/4/1/1\",\"content_index\":0,\"text\":\"Standard Remote Control\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[4]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":546,\"object_ref\":null,\"bbox\":[474.2137,484.3875,552.7397,491.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "standard_remote_control:condition_candidate:1",
+          "condition_candidate",
+          "standard_remote_control",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "batteries:item:1",
+          "item",
+          "batteries",
+          " *Batteries",
+          "xml:0/0/1/47/0/0/0/0/5/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/5/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/5/1/0\",\"content_index\":0,\"text\":\" *Batteries\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[5]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":549,\"object_ref\":null,\"bbox\":[474.2137,473.3875,506.1547,480.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/5\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Batteries\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/5/1/0\",\"content_index\":0,\"text\":\" *Batteries\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[5]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":549,\"object_ref\":null,\"bbox\":[474.2137,473.3875,506.1547,480.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "batteries:condition_candidate:1",
+          "condition_candidate",
+          "batteries",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "tv_power_cord:item:1",
+          "item",
+          "tv_power_cord",
+          " *TV Power Cord",
+          "xml:0/0/1/47/0/0/0/0/6/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/6/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/6/1/0\",\"content_index\":0,\"text\":\" *TV Power Cord\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[6]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":552,\"object_ref\":null,\"bbox\":[474.2137,462.3875,523.0667,469.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/6\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *TV Power Cord\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/6/1/0\",\"content_index\":0,\"text\":\" *TV Power Cord\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[6]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":552,\"object_ref\":null,\"bbox\":[474.2137,462.3875,523.0667,469.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "tv_power_cord:condition_candidate:1",
+          "condition_candidate",
+          "tv_power_cord",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "wall_mount_adapter:item:1",
+          "item",
+          "wall_mount_adapter",
+          " *Wall Mount Adapter x 2",
+          "xml:0/0/1/47/0/0/0/0/7/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/7/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/7/1/0\",\"content_index\":0,\"text\":\" *Wall Mount Adapter x 2\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[7]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":555,\"object_ref\":null,\"bbox\":[474.2137,451.3875,550.2267,458.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/7\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Wall Mount Adapter x 2\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/7/1/0\",\"content_index\":0,\"text\":\" *Wall Mount Adapter x 2\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[7]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":555,\"object_ref\":null,\"bbox\":[474.2137,451.3875,550.2267,458.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "wall_mount_adapter:condition_candidate:1",
+          "condition_candidate",
+          "wall_mount_adapter",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "slim_power_cord:item:1",
+          "item",
+          "slim_power_cord",
+          " *Slim Power Cord",
+          "xml:0/0/1/47/0/0/0/0/8/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/8/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/8/1/0\",\"content_index\":0,\"text\":\" *Slim Power Cord\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[8]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":558,\"object_ref\":null,\"bbox\":[474.2137,440.3875,528.9117,447.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/8\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Slim Power Cord\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/8/1/0\",\"content_index\":0,\"text\":\" *Slim Power Cord\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[8]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":558,\"object_ref\":null,\"bbox\":[474.2137,440.3875,528.9117,447.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "slim_power_cord:condition_candidate:1",
+          "condition_candidate",
+          "slim_power_cord",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "power_box:item:1",
+          "item",
+          "power_box",
+          " *Power Box",
+          "xml:0/0/1/47/0/0/0/0/9/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/9/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/9/1/0\",\"content_index\":0,\"text\":\" *Power Box\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[9]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":561,\"object_ref\":null,\"bbox\":null}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/9\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Power Box\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/9/1/0\",\"content_index\":0,\"text\":\" *Power Box\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[9]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":561,\"object_ref\":null,\"bbox\":null}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "power_box:condition_candidate:1",
+          "condition_candidate",
+          "power_box",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "power_box_cable:item:1",
+          "item",
+          "power_box_cable",
+          " *Power Box Cable x 2",
+          "xml:0/0/1/47/0/0/0/0/10/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/10/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/10/1/0\",\"content_index\":0,\"text\":\" *Power Box Cable x 2\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[10]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":564,\"object_ref\":null,\"bbox\":[474.2137,418.3875,539.9087,425.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/10\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Power Box Cable x 2\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/10/1/0\",\"content_index\":0,\"text\":\" *Power Box Cable x 2\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[10]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":564,\"object_ref\":null,\"bbox\":[474.2137,418.3875,539.9087,425.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "power_box_cable:condition_candidate:1",
+          "condition_candidate",
+          "power_box_cable",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "c_type_power_adapter:item:1",
+          "item",
+          "c_type_power_adapter",
+          " *C-type Power Adapter",
+          "xml:0/0/1/47/0/0/0/0/11/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/11/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/11/1/0\",\"content_index\":0,\"text\":\" *C-type Power Adapter\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[11]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":567,\"object_ref\":null,\"bbox\":null}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/11\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *C-type Power Adapter\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/11/1/0\",\"content_index\":0,\"text\":\" *C-type Power Adapter\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[11]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":567,\"object_ref\":null,\"bbox\":null}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "c_type_power_adapter:condition_candidate:1",
+          "condition_candidate",
+          "c_type_power_adapter",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "c_to_c_cable:item:1",
+          "item",
+          "c_to_c_cable",
+          " *C to C Cable",
+          "xml:0/0/1/47/0/0/0/0/12/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/12/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/12/1/0\",\"content_index\":0,\"text\":\" *C to C Cable\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[12]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":570,\"object_ref\":null,\"bbox\":[474.2137,396.3875,514.6037,403.3875]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/12\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *C to C Cable\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/12/1/0\",\"content_index\":0,\"text\":\" *C to C Cable\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[12]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":570,\"object_ref\":null,\"bbox\":[474.2137,396.3875,514.6037,403.3875]}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "c_to_c_cable:condition_candidate:1",
+          "condition_candidate",
+          "c_to_c_cable",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ],
+        [
+          "wireless_one_connect_box:item:1",
+          "item",
+          "wireless_one_connect_box",
+          " *Wireless One Connect Box",
+          "xml:0/0/1/47/0/0/0/0/13/1",
+          "list_body",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/47/0/0/0/0/13/1\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/13/1/0\",\"content_index\":0,\"text\":\" *\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[13]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":573,\"object_ref\":null,\"bbox\":[474.2137,385.3875,477.8747,392.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/13/1/1\",\"content_index\":0,\"text\":\"Wireless One Connect\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[13]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":574,\"object_ref\":null,\"bbox\":[477.81170000000003,385.3875,545.2497000000001,392.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/13/1/2\",\"content_index\":0,\"text\":\" Box\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[13]/list_body[1]/text[2]\",\"page_index\":0,\"mcid\":575,\"object_ref\":null,\"bbox\":null}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[\"xml:0/0/1/47/0\",\"xml:0/0/1/47/0/0\",\"xml:0/0/1/47/0/0/0\",\"xml:0/0/1/47/0/0/0/0/13\"],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\",\"table_structure_requires_review\"],\"text\":\" *Wireless One Connect Box\",\"parts\":[{\"node_id\":\"xml:0/0/1/47/0/0/0/0/13/1/0\",\"content_index\":0,\"text\":\" *\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[13]/list_body[1]/text[0]\",\"page_index\":0,\"mcid\":573,\"object_ref\":null,\"bbox\":[474.2137,385.3875,477.8747,392.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/13/1/1\",\"content_index\":0,\"text\":\"Wireless One Connect\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[13]/list_body[1]/text[1]\",\"page_index\":0,\"mcid\":574,\"object_ref\":null,\"bbox\":[477.81170000000003,385.3875,545.2497000000001,392.3875]}]},{\"node_id\":\"xml:0/0/1/47/0/0/0/0/13/1/2\",\"content_index\":0,\"text\":\" Box\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[47]/table[0]/table_row[0]/table_cell[0]/list[0]/list_item[13]/list_body[1]/text[2]\",\"page_index\":0,\"mcid\":575,\"object_ref\":null,\"bbox\":null}]}],\"structure_types\":[\"list_body\"]}"
+        ],
+        [
+          "wireless_one_connect_box:condition_candidate:1",
+          "condition_candidate",
+          "wireless_one_connect_box",
+          " *: Some of the items specified above may not be included in  the package, depending on the TV model.",
+          "xml:0/0/1/48",
+          "paragraph",
+          "1",
+          "{\"method\":\"atomic_text\",\"owner_ids\":[\"xml:0/0/1/48\"],\"groups\":[[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}]],\"separator\":\"\",\"language\":\"ENG\",\"container_ids\":[],\"visual_node_ids\":[],\"caveats\":[\"provisional_evidence_not_selector_approval\"],\"text\":\" *: Some of the items specified above may not be included in  the package, depending on the TV model.\",\"parts\":[{\"node_id\":\"xml:0/0/1/48/0\",\"content_index\":0,\"text\":\" *: Some of the items specified above may not be included in \",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[0]\",\"page_index\":0,\"mcid\":576,\"object_ref\":null,\"bbox\":[465.7087,364.3385,651.2087,371.3385]}]},{\"node_id\":\"xml:0/0/1/48/1\",\"content_index\":0,\"text\":\" the package, depending on the TV model.\",\"language\":\"ENG\",\"evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/paragraph[48]/text[1]\",\"page_index\":0,\"mcid\":577,\"object_ref\":null,\"bbox\":[465.7087,353.3415,592.6677,360.3415]}]}],\"structure_types\":[\"paragraph\"]}"
+        ]
+      ]
+    },
+    {
+      "name": "Source",
+      "headers": [
+        "field",
+        "value"
+      ],
+      "rows": [
+        [
+          "pdf_filename",
+          "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf"
+        ],
+        [
+          "pdf_sha256",
+          "e7ae68f7e314b500425bb81608aa1f3a1fe683ee555d7ea38db705b42649c4a1"
+        ],
+        [
+          "semantic_xml_sha256",
+          "8cecca8b0f41583e961a486d2bd157b81c9a59d7f4bc7ec87e47d5a0b1d6354c"
+        ],
+        [
+          "bundle_path",
+          "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-review-v2\\outputs\\review_service_zc_20260911_r2\\extraction"
+        ],
+        [
+          "receipt_ref",
+          "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-review-v2\\outputs\\review_service_zc_20260911_r2\\extraction\\review_run.json"
+        ],
+        [
+          "receipt_sha256",
+          "3d2be6ad88564824e1866fd8040b0972d8920eb135f129498b8650014580264a"
+        ],
+        [
+          "draft_excel_sha256",
+          "e3aa4c4d255d9aa48775317a3ce2e22c5e8c446a928c28d7c704669dac163fa1"
+        ],
+        [
+          "source_completion_sha256",
+          "636846dd52bffdf0be22b14e849a2359c6070e8ba13127f2cbd110167eadfcfa"
+        ],
+        [
+          "source_segments_json",
+          "[{\"kind\":\"item\",\"item_key\":\"simple_user_guide\",\"text\":\"Simple User Guide\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"warranty_regulatory_guide\",\"text\":\"Warranty Card / Regulatory Guide (Not available in some locations)\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"samsung_smart_remote\",\"text\":\"Samsung Smart Remote\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"remote_control\",\"text\":\"Remote Control\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"standard_remote_control\",\"text\":\"Standard Remote Control\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"batteries\",\"text\":\"Batteries\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"tv_power_cord\",\"text\":\"TV Power Cord\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"wall_mount_adapter\",\"text\":\"Wall Mount Adapter x 2\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"slim_power_cord\",\"text\":\"Slim Power Cord\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"power_box\",\"text\":\"Power Box\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"power_box_cable\",\"text\":\"Power Box Cable x 2\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"c_type_power_adapter\",\"text\":\"C-type Power Adapter\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"c_to_c_cable\",\"text\":\"C to C Cable\"},{\"kind\":\"separator\",\"text\":\"\\n\"},{\"kind\":\"item\",\"item_key\":\"wireless_one_connect_box\",\"text\":\"Wireless One Connect Box\"}]"
+        ],
+        [
+          "scope_observation_json",
+          "{\"heading\":{\"node_id\":\"xml:0/0/1/45/4\",\"text\":\" 01 Package Content\",\"language\":\"ENG\",\"classification\":\"numbered_chapter_promotion\",\"source_role\":\"LI\",\"source_evidence\":[{\"xml_path\":\"/document[0]/article[0]/section[1]/list[45]/heading[4]\",\"page_index\":null,\"mcid\":null,\"object_ref\":\"1458 0 R\",\"bbox\":null}],\"reader_evidence\":{\"body_font_names\":[\"GIQUTR+SamsungOne-400\",\"NDAKND+SamsungOne-600\",\"BGBQBB+SamsungSharpSans-Medium\",\"TEEZTR+SamsungOne-400\"],\"body_font_size\":7.0,\"classification\":\"numbered_chapter_promotion\",\"font_size_ratio\":2.2857142857142856,\"heading_font_names\":[\"NDAKND+SamsungOne-600\"],\"heading_font_size\":16.0,\"joined_text\":\" 01  Package Content\",\"label\":\"01\",\"level\":2,\"promotion_reason\":\"numbered_chapter_structure_sequence_typography\",\"semantic_role\":\"list_item\",\"series_index\":0,\"source_role\":\"LI\",\"structure_path\":\"/document[0]/article[0]/section[1]/list[45]/heading[4]\",\"title\":\"Package Content\"},\"usable_for_observation\":true,\"start\":2605,\"end\":2618},\"end\":{\"position\":3060,\"node_id\":\"xml:0/0/1/50/0/1/0/0/1\",\"reason\":\"entered_structure_boundary\"},\"parent_status\":\"needs_review\"}"
+        ],
+        [
+          "comparison_policy",
+          "whole-list-body/whitespace-only/optional-leading-source-asterisk; no applicability approval"
+        ]
+      ]
+    },
+    {
+      "name": "Guide",
+      "headers": [
+        "field",
+        "value"
+      ],
+      "rows": [
+        [
+          "purpose",
+          "CHK-002 \ud56d\ubaa9\ubcc4 \uc6d0\uc7a5 \uc791\uc131 \ucd08\uc548\uc785\ub2c8\ub2e4. \uae30\uc874 547\ud589 DB\uc640 \uc790\ub3d9 \uac80\ud1a0\uc5d0\ub294 \uc5f0\uacb0\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4."
+        ],
+        [
+          "editable_fields",
+          "Items\uc758 proposed_model_rule, proposal_evidence, reviewer_note\ub9cc \uc218\uc815\ud558\uc138\uc694."
+        ],
+        [
+          "proposed_model_rule",
+          "\ubaa8\ub378 \uc801\uc6a9 \uc870\uac74 \uc81c\uc548\ubb38\uc785\ub2c8\ub2e4. \uc2e4\ud589 \uaddc\uce59\uc774\ub098 \uc2b9\uc778\uc73c\ub85c \uc0ac\uc6a9\ud558\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4."
+        ],
+        [
+          "proposal_evidence",
+          "\uc81c\uc548\uc758 \uadfc\uac70\ub97c \uc801\uc73c\uc138\uc694. source evidence\uc640 \ubcc4\uac1c\uc778 \uac80\ud1a0\uc790 \uc785\ub825\uc785\ub2c8\ub2e4."
+        ],
+        [
+          "reviewer_note",
+          "\uac80\ud1a0 \uc758\uacac\uc744 \uc801\uc73c\uc138\uc694. \ube48\uce78\ub3c4 \ud5c8\uc6a9\ud569\ub2c8\ub2e4."
+        ],
+        [
+          "unknown / unverified",
+          "\ubaa8\ub378 \uc801\uc6a9 \uc5ec\ubd80\ub294 \ubbf8\ud655\uc815(unknown), \uc870\uac74 \uad00\uacc4\ub294 \ubbf8\uac80\uc99d(unverified)\uc785\ub2c8\ub2e4."
+        ],
+        [
+          "source_fields",
+          "\uc6d0\ubb38\u00b7\ubcc4\ud45c\u00b7\uc218\ub7c9\u00b7\uad04\ud638\u00b7\ubc94\uc704\u00b7\ucd9c\ucc98\ub294 \ubcc0\uacbd\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4. \ud56d\ubaa9 \ud589\uc758 \uc21c\uc11c\ub9cc \ubc14\uafc0 \uc218 \uc788\uc2b5\ub2c8\ub2e4."
+        ],
+        [
+          "details_json",
+          "Source Evidence\uc758 details_json\uc740 \ub178\ub4dc\u00b7\ubb38\uc790 \uad6c\uac04\u00b7\ud398\uc774\uc9c0\u00b7\uc6d0\ubb38\uc744 \ud3ec\ud568\ud55c \uc644\uc804\ud55c \uae30\uacc4 \uac10\uc0ac \uadfc\uac70\uc785\ub2c8\ub2e4."
+        ],
+        [
+          "draft_only",
+          "\ubd80\ubaa8\uc758 \uacfc\uac70 approved \uac12\uc740 \uc6d0\ubcf8 \uc774\ub825\uc785\ub2c8\ub2e4. \uc774 \ud56d\ubaa9 \ucd08\uc548\uc758 \uc2b9\uc778\uc774\ub098 Pass \ud310\uc815\uc774 \uc544\ub2d9\ub2c8\ub2e4."
+        ],
+        [
+          "export",
+          "\uc6d0\uc7a5 Excel\uacfc \ubcc4\ub3c4 \ubcf4\uad00\ud55c seed\uc758 SHA-256\uc744 \uac80\uc99d\ud558\uc5ec \uc0c8 draft JSON\uc73c\ub85c \ub0b4\ubcf4\ub0c5\ub2c8\ub2e4."
+        ]
+      ]
+    }
+  ]
+}

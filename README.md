@@ -28,6 +28,11 @@
 ZC ENG의 동결 DB를 연결한 [체크리스트 관찰 파일럿](docs/migration/2026-09-11-checklist-observation-pilot_kr.md)도 제공한다.
 근거를 찾거나 미지원 사유를 기록할 뿐, 운영 합격/불합격이나 이관 승인을 부여하지 않는다.
 
+문단·목록·아이콘 주변의 구조 근거 연결과 `ReviewService`의 **PDF→관찰 JSON→로컬 HTML** 실행도 제공한다.
+[실행 환경·결과·사용 방법](docs/migration/2026-09-11-structured-evidence-and-service_kr.md),
+[기존 Excel 조사와 새 양식 계약 초안](docs/migration/2026-09-11-excel-contract-inventory_kr.md).
+Excel은 양식 검수용 초안이며, 배포용 Excel writer/Streamlit 및 자동 업무 판정은 아직 전환하지 않았다.
+
 ## 1. 프로젝트 목적
 
 이 시스템의 목적은 신규 매뉴얼 PDF가 기존 기준과 이전 버전에 비해 올바르게 작성되었는지 자동으로 검토하고, 검토자가 확인할 수 있는 결과 리포트를 제공하는 것입니다.

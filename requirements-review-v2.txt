@@ -1,0 +1,6 @@
+# Verified observation runtime; independent of the legacy requirements.txt.
+# Tested on Windows with Python 3.12. Install the local XML package separately.
+pypdf==6.16.2
+PyMuPDF==1.27.2.3
+openpyxl==3.1.5
+et-xmlfile==2.0.0

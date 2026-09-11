@@ -167,3 +167,68 @@ def test_same_heading_in_french_is_not_an_english_duplicate():
 def test_empty_structural_descendant_cannot_hide_inside_heading(kind):
     anchor = replace(heading(), content=("Topic", node("hidden", kind)))
     assert observation(document(anchor, node("p", "paragraph", "Required words.")))["reason"] == "unsafe_heading"
+
+
+def test_supplemental_paragraph_candidate_does_not_change_strict_match():
+    row = observation(document(heading(), node('a', 'paragraph', 'Required'), node('b', 'paragraph', 'words.')))
+    assert row['matches'] == []
+    assert row['observation'] == 'not_found_in_selected_units'
+    assert row['candidate_matches'][0]['method'] == 'adjacent_paragraphs'
+    assert row['candidate_matches'][0]['text'] == 'Required\nwords.'
+    assert row['status'] == 'needs_review'
+
+
+def test_supplemental_candidate_does_not_cross_heading_boundary():
+    row = observation(document(heading(), node('a', 'paragraph', 'Required'), heading('h2', 'Other'), node('b', 'paragraph', 'words.')))
+    assert row['candidate_matches'] == []
+
+
+def test_candidate_label_body_and_structure_difference_are_audited():
+    row = observation(document(heading(), node('ls', 'list', node('i', 'list_item', node('l', 'label', '\u2013 '), node('b', 'list_body', 'Required words.')))), block_type='bullet', required_text='\u2013 Required words.')
+    assert row['matches'] == []
+    assert row['candidate_matches'][0]['method'] == 'list_item_label_body'
+    row = observation(document(heading(), node('p', 'paragraph', 'Required words.')), block_type='bullet')
+    assert row['candidate_matches'][0]['owner_ids'] == ('p',)
+    assert 'legacy_structure_not_certified' in row['candidate_matches'][0]['caveats']
+
+
+def test_visual_candidate_never_bridges_an_icon():
+    doc = document(heading(), node('p', 'paragraph', 'Required', node('icon', 'figure'), ' words.'))
+    assert observation(doc)['candidate_matches'] == []
+    row = observation(doc, required_text='Required')
+    assert row['matches'] == []
+    assert row['candidate_matches'][0]['visual_node_ids'] == ('icon',)
+
+
+def test_unsupported_legacy_role_gets_separate_literal_candidate_not_approval():
+    row = observation(document(heading(), node('p', 'paragraph', 'Required words.')), block_type='regulatory_note')
+    assert row['reason'] == 'unsupported_selector'
+    assert row['observation'] == 'not_examined'
+    assert row['candidate_matches'][0]['text'] == 'Required words.'
+
+
+@pytest.mark.parametrize('changes', [{'status': 'review'}, {'exclude_scope': 'ZC'}, {'section_heading': 'Missing'}])
+def test_candidates_never_bypass_scope_or_approval(changes):
+    assert observation(document(heading(), node('p', 'paragraph', 'Required words.')), **changes)['candidate_matches'] == []
+
+
+@pytest.mark.parametrize('middle', [node('sub', 'section', node('a', 'paragraph', 'Required'), node('b', 'paragraph', 'words.')),
+                                  node('sub', 'section', lang='C-FRA')])
+def test_candidates_stop_at_entered_section_and_empty_foreign_container(middle):
+    row = observation(document(heading(), middle, node('c', 'paragraph', 'Required'), node('d', 'paragraph', 'words.')))
+    assert row['candidate_matches'] == []
+
+
+def test_distributed_fragments_record_separate_evidence_never_whole_match():
+    row = observation(document(heading(), node('p', 'paragraph', 'First.'),
+        node('t', 'table', node('r', 'table_row', node('c', 'table_cell', 'Second.')))), required_text='First.\nSecond.')
+    assert row['matches'] == [] and row['candidate_matches'] == []
+    assert row['fragment_observations']['status'] == 'all_fragments_located_not_whole_match'
+    assert [x['required_text'] for x in row['fragment_observations']['fragments']] == ['First.', 'Second.']
+    assert all(x['candidates'] for x in row['fragment_observations']['fragments'])
+
+
+def test_fragment_diagnostics_do_not_cross_scope_or_hide_absent_fragment():
+    row = observation(document(heading(), node('p', 'paragraph', 'First.'), heading('h2','Other'), node('q','paragraph','Second.')), required_text='First.\nSecond.')
+    assert row['fragment_observations']['status'] == 'partial_fragments_located'
+    assert row['fragment_observations']['fragments'][1]['candidates'] == []

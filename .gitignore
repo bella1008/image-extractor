@@ -4,6 +4,9 @@ __pycache__/
 venv/
 .env
 .env.*
+tmp/pip-cache/
+*.egg-info/
+scripts/node_modules/
 
 analysis_artifacts/
 outputs/

@@ -8,6 +8,7 @@ from dataclasses import asdict
 
 from src.checklist_migration import metadata_applies, restore_source_rows, validate_rows
 from src.review_document import ReviewDocument, ReviewNode
+from src.review_evidence_windows import MAX_PARAGRAPHS, build_evidence_windows
 from src.review_text_units import build_text_unit_index
 
 NORMALIZATION = "unicode-whitespace-only/case-and-punctuation-preserved/1"
@@ -105,6 +106,47 @@ def _literal_match(expected, actual, method):
     return re.search(left + re.escape(needle) + right, haystack) is not None
 
 
+def _candidate_views(windows, source, language, anchor, boundary, starts, ends):
+    matches = []
+    for window in windows:
+        if (window.language != language
+                or any(starts[key] <= anchor['end'] or ends[key] >= boundary['position'] for key in window.owner_ids)
+                or not _literal_match(source['required_text'], window.text, source['match_method'])):
+            continue
+        matches.append(window)
+    # Prefer the smallest complete source span; do not pad evidence with nearby text.
+    keys = [{(p.node_id, p.content_index) for p in w.parts} for w in matches]
+    return [{**asdict(w), 'text': w.text, 'parts': [asdict(p) for p in w.parts],
+             'caveats': [*w.caveats, 'legacy_structure_not_certified']}
+            for i, w in enumerate(matches) if not any(other < keys[i] for other in keys)]
+
+
+def _candidate_boundary(anchor, boundary, nodes, starts, language):
+    result = dict(boundary)
+    for key, node in nodes.items():
+        if anchor['end'] < starts[key] < result['position']:
+            if node.structure_type in ('section', 'article', 'document'):
+                result = {'position': starts[key], 'node_id': key, 'reason': 'entered_structure_boundary'}
+            elif node.language != language:
+                result = {'position': starts[key], 'node_id': key, 'reason': 'candidate_language_boundary'}
+    return result
+
+
+def _fragment_observations(windows, source, language, anchor, boundary, starts, ends):
+    fragments = []
+    for index, line in enumerate(source['required_text'].splitlines()):
+        if not line.strip():
+            continue
+        fragment_rule = {**source, 'required_text': line, 'match_method': 'presence'}
+        fragments.append({'required_line_index': index, 'required_text': line,
+                          'candidates': _candidate_views(windows, fragment_rule, language, anchor, boundary, starts, ends)})
+    found = sum(bool(f['candidates']) for f in fragments)
+    return {'status': ('all_fragments_located_not_whole_match' if fragments and found == len(fragments)
+                       else 'partial_fragments_located' if found else 'no_fragments_located'),
+            'policy': 'source_DB_line_diagnostics_only; no order, multiplicity, role or whole-rule approval',
+            'fragments': fragments}
+
+
 def observe_checklist(document: ReviewDocument, rules: list[dict[str, str]], *, language: str = "ENG") -> dict:
     """Inspect a draft's literal evidence, retaining all rules and pending states.
 
@@ -120,6 +162,7 @@ def observe_checklist(document: ReviewDocument, rules: list[dict[str, str]], *, 
     units = build_text_unit_index(document).units
     starts, ends, ancestors, parts, nodes = _locations(document)
     anchors = _anchors(document, units, starts, ends)
+    windows = build_evidence_windows(document)
     context = {"source_token": document.context.source_token, "region": document.context.region,
                "language": language, "doc_type": document.context.doc_type}
     rows = []
@@ -128,7 +171,9 @@ def observe_checklist(document: ReviewDocument, rules: list[dict[str, str]], *, 
                "source_rule": dict(draft), "approval_status": source["status"],
                "status": "needs_review", "migration_status": "pending", "observation": "not_examined",
                "reason": "", "selector_status": "provisional", "heading": None, "scope_end": None,
-               "selected_units": [], "rejected_units": [], "matches": []}
+               "selected_units": [], "rejected_units": [], "matches": [], "candidate_matches": [],
+               "candidate_reason": "not_examined", "candidate_scope_end": None,
+               "fragment_observations": None}
         rows.append(row)
         if source["status"] != "approved":
             row.update(status="excluded", migration_status="excluded", reason="not_approved")
@@ -137,18 +182,25 @@ def observe_checklist(document: ReviewDocument, rules: list[dict[str, str]], *, 
             row.update(status="not_applicable", reason="metadata_scope")
             continue
         kind = source["block_type"]
-        if kind not in ("heading", "body", "bullet") or source["match_method"] not in ("presence", "normalized_exact"):
+        supported = kind in ("heading", "body", "bullet")
+        if not supported or source["match_method"] not in ("presence", "normalized_exact"):
             row["reason"] = "unsupported_selector"
+        if source["match_method"] not in ("presence", "normalized_exact"):
+            row['candidate_reason'] = 'unsupported_match_method'
             continue
         targets = [a for a in anchors if a["language"] in (language, None)
                    and comparison_text(a["text"]) == comparison_text(source["section_heading"])]
         if len(targets) != 1:
-            row["reason"] = "ambiguous_heading" if targets else "heading_not_found"
+            row['candidate_reason'] = "ambiguous_heading" if targets else "heading_not_found"
+            if supported:
+                row["reason"] = row['candidate_reason']
             continue
         anchor = targets[0]
         row["heading"] = anchor
         if not anchor["usable_for_observation"] or anchor["language"] != language:
-            row["reason"] = "unsafe_heading"
+            row['candidate_reason'] = 'unsafe_heading'
+            if supported:
+                row["reason"] = "unsafe_heading"
             continue
         enclosing = next((key for key in reversed(ancestors[anchor["node_id"]])
                           if nodes[key].structure_type in ("section", "article", "document")), None)
@@ -161,6 +213,12 @@ def observe_checklist(document: ReviewDocument, rules: list[dict[str, str]], *, 
             if anchor["end"] < position < boundary["position"] and nodes[key].language != language:
                 boundary = {"position": position, "node_id": key, "reason": "language_boundary"}
         row["scope_end"] = boundary
+        candidate_boundary = _candidate_boundary(anchor, boundary, nodes, starts, language)
+        row['candidate_scope_end'] = candidate_boundary
+        if not supported:
+            row['candidate_matches'] = _candidate_views(windows, source, language, anchor, candidate_boundary, starts, ends)
+            row['candidate_reason'] = 'provisional_candidate_found' if row['candidate_matches'] else 'no_bounded_candidate'
+            continue
         for unit in units:
             if kind == "heading":
                 if unit.owner_id != anchor["node_id"]:
@@ -192,8 +250,18 @@ def observe_checklist(document: ReviewDocument, rules: list[dict[str, str]], *, 
                 row["matches"].append(view)
         row["observation"] = "evidence_found" if row["matches"] else "not_found_in_selected_units"
         row["reason"] = "provisional_scope_and_role_require_review"
-    return {"schema_version": "checklist-observation/1", "decision_status": "not_evaluated",
+        if not row['matches'] and kind != 'heading':
+            row['candidate_matches'] = _candidate_views(windows, source, language, anchor, candidate_boundary, starts, ends)
+            row['candidate_reason'] = 'provisional_candidate_found' if row['candidate_matches'] else 'no_bounded_candidate'
+        elif row['matches']:
+            row['candidate_reason'] = 'strict_evidence_already_found'
+        if not row['matches'] and not row['candidate_matches'] and len(source['required_text'].splitlines()) > 1:
+            row['fragment_observations'] = _fragment_observations(windows, source, language, anchor, candidate_boundary, starts, ends)
+    return {"schema_version": "checklist-observation/2", "decision_status": "not_evaluated",
+            "candidate_policy": {"approval": "never", "max_adjacent_paragraphs": MAX_PARAGRAPHS,
+                                 "scope": "same_checked_heading_and_language", "table_rows_joined": False},
             "normalization": NORMALIZATION, "context": asdict(document.context), "language": language,
             "summary": {"rule_count": len(rows), "by_status": dict(Counter(r["status"] for r in rows)),
                         "by_observation": dict(Counter(r["observation"] for r in rows)),
-                        "by_reason": dict(Counter(r["reason"] for r in rows))}, "rows": rows}
+                        "by_reason": dict(Counter(r["reason"] for r in rows)),
+                        "rows_with_candidates": sum(bool(r['candidate_matches']) for r in rows)}, "rows": rows}

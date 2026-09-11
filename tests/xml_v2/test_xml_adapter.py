@@ -105,7 +105,7 @@ def test_checklist_pilot_rejects_changed_draft(bundle, tmp_path, changed):
 
 
 def test_checklist_pilot_rejects_input_change_during_observation(bundle, tmp_path, monkeypatch):
-    from scripts import run_checklist_observation as command
+    from src import review_service as command
     folder, receipt, pdf, *_ = bundle
     (folder / "review_run.json").write_text(json.dumps(receipt), encoding="utf-8")
     original = command.observe_checklist
@@ -118,6 +118,125 @@ def test_checklist_pilot_rejects_input_change_during_observation(bundle, tmp_pat
     with pytest.raises(ValueError):
         command.run_observation(folder, pdf, MAPPING, command.DEFAULT_DRAFT, output)
     assert not output.exists()
+
+
+def test_review_service_publishes_checked_json_html_and_completion_last(bundle, tmp_path):
+    from src.review_service import ReviewRequest, run_review
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    result = run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    assert result['status'] == 'ready_for_human_review'
+    assert result['decision_status'] == 'not_evaluated'
+    assert set(result['artifacts']) == {'observation.json', 'review.html'}
+    assert all(digest(output / name) == expected for name, expected in result['artifacts'].items())
+    assert json.loads((output / 'review_complete.json').read_text()) == result
+    with pytest.raises(FileExistsError):
+        run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+
+
+@pytest.mark.parametrize('fault', ['changed_input', 'report_failure', 'input_changed_during_report', 'json_changed_during_html_write', 'html_changed_during_html_write', 'input_changed_during_html_write'])
+def test_review_service_failure_never_publishes_completion(bundle, tmp_path, monkeypatch, fault):
+    from src import review_service as service
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    path = folder / 'semantic_document.xml'
+    if fault == 'changed_input':
+        path.write_bytes(path.read_bytes() + b' ')
+    elif fault.endswith('_during_html_write'):
+        original = service._write_new
+        def changed_write(target, text):
+            original(target, text)
+            if target.name == 'review.html':
+                changed = path if fault.startswith('input') else target if fault.startswith('html') else target.parent / 'observation.json'
+                changed.write_bytes(changed.read_bytes() + b' ')
+        monkeypatch.setattr(service, '_write_new', changed_write)
+    else:
+        original = service.render_observation_html
+        def broken(report):
+            if fault == 'report_failure':
+                raise ValueError('report failure fixture')
+            path.write_bytes(path.read_bytes() + b' ')
+            return original(report)
+        monkeypatch.setattr(service, 'render_observation_html', broken)
+    output = tmp_path / 'review'
+    with pytest.raises(ValueError):
+        service.run_review(service.ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    assert not (output / 'review_complete.json').exists()
+    failure = json.loads((output / 'review_failed.json').read_text())
+    assert failure['status'] == 'failed'
+    assert failure['decision_status'] == 'not_evaluated'
+
+
+def test_interrupted_completion_write_leaves_no_completion_name(bundle, tmp_path, monkeypatch):
+    from src import review_service as service
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    original = service._write_new
+    def interrupted(path, text):
+        if path.name.startswith('review_complete'):
+            original(path, '{partial')
+            raise OSError('disk interruption fixture')
+        original(path, text)
+    monkeypatch.setattr(service, '_write_new', interrupted)
+    output = tmp_path / 'interrupted'
+    with pytest.raises(OSError):
+        service.run_review(service.ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    assert not (output / 'review_complete.json').exists()
+    assert (output / 'review_failed.json').exists()
+
+
+@pytest.mark.parametrize('fault', [None, 'observation.json', 'review.html', 'review_failed.json', 'missing_receipt'])
+def test_completed_observation_reader_rejects_changed_or_failed_output(bundle, tmp_path, fault):
+    from src.review_service import ReviewRequest, run_review, read_completed_observation
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    if fault is None:
+        assert read_completed_observation(output)['summary']['rule_count'] == 547
+        return
+    if fault == 'missing_receipt':
+        (output / 'review_complete.json').unlink()
+    else:
+        target = output / fault
+        target.write_bytes((target.read_bytes() if target.exists() else b'') + b' ')
+    with pytest.raises((ValueError, OSError)):
+        read_completed_observation(output)
+
+
+def test_report_view_export_consumes_only_completed_run_and_never_overwrites(bundle, tmp_path):
+    from src.review_service import ReviewRequest, run_review
+    from scripts.prepare_review_report import prepare_view
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    view_path = tmp_path / 'view.json'
+    view = prepare_view(output, view_path)
+    assert len(view['checklist']) + len(view['excluded']) == 547
+    assert json.loads(view_path.read_text())['summary'] == view['summary']
+    with pytest.raises(FileExistsError):
+        prepare_view(output, view_path)
+
+
+def test_report_view_refuses_completion_changed_during_mapping(bundle, tmp_path, monkeypatch):
+    from src.review_service import ReviewRequest, run_review
+    from scripts import prepare_review_report as command
+    folder, receipt, pdf, *_ = bundle
+    (folder / 'review_run.json').write_text(json.dumps(receipt), encoding='utf-8')
+    output = tmp_path / 'review'
+    run_review(ReviewRequest(pdf, output, bundle=folder, mapping=MAPPING))
+    original = command.build_report_view
+    def change(report):
+        path = output / 'review_complete.json'
+        path.write_bytes(path.read_bytes() + b' ')
+        return original(report)
+    monkeypatch.setattr(command, 'build_report_view', change)
+    view_path = tmp_path / 'view.json'
+    with pytest.raises(ValueError):
+        command.prepare_view(output, view_path)
+    assert not view_path.exists()
 
 
 def test_text_unit_inventory_uses_checked_bundle_and_fresh_output(bundle, tmp_path):

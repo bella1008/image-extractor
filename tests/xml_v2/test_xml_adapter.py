@@ -74,6 +74,52 @@ def refresh(bundle, name):
     bundle[1]["artifacts"][name] = digest(bundle[0] / name)
 
 
+def test_checklist_pilot_reads_frozen_excel_json_and_retains_all_rows(bundle, tmp_path):
+    from scripts.run_checklist_observation import run_observation, DEFAULT_DRAFT
+    folder, receipt, pdf, *_ = bundle
+    (folder / "review_run.json").write_text(json.dumps(receipt), encoding="utf-8")
+    output = tmp_path / "observation.json"
+    result = run_observation(folder, pdf, MAPPING, DEFAULT_DRAFT, output)
+    assert result["summary"]["rule_count"] == 547
+    assert result["decision_status"] == "not_evaluated"
+    assert set(r["status"] for r in result["rows"]) <= {"needs_review", "not_applicable", "excluded"}
+    assert json.loads(output.read_text(encoding="utf-8"))["summary"] == result["summary"]
+    with pytest.raises(FileExistsError):
+        run_observation(folder, pdf, MAPPING, DEFAULT_DRAFT, output)
+
+
+@pytest.mark.parametrize("changed", ["checklist_v2_draft.json", "checklist_v2_draft.xlsx"])
+def test_checklist_pilot_rejects_changed_draft(bundle, tmp_path, changed):
+    import shutil
+    from scripts.run_checklist_observation import run_observation, DEFAULT_DRAFT
+    folder, receipt, pdf, *_ = bundle
+    (folder / "review_run.json").write_text(json.dumps(receipt), encoding="utf-8")
+    draft = tmp_path / "draft"
+    shutil.copytree(DEFAULT_DRAFT, draft)
+    path = draft / changed
+    path.write_bytes(path.read_bytes() + b" ")
+    output = tmp_path / "observation.json"
+    with pytest.raises(ValueError):
+        run_observation(folder, pdf, MAPPING, draft, output)
+    assert not output.exists()
+
+
+def test_checklist_pilot_rejects_input_change_during_observation(bundle, tmp_path, monkeypatch):
+    from scripts import run_checklist_observation as command
+    folder, receipt, pdf, *_ = bundle
+    (folder / "review_run.json").write_text(json.dumps(receipt), encoding="utf-8")
+    original = command.observe_checklist
+    def changed(document, rules):
+        path = folder / "semantic_document.xml"
+        path.write_bytes(path.read_bytes() + b" ")
+        return original(document, rules)
+    monkeypatch.setattr(command, "observe_checklist", changed)
+    output = tmp_path / "observation.json"
+    with pytest.raises(ValueError):
+        command.run_observation(folder, pdf, MAPPING, command.DEFAULT_DRAFT, output)
+    assert not output.exists()
+
+
 def test_text_unit_inventory_uses_checked_bundle_and_fresh_output(bundle, tmp_path):
     from scripts.audit_review_text_units import audit_text_units
     folder, receipt, pdf, *_ = bundle

@@ -1,0 +1,2 @@
+-r requirements-review-v2.txt
+streamlit==1.63.0

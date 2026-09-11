@@ -14,7 +14,7 @@
 - [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
 - [현재 진행 상태](TODO.md)
 
-공통 데이터 모델과 XML adapter·품질 gate·새 추출 실행 경로를 구현했다. 아직 DB v2·Excel·Streamlit 전환은 제공하지 않는다.
+공통 데이터 모델과 XML adapter·품질 gate·새 추출 실행 경로를 구현했다. 아래 파일럿 기능은 제공하지만 전체 DB v2·Excel·Streamlit의 운영 전환이 완료된 것은 아니다.
 기존 Markdown은 XML POC의 writer로 계속 생성한다. 새 실행 경로는 기존 네 파일에 `review_document.json`과 완료 기록 `review_run.json`을 추가한다.
 실행 방법과 실물 검증 결과: [XML adapter 사용 안내](docs/migration/2026-09-10-xml-adapter-validation_kr.md).
 
@@ -41,6 +41,10 @@ CHK-002 구성품을 14개 하위 항목으로 관리하는 별도 작성용 원
 14개 구성품별 JSON/로컬 HTML을 만들고, 원장 작성 당시 출처와 현재 문서의 근거를 분리한다.
 [항목별 실행 명령·결과 읽는 방법·지원 범위](docs/migration/2026-09-11-item-observation-service_kr.md).
 문구 발견은 합격 판정이 아니며, 모델 적용은 계속 미확정이다.
+
+항목별 결과 Excel(요약/14개 항목/현재 근거)과 **완료된 결과를 읽는 로컬 Streamlit 화면**을 연결했다.
+[Excel·화면 실행 방법과 배포 의존성](docs/migration/2026-09-11-item-excel-ui_kr.md).
+화면은 읽기/다운로드 전용이며 PDF 실행은 기존 CLI를 사용한다. Excel 생성은 현재 별도 작성 도구를 사용하므로 Python-only PC 배포가 끝났다는 뜻은 아니다.
 
 ## 1. 프로젝트 목적
 

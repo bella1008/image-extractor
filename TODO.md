@@ -224,12 +224,19 @@ Notes
   pure RTL glyph reconstruction retains glyph owners and combining marks.
   Focused: `50 passed`; full real-sample POC: `1760 passed, 1 skipped`.
   Public imports and compileall pass. No legacy GridCell or DB changes.
-- [ ] AFRICA extraction acceptance is BLOCKED: mixed RTL navigation/icon paths
-  still have incorrect logical reading order. The ENG/ARA Jordan-only source
-  structure also leaves strict heading-count parity false (22/21/21/21/22).
-  Continue from `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_final_v2`.
+- [x] AFRICA follow-up structural acceptance (2026-09-13), starting clean at
+  `8eb2dfbb6c0f9fca8d1a7fda2ef448a706cb0a3f`: common 21 heading child-type groups
+  match all five languages. Covers/contact/blank pages are counted separately.
+  Observed totals 22/21/21/21/22 remain visible; only the fingerprinted Jordan-only
+  source difference is accepted. RTL UI, LTR islands, model/range associations and
+  ActualText decimals have source-backed fixes. All engine hard gates pass.
+  Final: `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_recheck_final_v2`.
+  Focused: `101 passed`; full real-sample POC: `1811 passed, 1 skipped`.
+  Raw/Semantic 4499 fragment identities and text survive. 18505 glyph origins
+  match independent PyMuPDF geometry within 0.02 pt.
+- [ ] Human review: native Arabic bidi punctuation/line presentation, localized
+  meaning and image-only symbols. Explicit warnings remain; no DB candidates.
   Review: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-book-xml-review.md`.
-  Do not waive parity broadly, fabricate localized headings, or create DB candidates.
 
 - [x] Task 8: gate cross-profile readability and multilingual-heading parity
   against the exact ZG, ZC, LATIN, KR, and XU real PDFs. Shared evidence policy:

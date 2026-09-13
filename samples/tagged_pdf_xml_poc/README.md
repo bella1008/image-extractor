@@ -144,26 +144,26 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 ## AFRICA BOOK XML 검증 — 2026-09-13
 
-`AFRICA_L05 + BOOK + ENG/FRA/SPA/POR/ARA`의 명시적 경로를 추가했습니다.
-실제 북마크 순서는 ENG/FRA/SPA/POR/ARA이며 Arabic 본문은 물리 35→30쪽,
-표지를 포함한 Arabic 구간은 36→27쪽으로 읽습니다. Raw XML은 원본 순서를
-보존하고 Semantic XML에 원래 `source-structure-path`를 기록합니다.
+`AFRICA_L05 + BOOK + ENG/FRA/SPA/POR/ARA`의 명시적 XML 경로입니다.
+북마크 순서는 ENG/FRA/SPA/POR/ARA이며 Arabic 본문은 p35→30,
+표지를 포함한 전체 Arabic은 p36→27로 읽습니다. Raw 순서를 보존하고
+Semantic에는 원래 source-structure-path를 기록합니다.
 
-Arabic 페이지에서 PDF가 제공한 `ActualText`만 사용해 장 번호를 복원합니다.
-같은 줄의 순수 RTL glyph는 원 glyph/MCID/행렬 근거로 Semantic 뷰에서 복원하며,
-발음기호 glyph 내부 codepoint 순서를 유지합니다. 혼합 문자, 불확실한 줄 경계,
-여러 줄에 걸친 MCID와 검증되지 않은 재배치는 이 규칙의 대상이 아닙니다.
-다른 profile의 기본 reader 및 가독성 규칙은 유지됩니다.
+PDF ActualText, glyph 단위 복원, glyph advance와 figure 좌표로 혼합 줄의
+읽기 순서를 확인합니다. LTR URL/숫자, RTL 방향 표시, 조건·범위 구분자와
+glyph 내부 발음기호 순서를 보존하며 불확실한 geometry는 재배치하지 않습니다.
+소수 조각도 원 glyph/ActualText/연속 좌표가 일치할 때만 합칩니다.
 
-결과는 **검증 차단 상태**입니다. 혼합 RTL UI 경로의 읽기 순서 오류와 strict
-heading-count gate가 남았습니다. 제목 수 차이 22/21/21/21/22는 ENG/ARA에만
-실제로 있는 Jordan 문구를 확인했으나 자동 gate를 완화하지 않았습니다.
-파일 생성이나 테스트 통과를 문서 검증 완료로 해석하면 안 됩니다.
+**구조 검수 통과 / 사람 의미·표현 검토 필요**입니다. 공통 제목 21개와
+각각의 하위 블록 종류·개수가 다섯 언어 모두 일치합니다. 본문 제목 수
+22/21/21/21/22는 그대로 기록하고 ENG/ARA에 실제 있는 Jordan 항목만
+PDF SHA·실제 제목/경로/표·공통 서명을 검증한 source exception으로 처리합니다.
+표지/연락처/빈 페이지는 별도로 집계합니다.
 
-최종 bundle: `outputs/xml_review_africa_20260913_final_v2`.
-네 기본 산출물에 `review_document.json`, `review_run.json`을 추가했습니다.
-집중 50개, 전체 1,760개 테스트 통과; Windows symlink 1개 skip입니다.
-원문, crop, 남은 차단 문제와 재현 명령은
+최종 bundle: `outputs/xml_review_africa_20260913_recheck_final_v2`.
+기본 XML/Markdown/report와 review_document.json, review_run.json을 확인했습니다.
+집중 101개, 전체 1811개 테스트 통과; Windows symlink 1개 skip입니다.
+원문·crop·집계 정의·남은 Warning은
 [검토 기록](docs/reviews/2026-09-13-africa-book-xml-review.md)에 있습니다.
 
 ## 교차 프로필 가독성 근거 정책

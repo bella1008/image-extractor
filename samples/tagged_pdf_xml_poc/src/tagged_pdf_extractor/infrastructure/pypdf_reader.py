@@ -51,13 +51,16 @@ class TaggedPdfReader:
         self.collector = collector or McidTextCollector()
 
     def read_for_profile(self, pdf_path, profile):
+        from dataclasses import replace
+        from hashlib import sha256
         from tagged_pdf_extractor.domain.africa_book import africa_book_scope
         from tagged_pdf_extractor.infrastructure.africa_actual_text import ActualTextRunner
         if not africa_book_scope(profile):
             return self.read(pdf_path)
-        return TaggedPdfReader(McidTextCollector(
+        document = TaggedPdfReader(McidTextCollector(
             runner=ActualTextRunner(arabic_pages_only=True)
         )).read(pdf_path)
+        return replace(document, source_sha256=sha256(Path(pdf_path).read_bytes()).hexdigest())
 
     @staticmethod
     def resolve(value: Any) -> Any:

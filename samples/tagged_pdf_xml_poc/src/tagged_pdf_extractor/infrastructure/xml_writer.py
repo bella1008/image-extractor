@@ -331,6 +331,11 @@ class XmlDocumentWriter:
                 if audit[data_name] is not None
             },
         )
+        if exception := audit.get("source_count_exception"):
+            add(node, "source-count-exception", {
+                "code": exception["code"], "source-sha256": exception["source_sha256"],
+                "evidence-json": json.dumps(exception, ensure_ascii=False, sort_keys=True),
+            })
         for language in audit["languages"]:
             interval = language["interval"]
             language_node = add(

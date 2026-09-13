@@ -97,6 +97,8 @@ def multilingual_heading_audit_to_data(
         if not audit.applicable
         else "blocked_by_invalid_interval"
         if pending
+        else "passed_with_source_exception"
+        if audit.source_count_exception is not None
         else "passed"
         if audit.passed
         else "failed"
@@ -154,6 +156,8 @@ def multilingual_heading_audit_to_data(
 
     return {
         "applicable": audit.applicable,
+        **({"source_count_exception": _stable_json_value(audit.source_count_exception)}
+           if audit.source_count_exception is not None else {}),
         "status": status,
         "passed": audit.passed,
         "expected_interval_count": audit.expected_interval_count,
@@ -224,7 +228,7 @@ def multilingual_heading_hard_gates(
     else:
         values = (
             True,
-            bool(audit_data["total_heading_count_matches"]),
+            bool(audit_data["total_heading_count_matches"]) or bool(audit_data.get("source_count_exception")),
             bool(audit_data["heading_level_sequence_matches"]),
             bool(audit_data["heading_origin_sequence_matches"]),
             bool(audit_data["numbered_label_sequence_matches"]),

@@ -1,8 +1,8 @@
-# AFRICA_L05 BOOK XML 검토 기록
+# AFRICA_L05 BOOK XML 재검토 — 2026-09-13
 
-**판정: 추출 검증 미완료 / Hard gate 잔존.** 검증된 수정과 재현 근거를 저장했다.
-혼합 RTL UI 경로의 논리적 읽기 순서가 남았다. 사람 확인만으로 코드 결함을
-통과 처리하지 않으며 체크리스트 후보 생성이나 DB 작업은 진행하지 않았다.
+**구조 검수 통과. Hard gate 0개. 사람의 의미·표현 검토는 필요하다.**
+기존 보고는 표지·연락처를 포함한 전체 합계를 본문 제목 수와 함께 제시해 차이가 크게 보였다.
+이번에는 같은 본문 범위와 공통 제목 21개 각각의 하위 블록 종류·개수를 비교했고 모두 일치했다.
 
 ## 대상과 시작 상태
 
@@ -11,142 +11,147 @@
 - SHA-256: `cdc2123f2e1dde2f46314a9ef31bda0bdfb4b4455ff26436838004d65e05c848`
 - 작업장: `C:\Users\bella\image-extractor\.worktrees\xml-markdown-review`
 - 브랜치: `feature/xml-markdown-review`
-- 시작 HEAD: `840512002a80a12b19c712116530ab69b1459c3a`; 미커밋 변경 없음.
-- 파일명 parser와 canonical profile JSON 확인: `AFRICA_L05`, `BOOK`, ENG/FRA/SPA/POR/ARA.
-- 실제 북마크: English 2쪽, Français 8쪽, Español 14쪽, Português 20쪽, العربية 35쪽.
-  본문: ENG 2–7, FRA 8–13, SPA 14–19, POR 20–25, ARA 35→30쪽.
-  표지를 포함한 ARA 읽기 순서는 36→27쪽이다. 28/29쪽은 본문 없는 간지이며
-  원본 페이지 라벨을 보존했다. ENG 앞표지 1쪽, 연락처 뒷표지 26쪽을 확인했다.
+- 최초 HEAD: `840512002a80a12b19c712116530ab69b1459c3a`.
+- 이번 재검토 시작 HEAD: `8eb2dfbb6c0f9fca8d1a7fda2ef448a706cb0a3f`, 미커밋 변경 없음.
+- 파일명 parser와 canonical mapping 확인: `AFRICA_L05`, `BOOK`, ENG/FRA/SPA/POR/ARA.
+- 실제 북마크: English p2, Français p8, Español p14, Português p20, العربية p35.
+- 본문: ENG p2–7, FRA p8–13, SPA p14–19, POR p20–25, ARA p35→30.
+  표지를 포함한 ARA 전체 읽기 순서는 p36→27. Raw 물리 순서는 보존했다.
 
-## 수정 전 결함과 적용 범위
+AGENTS/README/TODO/SUG_RAW_ANALYSIS를 확인했다. 실제 XML POC 경로만 수정했다.
+GridCell, item_review, Excel/Streamlit, checklist DB, xml-review-v2는 수정하지 않았다.
+매 추출마다 새 폴더를 사용했다. 외부 의미 API/OCR/원격 push/merge/rebase는 사용하지 않았다.
 
-| 결함 | 수정 및 근거 |
-| --- | --- |
-| POR 20–34쪽, ARA 35–36쪽으로 잘못 나뉨 | 실제 북마크, Arabic script, 표지 및 연속 Article 근거로 POR 20–25, ARA 27–36 구간 확인 |
-| Arabic 페이지가 앞에서 뒤로 출력됨 | Semantic Article 순서 36→27, Raw는 원래 순서 보존 |
-| 화면의 04가 ToUnicode로 14가 되고 POR/ARA 제목 승격 실패 | PDF content ActualText 사용; 원 glyph 해석과 교체 근거 기록 |
-| Markdown 장 번호 `0 1` 분리 | 검증된 승격 heading의 source digits만 01~04로 표시; audit metadata 제외 |
-| MCID/Td flush로 RTL 단어·발음기호 분리 | 원 glyph 단위 역순과 MCID 소유권을 보존한 제한된 Semantic 복원 |
+## 제목·블록 수 재검토
 
-모든 새 동작은 정확한 AFRICA_L05 BOOK 언어 조합과 Arabic 근거가 있는 경로로
-제한했다. 다른 profile/default reader는 유지했다. glyph 복원은 물리 한 줄,
-동일 부모, 원 단어 경계, 완전한 MCID/문자 보존 등 검증을 모두 통과해야 한다.
-최종 run은 241개 fragment의 glyph 기반 표시와 6개 paragraph의 MCID 순서를
-정리했다. 공백 정리도 포함하므로 241개가 모두 독립 문장 오류였다는 뜻은 아니다.
+다음은 **본문만** 집계한 Semantic 구조다. paragraph는 중첩 wrapper를 포함하는 XML 컨테이너 수이며
+문장 수가 아니다. 제목은 source-role 후보와 승격 장 제목을 포함한다.
 
-- 35쪽 제목: 실제 PDF의 `قبل قراءة الدليل البسيط للمستخدم هذا`를 보존했다.
-  문법상 자연스러운 추정 문구로 바꾸지 않았다. source path `0/17/1/0`,
-  MCID 70/71/72를 Semantic에서 72/71/70으로 확인했다.
-- 33쪽 MCID 339: `تجنُّب سقوط التلفزيون`. glyph `03ff`의 U+0651→U+064F를
-  하나의 glyph로 보존했다. 코드포인트 단위로 뒤집지 않았다.
-- 30쪽 MCID 842: `تعتّم الشاشة.`를 원 glyph로 복원했다.
-- raw operand hex, glyph, font, text/current matrix, MCID, 이전/이후 문자열과
-  source path를 report에 남겼다. 이 식별자는 checklist 고정 키가 아니다.
+| 언어 | 제목 | paragraph | list_item | table | row | cell | figure |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ENG | 22 | 128 | 100 | 14 | 29 | 46 | 38 |
+| FRA | 21 | 121 | 100 | 13 | 27 | 44 | 37 |
+| SPA | 21 | 121 | 100 | 13 | 27 | 44 | 37 |
+| POR | 21 | 121 | 100 | 13 | 27 | 44 | 37 |
+| ARA | 22 | 128 | 100 | 14 | 29 | 46 | 38 |
 
-## ENG 기준 비교와 언어별 구조
+ENG p7와 ARA p30에는 원본에 Jordan-only 항목이 있다. FRA p13, SPA p19, POR p25에는 없다.
+독립 PDF StructTree와 이미지 검토로 확인했다. 제목은 `Recommendation - Jordan Only`,
+`توصيات - الأردن فقط`이며 source path는 `0/2/0/14`, `0/12/0/14`다.
+뒤의 표 경로는 각각 `.../15/0`, object-ref는 `4182 0 R`, `1256 0 R`이다.
+이 표는 **2행×1열 레이아웃 표**로 첫 행 CE 그림, 다음 행 선언문이다.
 
-ENG 비교 기준은 검증된 `outputs/cross_profile_readability_zc_260908`, 가장 가까운
-BOOK 회귀 기준은 `outputs/cross_profile_readability_zg_260908`이다. AFRICA ENG의
-장 01~04, 제목 하위 목록, 안전 심볼, 사양, 그림/범례, UI 및 표지를 PDF 1–7/26쪽과
-대조한 뒤 FRA/SPA/POR를 AFRICA ENG와 비교했다. ZC의 Internet security 등
-바이어별 원문 차이를 AFRICA 누락으로 강제하지 않았다.
+이 부분을 별도로 계산하면 다섯 언어 모두 **제목 21, paragraph 121, list_item 100,
+table 13, row 27, cell 44, figure 37**이다. Jordan 증가량은 제목 1, paragraph 7
+(제목 1+wrapper 1+내부 5), table 1, row 2, cell 2, figure 1이다.
+`review_document.json/common_heading_child_type_parity`에는 21개 제목별 비교를 남겼다.
+각 제목 아래의 위 여섯 구조 종류 개수까지 모두 일치하므로 총합만 맞춘 결과가 아니다.
 
-다음은 표지·중첩 paragraph를 포함한 Semantic 컨테이너 수다. paragraph 수는
-문장 수가 아니다. 제목 수는 source-role 후보와 승격 제목의 합이다.
+원본 Raw `LI`는 언어마다 104개이며 4개가 장 제목 01–04로 승격되어 Semantic은
+`list_item=100`, `heading=4`다. engine `heading_count=20`은 다섯 언어 승격 장 제목 합계다.
+`heading_hierarchy=109`는 본문 107개와 표지 제목 2개다. 서로 다른 집계 범위를 혼용하지 않는다.
 
-| 언어 | 제목 | 승격 장 | paragraph | list_item | table | table_row | table_cell | figure |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ENG | 22 | 4 | 200 | 100 | 15 | 49 | 100 | 39 |
-| FRA | 21 | 4 | 121 | 100 | 13 | 27 | 44 | 37 |
-| SPA | 21 | 4 | 121 | 100 | 13 | 27 | 44 | 37 |
-| POR | 21 | 4 | 121 | 100 | 13 | 27 | 44 | 37 |
-| ARA | 22 | 4 | 204 | 100 | 15 | 49 | 101 | 41 |
+본문 밖 영역은 다음과 같이 분리했다.
 
-각 언어: 안전 심볼 표 1개(9행, 이미지 6개), 사양표 1개(3행), 구성품 표 1개,
-Controller 그림 표 1개, Microphone Type A~D 범례 표 1개, inline icon 14개.
-ENG/ARA에는 연락처 표 1개와 Jordan 규제 표 1개가 추가된다. 원문 표/목록/figure를
-일반 body 하나로 합치지 않았다. 이 검토 분류는 legacy block type/DB 키가 아니다.
+| 영역 | paragraph | table | row | cell | figure |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ENG 앞표지 p1 | 4 | 0 | 0 | 0 | 1 |
+| ENG 연락처 p26 | 68 | 1 | 20 | 54 | 0 |
+| ARA 앞표지 p36 | 5 | 0 | 0 | 0 | 3 |
+| ARA 연락처 p27 | 69 | 1 | 20 | 55 | 0 |
+| ARA 빈 페이지 라벨 p28–29 | 2 | 0 | 0 | 0 | 0 |
 
-## 표지와 보존 근거
+연락처 cell 54/55 차이도 원본 구조다. ENG의 ALGERIA/TUNISIA Website는 RowSpan=2
+한 셀을 공유하고 ARA는 동일 URL 두 셀을 가진다. 확장 후 국가 19행의 국가명/전화/URL은
+모두 일치한다. `source_header`에는 머리글만, 국가 데이터는 `country_rows`에 있다.
 
-36쪽 전체를 90 dpi로 렌더링하고 1/26/27/36쪽의 로고, 제목, 등록/지원,
-모델/시리얼, 연락처 제목/안내/머리글/국가 행, 저작권, QR/문서코드를 직접 확인했다.
-29개 crop manifest와 추가 `p36_registration_full.png`, `p33_prevent_heading.png`를
-남겼다. 앞선 잘린 crop 대신 `crops_v2` 및 보충 전체 영역 crop을 근거로 사용한다.
+언어마다 안전 심볼 표 1개(9행, 그림 6개), 사양표 1개(3행), 구성품 표 1개,
+Controller 그림 표 1개, Microphone Type A–D 범례 표 1개, inline icon 14개가 있다.
+그림 셀·표·목록을 일반 본문 하나로 합치지 않았다.
 
-- 26쪽 source header: `Country/Region | Samsung Service Centre [전화 아이콘] | Website`.
-  `review_document.json`의 `contact_tables.*.source_header`에는 머리글만 있다.
-  국가/지역 19행은 `country_rows`로 분리했다. 27쪽은 반대 물리 열 순서다.
-- RowSpan을 따라 국가/서비스센터/URL을 비교해 ENG/ARA 19행 전부 일치했다.
-- 안전 심볼 표 이미지/설명 셀과 사양표 모델 조건/수치/단위의 셀 관계를 확인했다.
-- 문서코드 `BN68-25031G-00`는 36쪽 barcode crop에서 확인했다. OCR 결과나
-  파일명에서 복원된 XML 텍스트라고 주장하지 않는다.
-- Raw/Semantic fragment 각각 4,499개. `(page-index, mcid, object-ref)` multiset 및
-  공백을 제외한 전체 문자 multiset 일치. Markdown은 추가된 표/그림 표시를
-  제외하면 Semantic과 알파벳 문자 수가 일치한다. 번호 heading 20개, inline icon 70개 대응.
-- XML round-trip 통과, 미해결 참조/알려진 손실 진단/금지 제어문자 각각 0.
-  문자 집계는 읽기 순서가 맞다는 증거를 대신하지 않는다.
+## 결함과 수정 범위
 
-## 남은 Hard gate와 Warning
+이전 커밋은 POR/ARA 구간, Arabic 역순 페이지, ActualText 장 번호, 일부 순수 RTL glyph와
+Markdown 장 번호를 수정했다. 이번 시작 추출에서는 UI 순서와 heading-count gate가 실패했다.
+새 동작은 정확한 `AFRICA_L05 + BOOK + ENG/FRA/SPA/POR/ARA` XML 경로로 제한했다.
 
-**Hard: ARA 혼합 RTL UI 순서.** 35쪽 source path `0/17/1/2`는 PDF의 홈 아이콘부터
-시작하는 경로와 달리 Markdown에서 `التلميحات وأدلة > الدعم > الإعدادات ...`가 먼저
-나온다. `crops_v2/p35_navigation.png`와 XML MCID 79–92/figure 소유권이 직접 근거다.
-여러 줄의 구분자/아이콘을 전체 역순으로 바꾸면 괄호·방향·문장 경계를 손상시킬 수
-있다. 현재 순수 glyph 규칙으로 승인하지 않았으며 추가 추출 수정이 필요하다.
+- 원 glyph 폭, Tc/Tw/Tz, TJ kerning, 원 byte 0x20, 글꼴 encoding을 반영한 좌표로
+  paragraph/span/inline list_body를 줄별로 읽는다. 표·목록·셀 경계를 넘지 않는다.
+- ARA UI 경로 4개, Controller 제목, Eco 문장, 온도·습도, LAN 조건의 순서를 복원했다.
+- 영문 URL/해상도와 연속 숫자는 LTR로 유지하며 RLM 및 조건·범위 구분자는 경계로 유지한다.
+  RTL 모델 목록의 줄 끝 slash와 다음 줄 모델·출력값 연결도 재현 테스트로 확인했다.
+- 혼합 줄의 완전한 Arabic MCID는 glyph 단위로 복원한다. `لى` ligature와 shadda/모음
+  glyph 내부 codepoint를 뒤집지 않는다. 문구를 번역하거나 추정하지 않는다.
+- ActualText 소수는 원 glyph/ActualText/한 baseline/연속 좌표/완전한 숫자 문자열이
+  모두 일치할 때만 합쳐 `5.925`, `7.125`, `6.425`로 유지한다.
+- 제목 수 22/21/21/21/22, strict count=false와 FRA/SPA/POR mismatch 3개는 report/XML에
+  남긴다. 정확한 PDF SHA·실제 제목/경로/페이지·2×1 표·공통 21개 서명이 모두 맞는
+  Jordan source exception만 count gate에 반영한다. 다른 hard gate는 이 예외로 통과하지 않는다.
 
-**Engine Hard: multilingual_heading_count_parity=false.** ENG/ARA 22개와
-FRA/SPA/POR 21개 차이는 PDF에 실제 존재하는 Jordan-only subsection이다.
-7/30쪽에 있고 13/19/25쪽에는 없다. 나머지 level/origin/번호 서명 gate는 통과한다.
-원문 예외를 확인했지만 gate를 무조건 완화하거나 현지어 제목을 만들어 넣지 않았다.
+최종 glyph 복원은 340 fragment(공백 정리 포함), inline 순서 수정은 83 container,
+ActualText 소수는 3개다. 대상 container의 미해결 geometry skip은 0개다.
+독립 PyMuPDF texttrace와 glyph 원점 18,505개를 대조해 0.02 pt 초과 불일치 0개였다.
 
-Warning: 혼합 Arabic/Latin/숫자와 여러 baseline MCID의 줄 품질, 아이콘 의미,
-안전 심볼/모델 조건의 사람 검토가 필요하다. UI 텍스트가 존재해도 순서가 틀리면
-위 Hard로 취급한다. OCR 및 외부 API 의미 검토는 사용하지 않았다.
-Global LCS 0.7957258032644351은 물리 baseline과 역순 RTL Semantic을 비교하므로
-최종 승인 지표로 사용하지 않는다.
+## 검증 근거와 남은 Warning
 
-## 산출물과 검증
+검증된 ZC ENG(`cross_profile_readability_zc_260908`)를 먼저 비교했고 가까운 BOOK 회귀
+기준은 ZG(`cross_profile_readability_zg_260908`)다. 최초 검토에서 확인한 ENG 구조를
+유지하면서 이번에는 현지어와 각 제목별 하위 구조를 다시 비교했다.
 
-최종 폴더:
-`C:\Users\bella\image-extractor\.worktrees\xml-markdown-review\samples\tagged_pdf_xml_poc\outputs\xml_review_africa_20260913_final_v2`
+Raw/Semantic 4,499 fragment의 `(page-index, mcid, object-ref)` multiset과 공백 제외 전체
+문자 multiset이 일치했다. Markdown은 writer의 행/열/아이콘 표시를 제외한 알파벳 문자
+multiset이 Semantic과 일치한다. 장 번호 20개, inline icon 70개 대응, XML round-trip 통과,
+미해결 참조/알려진 손실/금지 제어문자 0개다. 집계만으로 순서를 승인하지 않고
+UI/모델·수치 회귀, source path와 crop 비교를 함께 사용했다.
 
-`raw_structure.xml`, `semantic_document.xml`, `semantic_document.md`,
-`extraction_report.json`, `review_document.json`, `review_run.json`을 확인했다.
-앞선 before/after/final 폴더는 보존했다. review_run에는 입력/bundle SHA-256,
-시작 Git 상태, 로그, 보존 검사, 차단 문제와 최종 복구 commit을 기록한다.
+**Hard gate 0개.** 남은 Warning은 사람 검토 3종이다.
 
-POC 디렉터리 실행 명령:
+1. Arabic bidi 제어문자·인치 따옴표·괄호·원본 줄바꿈의 최종 표시 품질.
+   모델/수치 소속과 순서는 확인했지만 자연스러운 현지어 조판을 보증하지 않는다.
+2. 언어별 의미와 실제 원문 표현 차이. ARA `EC/1999/5`는 실제 glyph/PDF 표기이므로
+   ENG `1999/5/EC`로 임의 수정하지 않았다.
+3. 이미지인 아이콘·안전 심볼·barcode. crop을 직접 확인했으며 OCR 텍스트로 주장하지 않는다.
 
-```powershell
-$env:PYTHONUTF8='1'
-.venv\Scripts\python -m tagged_pdf_extractor.cli '<위 입력 PDF>' --output outputs/xml_review_africa_20260913_final_v2
-.venv\Scripts\python -m pytest tests/test_africa_actual_text.py tests/test_africa_book_rules.py tests/test_africa_book_integration.py tests/test_africa_rtl.py -q
-$env:TAGGED_PDF_REQUIRE_SAMPLES='1'
-.venv\Scripts\python -m pytest tests -q
-```
+전 36쪽 렌더 및 앞선 `xml_review_africa_20260913_evidence/crops_v2` 29개 crop,
+표지 p1/26/27/36, 보충 p36 등록문구와 p33 제목 crop을 근거로 보존했다.
+이번 제목별 집계와 좌표 감사는 `xml_review_africa_20260913_recheck_evidence`에 있다.
+Global LCS는 물리 baseline과 RTL Semantic 순서를 비교하므로 승인 지표로 사용하지 않는다.
+체크리스트 후보 생성이나 DB 승인 작업은 하지 않았다.
 
-추출 CLI exit=1은 잔존 gate 때문에 예상된 결과다. 재실행에는 새 폴더를 사용한다.
-집중 **50 passed**; 전체 **1760 passed, 1 skipped**. skip은 Windows symlink 기능
-1건이다. 기존 ZC/ZG/LATIN/KR/XU와 ZA/XY 실물 회귀를 포함해 통과했다.
-pytest temp를 repo 안에 둘 때 13개 fixture-isolation 테스트가 실제 metadata/samples를
-조상 경로에서 발견해 실패했으나 기본 격리 temp로 재실행해 모두 통과했다.
-이 문제 때문에 추출 규칙을 변경하지 않았다.
+## 최종 산출물과 테스트
 
-작업장 루트에서 `python -m compileall src tests scripts samples/tagged_pdf_xml_poc/src samples/tagged_pdf_xml_poc/tests`
-exit=0. 루트 apps/scripts는 존재하지 않아 apps는 제외했고 scripts에는 파일이 없다.
-기존 `src.content_poc` 공개 import 3개도 확인했다. XML/Markdown writer/public reader
-및 profile scope 검사는 전체 POC suite에 포함된다.
+절대 폴더:
+`C:\Users\bella\image-extractor\.worktrees\xml-markdown-review\samples\tagged_pdf_xml_poc\outputs\xml_review_africa_20260913_recheck_final_v2`
+
+- `raw_structure.xml`
+- `semantic_document.xml`
+- `semantic_document.md`
+- `extraction_report.json`
+- `review_document.json`: 동일 범위 본문/표지 집계, 21개 제목별 비교, 표/연락처 및 Warning.
+- `review_run.json`: 입력/bundle SHA, 시작 상태, 테스트 로그와 최종 복구 commit.
+
+POC `.venv\Scripts\python -m tagged_pdf_extractor.cli <입력 PDF> --output <새 폴더>` exit=0.
+집중 6개 AFRICA 테스트 파일 **101 passed**. `TAGGED_PDF_REQUIRE_SAMPLES=1` 전체 POC
+suite **1811 passed, 1 skipped**(Windows symlink 기능). 기존 ZC/ZG/LATIN/KR/XU와 ZA/XY
+실물, public reader/import, XML profile 경로, Semantic XML/Markdown writer 회귀를 포함한다.
+처음 전체 run은 마지막 모델 목록 경계 수정 때문에 중단했고 최종 코드로 전체를 재실행했다.
+
+`python -m compileall src tests scripts` 및 POC `src/tests` compileall exit=0.
+루트 apps/scripts는 실제로 없으므로 검사할 파일이 없었다.
+기존 `src.content_poc` 공개 함수 3개는 프로젝트 기본 Python에서 import 통과했다.
+POC 전용 venv에는 legacy openpyxl이 없어 그 venv의 legacy import 시도는 실패했지만
+프로젝트 기본 Python에서 재검증했다. 의존성이나 legacy 코드를 변경하지 않았다.
 
 ## 변경 파일과 복구
 
-- 루트 `TODO.md`, `docs/superpowers/plans/2026-09-13-africa-book-xml-validation.md`.
+- `TODO.md`, `docs/superpowers/plans/2026-09-13-africa-book-xml-validation.md`.
 - POC `README.md`, 이 검토 기록.
-- `application/extract_document.py`.
-- `domain/models.py`, `numbered_heading_promotion.py`, 새 `africa_book.py`, `africa_rtl.py`.
-- `infrastructure/pypdf_reader.py`, `pypdf_operation_text.py`, `xml_writer.py`, `markdown_writer.py`, 새 `africa_actual_text.py`, `africa_glyphs.py`.
-- 새 테스트 `test_africa_actual_text.py`, `test_africa_book_rules.py`, `test_africa_book_integration.py`, `test_africa_rtl.py`.
+- POC application: `evaluate_quality.py`.
+- POC domain: `africa_book.py`, `africa_rtl.py`, `africa_inline_order.py`,
+  `africa_numeric_text.py`, `africa_heading_evidence.py`, `models.py`, `multilingual_heading_validation.py`.
+- POC infrastructure: `africa_glyphs.py`, `pypdf_reader.py`, `xml_writer.py`.
+- POC tests: `test_africa_book_integration.py`, `test_africa_rtl.py`,
+  `test_africa_inline_order.py`, `test_africa_numeric_text.py`.
 
-검증된 코드/기록만 현 브랜치에 로컬 commit한다. 전체 commit 번호는 최종
-review_run.json과 작업 메시지에 기록한다. 원격 push, 다른 branch/worktree,
-item_review/Excel/Streamlit/체크리스트 DB는 변경하지 않았다.
+완료 commit의 전체 SHA는 `review_run.json/final_commit`과 최종 응답에 기록한다.
+검증된 변경만 현재 브랜치에 로컬 커밋한다. 구조 추출 검증 완료와 사람의 의미 승인은 구분한다.

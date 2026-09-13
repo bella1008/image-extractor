@@ -84,3 +84,136 @@ def test_rtl_glyph_combining_marks_with_source_sentence_period(africa):
     semantic = ET.parse(artifacts.semantic_xml).getroot()
     text = semantic.find(".//text[@page-index='29'][@mcid='842']")
     assert text.text.strip() == "تعت\u0651م الشاشة."
+
+
+def test_rtl_inline_navigation_reads_each_source_line_from_the_right(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    route = semantic.find(".//*[@source-structure-path='0/17/1/2']")
+    assert [int(t.get("mcid")) for t in route.iter("text")] == [
+        88, 87, 86, 85, 84, 83, 82, 81, 80, 79, 92, 91, 90, 89]
+    md = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert "( [아이콘] > زر الاتجاه الأيسر > [아이콘] الإعدادات > الدعم > التلميحات وأدلة المستخدم > فتح دليل المستخدم )" in md
+
+
+def test_rtl_controller_heading_matches_source_title_order(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    title = semantic.find(".//*[@source-structure-path='0/13/0/3']")
+    assert [int(t.get("mcid")) for t in title.iter("text")] == [568, 567]
+    assert "استخدام وحدة التحكم في التلفزيون" in artifacts.semantic_markdown.read_text(encoding="utf-8")
+
+
+def test_rtl_mixed_eco_line_restores_local_word_and_inline_route_order(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    paragraph = semantic.find(".//*[@source-structure-path='0/12/0/3']")
+    ids = [int(t.get("mcid")) for t in paragraph.iter("text")]
+    assert ids[:4] == [846,845,844,843]
+    assert ids.index(852) < ids.index(851) < ids.index(850) < ids.index(849)
+    assert ids.index(862) < ids.index(860) < ids.index(858) < ids.index(856) < ids.index(864)
+    md = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert "يقوم مستشعر Eco بضبط درجة سطوع الشاشة تلقائيًا بناءً على شدة" in md
+
+
+def test_rtl_list_body_update_route_follows_source_inline_order(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    route = semantic.find(".//*[@source-structure-path='0/13/0/21/1/1']")
+    ids = [int(t.get("mcid")) for t in route.iter("text")]
+    assert ids.index(748) < ids.index(747) < ids.index(746) < ids.index(744)
+    assert ids.index(744) < ids.index(757) < ids.index(755) < ids.index(753)
+
+
+def test_verified_jordan_source_difference_preserves_observed_heading_counts(africa):
+    document, report, artifacts = africa
+    audit = document.multilingual_heading_audit
+    assert [len(s.entries) for s in audit.signatures] == [22,21,21,21,22]
+    assert audit.total_heading_count_matches is False
+    assert report.hard_gates["multilingual_heading_count_parity"] is True
+    data = report.metrics["multilingual_heading_audit"]
+    assert data["status"] == "passed_with_source_exception"
+    assert [(m["language"],m["position"]) for m in data["mismatch_positions"]] == [("FRA",21),("SPA",21),("POR",21)]
+    assert data["source_count_exception"]["code"] == "africa_observed_jordan_only"
+    assert ET.parse(artifacts.semantic_xml).find(".//multilingual-heading-audit/source-count-exception") is not None
+
+
+@pytest.mark.parametrize("mutation", ["hash", "profile", "headings", "table", "heading_text", "heading_level", "extra_mismatch"])
+def test_jordan_exception_fails_closed_on_changed_source_evidence(africa, mutation):
+    from dataclasses import replace
+    from tagged_pdf_extractor.domain.africa_heading_evidence import verified_jordan_difference
+    from tagged_pdf_extractor.domain.models import ContentFragment, PdfProfile
+    document, _, _ = africa
+    profile = PdfProfile("AFRICA_L05","BOOK",("ENG","FRA","SPA","POR","ARA"),5)
+    audit = document.multilingual_heading_audit
+    signatures, mismatches = audit.signatures, audit.mismatch_positions
+    if mutation == "hash":
+        document = replace(document, source_sha256="0"*64)
+    elif mutation == "profile":
+        profile = replace(profile, source_token="AFRICA MENA_L05")
+    elif mutation == "headings":
+        signatures = (replace(signatures[0],entries=signatures[0].entries[1:]),*signatures[1:])
+    elif mutation == "extra_mismatch":
+        mismatches = (*mismatches, replace(mismatches[0],position=20))
+    else:
+        def damage(node):
+            if isinstance(node,ContentFragment):
+                return node
+            if node.source_structure_path == (0,2,0,15,0):
+                if mutation == "table":
+                    return replace(node,children=node.children[:1])
+            if node.source_structure_path == (0,2,0,14):
+                if mutation == "heading_text":
+                    return replace(node,children=(ContentFragment(6,1,("Changed source",)),))
+                if mutation == "heading_level":
+                    return replace(node,source_role="Heading2")
+            return replace(node,children=tuple(damage(c) for c in node.children))
+        document = replace(document,children=tuple(damage(c) for c in document.children))
+    assert verified_jordan_difference(profile, document, signatures, mismatches) is None
+
+
+def test_arabic_jordan_url_preserves_source_ltr_island(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    paragraph = semantic.find(".//*[@source-structure-path='0/12/0/15/0/1/0/1']")
+    ids = [int(t.get("mcid")) for t in paragraph.iter("text")]
+    assert ids.index(823) < ids.index(824)
+    assert "http://www.samsung.com" in artifacts.semantic_markdown.read_text(encoding="utf-8")
+
+
+def test_arabic_actual_text_decimal_digits_stay_one_source_number(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    for mcid, number in ((802,"6.425"),(804,"7.125"),(806,"5.925")):
+        assert semantic.find(f".//text[@page-index='29'][@mcid='{mcid}']").text.strip() == number
+
+
+def test_source_count_exception_never_overrides_an_unrelated_hard_failure(africa):
+    from dataclasses import replace
+    from tagged_pdf_extractor.application.evaluate_quality import QualityEvaluator
+    document, _, _ = africa
+    report = QualityEvaluator().evaluate(replace(document, marked=False), "", True)
+    assert report.hard_gates["multilingual_heading_count_parity"]
+    assert not report.hard_gates["is_marked"]
+    assert report.status == "fail"
+
+
+def test_rtl_model_range_and_wifi_ranges_preserve_source_associations(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    paragraph = semantic.find(".//*[@source-structure-path='0/12/0/7/0/1/0/4']")
+    ids = [int(t.get("mcid")) for t in paragraph.iter("text")]
+    assert ids.index(934) < ids.index(932) < ids.index(930) < ids.index(928)
+    assert ids.index(926) < ids.index(924) < ids.index(922) < ids.index(920) < ids.index(918)
+    wifi = semantic.find(".//*[@source-structure-path='0/12/0/12']")
+    ids = [int(t.get("mcid")) for t in wifi.iter("text")]
+    assert ids.index(806) < ids.index(805) < ids.index(804) < ids.index(803) < ids.index(802) < ids.index(801)
+
+
+def test_rtl_model_list_keeps_slash_at_wrapped_line_boundary(africa):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    paragraph = semantic.find(".//*[@source-structure-path='0/12/0/7/0/1/0/1']")
+    ids = [int(t.get("mcid")) for t in paragraph.iter("text")]
+    assert ids[:14] == list(range(896,882,-1))
+    assert ids.index(883) < ids.index(903) < ids.index(902) < ids.index(901) < ids.index(899)

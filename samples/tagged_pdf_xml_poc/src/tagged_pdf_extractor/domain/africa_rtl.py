@@ -16,6 +16,22 @@ def pure_rtl_line(line):
                     or c.isspace() or c in ".،؛!؟:-" for c in text))
 
 
+def fragment_direction(line):
+    """Additional punctuation is safe within one complete MCID, never across it."""
+    runs = line["runs"]
+    text = "".join(g for r in runs for g in r["glyphs"])
+    if (line["pending_mark"] or not text
+            or any(r["mcid"] is None or r["actual_text"] or not r["axis_aligned"] for r in runs)):
+        return None
+    if text in {"http://", "https://"}:
+        return "ltr"
+    if (any(ud.bidirectional(c) == "AL" for c in text)
+            and all(ud.bidirectional(c) in {"AL", "NSM", "WS"} or c.isspace()
+                    or c in '.،؛!؟:-%()"' for c in text)):
+        return "rtl"
+    return None
+
+
 def restore_rtl_glyph_lines(children, diagnostics):
     """Keep Raw nodes intact; accept only complete MCIDs with equal character bags.
 
@@ -42,12 +58,27 @@ def restore_rtl_glyph_lines(children, diagnostics):
         if diagnostic.code != "africa_rtl_glyph_source":
             continue
         page = diagnostic.context["page_index"]
+        eligible_lines = []
         for line in diagnostic.context["lines"]:
-            if not pure_rtl_line(line):
-                continue
+            if pure_rtl_line(line):
+                eligible_lines.append((line, "rtl"))
+            else:
+                # A Latin neighbour must not prevent recovery inside a pure
+                # Arabic MCID. Mixed lines never authorize cross-MCID reversal.
+                groups = []
+                for run in line["runs"]:
+                    if groups and groups[-1][-1]["mcid"] == run["mcid"]:
+                        groups[-1].append(run)
+                    else:
+                        groups.append([run])
+                for runs in groups:
+                    candidate = {"runs": runs, "pending_mark": line["pending_mark"]}
+                    if direction := fragment_direction(candidate):
+                        eligible_lines.append((candidate, direction))
+        for line, direction in eligible_lines:
             tokens = [(r["mcid"], g) for r in line["runs"] for g in r["glyphs"]]
             groups = []
-            for mcid, glyph in reversed(tokens):
+            for mcid, glyph in (reversed(tokens) if direction == "rtl" else tokens):
                 if groups and groups[-1][0] == mcid:
                     groups[-1][1] += glyph
                 else:
@@ -61,7 +92,8 @@ def restore_rtl_glyph_lines(children, diagnostics):
             for mcid, value in groups:
                 candidates[page, mcid].append(value)
             line_orders.append([(page, mcid) for mcid in ids])
-            proof.append({"page_index": page, "source_runs": line["runs"], "logical_mcids": ids})
+            proof.append({"page_index": page, "source_runs": line["runs"], "logical_mcids": ids,
+                          "direction": direction})
     def letters(text):
         return Counter(c for c in text if not c.isspace())
     def glyph_styles(fragment):

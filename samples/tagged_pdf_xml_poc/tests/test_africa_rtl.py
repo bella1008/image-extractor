@@ -85,6 +85,9 @@ class Font:
     name = "source"
     character_map = {"m": "\u0651\u064f", "b": "ب", "n": "ن"}
 
+    def get_text_width(self, code):
+        return 500 if code in self.character_map else 999
+
 
 def observe(observer, codes, y, x=0):
     observer._observe(codes, [codes.encode()], [1, 0, 0, 1, 0, 0], [7, 0, 0, 7, x, y], Font(), 1)
@@ -125,3 +128,121 @@ def test_backwards_horizontal_placement_does_not_reverse_source_chunks():
     observe(observer, "n", 100, x=100)
     observer._finish()
     assert len(observer.lines) == 2
+
+
+def test_glyph_extent_uses_source_code_width_and_survives_mcid_flush():
+    observer = RtlGlyphObserver()
+    observe(observer, "b", 100)
+    observer._before_operation(b"BDC", ["Span", {"/MCID": 2}])
+    observe(observer, "n", 100)
+    assert observer.runs[0]["glyph_boxes"] == [[0, 100, 3.5, 107]]
+    assert observer.runs[1]["glyph_boxes"] == [[3.5, 100, 7, 107]]
+
+
+def test_glyph_extent_applies_tj_kerning_and_character_spacing():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tc", [0.1])
+    observer._before_operation(b"TJ", [[b"b", -200, b"n"]])
+    observe(observer, "b", 100)
+    observe(observer, "n", 100)
+    assert observer.runs[0]["glyph_boxes"][0][2] == pytest.approx(4.2)
+    assert observer.runs[1]["glyph_boxes"][0][0] == pytest.approx(5.6)
+
+
+def test_unmodeled_word_spacing_does_not_authorize_inline_geometry():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tw", [2])
+    observe(observer, " ", 100)
+    assert observer.runs[0]["glyph_boxes"] is None
+
+
+def test_word_spacing_does_not_affect_source_runs_without_space_codes():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tw", [0.01])
+    observe(observer, "b", 100)
+    assert observer.runs[0]["glyph_boxes"] == [[0,100,3.5,107]]
+
+
+def test_pure_arabic_mcid_is_recovered_inside_a_mixed_script_line():
+    evidence = line(["ب", "\u0651\u064f", "ن", "ج", "ت"])
+    evidence["runs"].append({**evidence["runs"][0], "mcid":2, "glyphs":["E","c","o"]})
+    fragments = [ContentFragment(30,1,("بُّتجن",)), ContentFragment(30,2,("Eco",))]
+    assert restore(fragments,[evidence]).children[0].text == "تجنُّب"
+
+
+def test_tj_empty_string_keeps_all_numeric_adjustments():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"TJ", [[500, b"", 100, b"b"]])
+    observe(observer, "", 100)
+    observe(observer, "b", 100)
+    assert observer.runs[0]["glyph_boxes"][0][0] == pytest.approx(-4.2)
+
+
+def test_numeric_only_tj_keeps_advance_for_following_tj():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tf", ["font", 1])
+    observer._before_operation(b"TJ", [[500]])
+    observer._before_operation(b"Tj", [b"b"])
+    observe(observer, "b", 100)
+    assert observer.runs[0]["glyph_boxes"][0][0] == pytest.approx(-3.5)
+
+
+def test_source_url_scheme_keeps_glyph_slashes_together():
+    evidence = line(list("http://"))
+    assert restore([ContentFragment(30,1,("http:/ /",))],[evidence]).children[0].text == "http://"
+
+
+def test_complete_arabic_fragment_restores_percent_and_quote_boundaries():
+    assert restore([ContentFragment(30,1,("لى % إ",))],[line([" ","لى","إ"," ","%"," "])]).children[0].text.strip() == "% إلى"
+
+
+def test_simple_font_space_code_uses_pdf_word_spacing():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tw", [0.02])
+    font = Font()
+    font.sub_type = "TrueType"
+    observer._observe(" b",[b" b"],[1,0,0,1,0,0],[7,0,0,7,0,100],font,1)
+    assert observer.runs[0]["glyph_boxes"][1][0] == pytest.approx((0.999+0.02)*7)
+
+
+@pytest.mark.parametrize("raw,codes,word_advance", [(b" ","A",0.02),(b"A"," ",0)])
+def test_word_spacing_uses_raw_byte_20_even_with_font_encoding_differences(raw,codes,word_advance):
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tw",[0.02])
+    font = Font()
+    font.sub_type = "TrueType"
+    observer._observe(codes,[raw],[1,0,0,1,0,0],[7,0,0,7,0,100],font,1)
+    assert observer.runs[0]["glyph_boxes"][0][2] == pytest.approx((0.999+word_advance)*7)
+
+
+def test_simple_font_width_uses_raw_code_before_encoding_mapping():
+    observer = RtlGlyphObserver()
+    font = Font()
+    font.sub_type = "TrueType"
+    observer._observe("A",[b"b"],[1,0,0,1,0,0],[7,0,0,7,0,100],font,1)
+    assert observer.runs[0]["glyph_boxes"][0][2] == pytest.approx(3.5)
+
+
+def test_unknown_word_spacing_advance_stays_unknown_until_position_reset():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"Tw", [2])
+    observe(observer," ",100)
+    observer._before_operation(b"Tw", [0])
+    observe(observer,"b",100)
+    assert observer.runs[-1]["glyph_boxes"] is None
+    observer._before_operation(b"Td", [1,0])
+    observe(observer,"b",100)
+    assert observer.runs[-1]["glyph_boxes"] is not None
+
+
+def test_graphics_restore_recovers_text_scale_and_spacing():
+    observer = RtlGlyphObserver()
+    observer._before_operation(b"q", [])
+    observer._before_operation(b"Tz", [200])
+    observer._before_operation(b"Tc", [0.1])
+    observe(observer,"b",100)
+    assert observer.runs[-1]["glyph_boxes"][0][2] == pytest.approx(8.4)
+    observer._before_operation(b"Q", [])
+    observer._before_operation(b"Tm", [7,0,0,7,0,100])
+    observe(observer,"b",100)
+    assert observer.runs[-1]["glyph_boxes"][0][2] == pytest.approx(3.5)

@@ -31,8 +31,16 @@ def _capture_source(folder, kind):
     else:
         failure = folder / 'review_failed.json'
         require(not failure.exists(), 'failed checklist source')
-        names = ('review_complete.json', 'observation.json', 'review.html')
-        snapshots = {folder / name: (folder / name).read_bytes() for name in names}
+        receipt_path = folder / 'review_complete.json'
+        receipt_bytes = receipt_path.read_bytes()
+        receipt = parse_json(receipt_bytes)
+        require(isinstance(receipt, dict), 'invalid checklist completion')
+        versions = {'review-observation-run/1': ('observation.json', 'review.html'),
+                    'review-observation-run/2': ('observation.json',)}
+        require(receipt.get('schema_version') in versions, 'invalid checklist completion version')
+        snapshots = {receipt_path: receipt_bytes,
+                     **{folder / name: (folder / name).read_bytes()
+                        for name in versions[receipt['schema_version']]}}
         report = read_completed_observation(folder)
     files = {path.name: content.decode('utf-8') for path, content in snapshots.items()}
     validate_source_run(files, report, kind)
@@ -60,6 +68,12 @@ def export_combined_review(checklist_dir, item_dir, output_dir, node_executable,
     """Create one fresh result folder; never overwrite inputs or an earlier run."""
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=False)
+    return _export_into_reserved_directory(checklist_dir, item_dir, output, node_executable, node_modules)
+
+
+def _export_into_reserved_directory(checklist_dir, item_dir, output, node_executable, node_modules):
+    """Internal: caller owns the new directory; artifact writes still never overwrite."""
+    output = Path(output)
     published = False
     try:
         _write_new(output/LOCK,str(os.getpid()))
@@ -115,7 +129,8 @@ def read_completed_combined_review(output_dir):
     """Validate display/download bytes without consulting historical files."""
     output = Path(output_dir)
     def ready():
-        require(not (output/FAILED).exists() and not (output/LOCK).exists(), 'combined run failed or is active')
+        require(not any((output/name).exists() for name in (FAILED, LOCK, 'review_workflow.lock')),
+                'combined run failed or is active')
     ready()
     snapshots = {output/name:(output/name).read_bytes() for name in (COMPLETE,*FILES)}
     receipt = parse_json(snapshots[output/COMPLETE])

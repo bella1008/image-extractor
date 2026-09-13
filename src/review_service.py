@@ -75,6 +75,7 @@ class ReviewRequest:
     bundle: Path | None = None
     mapping: Path = DEFAULT_MAPPING
     draft: Path = DEFAULT_DRAFT
+    include_html: bool = True
 
 
 def run_review(request: ReviewRequest) -> dict:
@@ -93,16 +94,19 @@ def run_review(request: ReviewRequest) -> dict:
             from src.xml_review_run import extract_review_document
             extract_review_document(request.pdf, bundle, request.mapping)
         report = run_observation(bundle, request.pdf, request.mapping, request.draft, output / 'observation.json')
-        html = render_observation_html(report)
-        expected = {'observation.json': _json_text(report).encode('utf-8'), 'review.html': html.encode('utf-8')}
-        _write_new(output / 'review.html', html)
+        expected = {'observation.json': _json_text(report).encode('utf-8')}
+        if request.include_html:
+            html = render_observation_html(report)
+            expected['review.html'] = html.encode('utf-8')
+            _write_new(output / 'review.html', html)
         inputs = report['inputs']
         for key in ('receipt', 'draft_json', 'draft_excel'):
             require(_digest(inputs[key]) == inputs[key + '_sha256'], 'input changed during report generation')
         validate_bundle(bundle, inputs['source_bundle'], pdf_path=request.pdf, mapping_path=request.mapping)
         for name, content in expected.items():
             require((output / name).read_bytes() == content, f'{name} changed during report generation')
-        receipt = {'schema_version': 'review-observation-run/1', 'status': 'ready_for_human_review',
+        receipt = {'schema_version': 'review-observation-run/1' if request.include_html else 'review-observation-run/2',
+                   'status': 'ready_for_human_review',
                    'decision_status': 'not_evaluated', 'summary': report['summary'],
                    'artifacts': {name: hashlib.sha256(content).hexdigest() for name, content in expected.items()}}
         pending = output / 'review_complete.pending.json'
@@ -134,10 +138,13 @@ def read_completed_observation(output: Path) -> dict:
     from src.xml_review_gate import require
     require(not (output / 'review_failed.json').exists(), 'failed run cannot be consumed')
     receipt = json.loads((output / 'review_complete.json').read_text(encoding='utf-8'))
-    require(receipt.get('schema_version') == 'review-observation-run/1'
+    versions = {'review-observation-run/1': {'observation.json', 'review.html'},
+                'review-observation-run/2': {'observation.json'}}
+    require(isinstance(receipt, dict) and receipt.get('schema_version') in versions
             and receipt.get('status') == 'ready_for_human_review'
             and receipt.get('decision_status') == 'not_evaluated', 'invalid completion receipt')
-    require(set(receipt.get('artifacts', {})) == {'observation.json', 'review.html'}, 'unexpected completed artifacts')
+    require(isinstance(receipt.get('artifacts'), dict)
+            and set(receipt['artifacts']) == versions[receipt['schema_version']], 'unexpected completed artifacts')
     contents = {name: (output / name).read_bytes() for name in receipt['artifacts']}
     for name, data in contents.items():
         require(hashlib.sha256(data).hexdigest() == receipt['artifacts'][name], f'completed artifact changed: {name}')

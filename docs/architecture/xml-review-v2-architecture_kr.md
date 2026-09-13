@@ -2,6 +2,9 @@
 
 관련 명세: [XML v2 마이그레이션](../superpowers/specs/2026-09-10-xml-review-v2-design_kr.md).
 
+비개발자용 안내: [PDF부터 검토 결과까지, 중간 표준화와 사람 검토의 관계](review-document-explained_kr.md).
+아래의 첫 단계/예정 파일 설명은 설계 이력이다. 현재 구현 상태는 [TODO](../../TODO.md)를 따른다.
+
 ## 첫 단계의 자료형
 
 기존 `src/models.py`에는 GridCell도 함께 정의되어 있다. v2 모델은 독립 파일 `src/review_document.py`에 두고 Python 표준 라이브러리만 사용한다. 기존 flat `src/` 방침을 유지한다.

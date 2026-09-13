@@ -40,7 +40,8 @@ def validate_source_run(files, report, kind):
     require(isinstance(receipt, dict), 'invalid source completion shape')
     versions = ({'checklist-item-observation-run/1': {data_name, 'item_review.html'},
                  'checklist-item-observation-run/2': {data_name}} if is_item else
-                {'review-observation-run/1': {data_name, 'review.html'}})
+                {'review-observation-run/1': {data_name, 'review.html'},
+                 'review-observation-run/2': {data_name}})
     require(receipt.get('schema_version') in versions and receipt.get('status') == 'ready_for_human_review'
             and receipt.get('decision_status') == 'not_evaluated', 'invalid source completion state')
     if is_item:

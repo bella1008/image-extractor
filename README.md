@@ -11,6 +11,7 @@
 - [복구 커밋과 백업 사용 방법](docs/migration/2026-09-10-recovery_kr.md)
 - [승인된 마이그레이션 방향](docs/superpowers/specs/2026-09-10-xml-review-v2-design_kr.md)
 - [ReviewDocument 구조](docs/architecture/xml-review-v2-architecture_kr.md)
+- [비개발자용: 전체 흐름·ReviewDocument의 역할·사람이 확인하는 시점](docs/architecture/review-document-explained_kr.md)
 - [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
 - [현재 진행 상태](TODO.md)
 
@@ -48,7 +49,9 @@ CHK-002 구성품을 14개 하위 항목으로 관리하는 별도 작성용 원
 
 2026-09-13: 항목 검토 결과와 Excel을 **같은 실행 폴더**에 저장한다. 새 실행은 HTML을 만들지 않으며 화면은 폴더 하나에서 JSON과 Excel을 확인한다. Excel Summary는 대상 PDF 파일명까지 12행만 표시하고, 임시 근거 번호 대신 고정 항목 키로 상세 근거를 연결한다. 내부 해시·출처 기록은 JSON에 보존한다.
 
-후속으로 **일반 체크 59건 + 그중 구성품 상세 14건을 Excel 하나로 제공하는 통합 CLI**를 구현했다. Summary/Checklist Results/Item Results/Source Evidence 4시트이며 새 폴더 하나에 내부 JSON과 함께 저장한다. 기존 DB·관찰·추출 규칙은 바꾸지 않고 자동 판정도 하지 않는다. [통합 결과 파일·생성 명령·읽는 방법](docs/migration/2026-09-13-combined-review-report_kr.md)을 참고한다. 통합 결과의 화면 연결과 PDF 공통 실행은 다음 단계이며 기존 항목별 화면에 통합 폴더를 입력하는 기능은 아직 없다.
+후속으로 **일반 체크 59건 + 그중 구성품 상세 14건을 Excel 하나로 제공하는 통합 CLI**를 구현했다. Summary/Checklist Results/Item Results/Source Evidence 4시트이며 새 폴더 하나에 내부 JSON과 함께 저장한다. 기존 DB·관찰·추출 규칙은 바꾸지 않고 자동 판정도 하지 않는다. [기존 완료 결과를 합치는 명령](docs/migration/2026-09-13-combined-review-report_kr.md)을 참고한다.
+
+이제 **PDF 한 번 추출 → 일반/항목 관찰 공유 → 통합 Excel** 공통 실행과 **단일 폴더 조회·다운로드 화면**도 제공한다. 새 명령은 `python -m scripts.run_combined_review_v2`, 통합 화면은 `python -m scripts.start_item_review_ui --combined`다. [환경 설정·정확한 실행 예·정상 결과 위치](docs/migration/2026-09-13-combined-run-ui_kr.md)를 따른다. 새 공통 실행은 HTML을 만들지 않는다. 화면은 조회 전용이며 PDF 업로드·실행 버튼, 업무 자동 판정, 전체 PC 배포는 후속 단계다.
 
 ## 1. 프로젝트 목적
 

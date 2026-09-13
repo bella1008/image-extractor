@@ -2,6 +2,13 @@
 
 ## Current Goal
 
+- 2026-09-13 AFRICA XML/Markdown 사용자 누락 지적 재검증: 현재 결과는
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_omission_final_v3`.
+  비교 그림의 QN9**H:90 행 누락, ARA 마침표 16곳의 순서, 모델 별표의 Markdown 표시,
+  ARA p31 모델 구분 슬래시를 수정했다. 검토 근거/현재 상태는
+  `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-markdown-omission-audit.md`와
+  해당 출력의 `review_run.json`을 사용한다.
+
 Build a local Python-based PDF manual review engine for SUG manuals.
 
 The current focus is still extraction quality, not final pass/fail review. The engine must reliably extract document structure, language sections, headings, blocks, tables, model conditions, navigation paths, and review evidence before checklist DB rules are finalized.

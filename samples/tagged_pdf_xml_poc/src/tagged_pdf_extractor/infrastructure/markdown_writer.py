@@ -29,6 +29,7 @@ from tagged_pdf_extractor.infrastructure.xml_writer import decode_data_element
 
 
 _WHITESPACE = re.compile(r"\s+")
+_MODEL_WILDCARDS = re.compile(r"\b[A-Z][A-Z0-9]*\*+[A-Z0-9*]*")
 _NATIVE_DECIMAL_MARKER = re.compile(r"^[0-9]{1,9}[.)]$")
 _DECIMAL_SOURCE_LABEL = re.compile(r"^\d{1,9}[.)]$")
 _PARENTHESIZED_NUMERIC_LABEL = re.compile(r"^\(\d{1,9}\)$")
@@ -311,7 +312,7 @@ class MarkdownDocumentWriter:
             and element.get("display-level") == "2"
         ):
             text = cls._element_text(element)
-            return [f"## {text}"] if text else []
+            return [f"## {cls._escape_model_wildcards(text)}"] if text else []
         if element.tag == "paragraph" and display_role == "strong-label":
             text = cls._element_text(element)
             return [f"**{cls._escape_emphasis_text(text)}**"] if text else []
@@ -323,7 +324,7 @@ class MarkdownDocumentWriter:
                 source_level = 1
             level = max(1, int(source_level))
             prefix = "#" * min(level + 1, 6)
-            return [f"{prefix} {cls._element_text(element)}"]
+            return [f"{prefix} {cls._escape_model_wildcards(cls._element_text(element))}"]
 
         if (element.tag == "heading" and element.get("numbered-label") is not None
                 and element.get("promotion-reason") is not None):
@@ -340,7 +341,7 @@ class MarkdownDocumentWriter:
                     raise ValueError(f"Invalid numbered-label source evidence: {compact_label!r}; "
                                      f"{[(c.tag, cls._element_text(c)) for c in children]!r}")
                 text = compact_label + " " + cls._element_text(bodies[0])
-            return [f"{'#' * level} {text}"] if text else []
+            return [f"{'#' * level} {cls._escape_model_wildcards(text)}"] if text else []
 
         if element.tag == "heading" and cls._has_mixed_content_descendant(
             element, promoted
@@ -349,7 +350,7 @@ class MarkdownDocumentWriter:
         if element.tag == "heading":
             level = max(1, min(int(element.get("level", "1")), 6))
             text = cls._element_text(element)
-            return [f"{'#' * level} {text}"] if text else []
+            return [f"{'#' * level} {cls._escape_model_wildcards(text)}"] if text else []
 
         if (
             element.tag == "paragraph"
@@ -367,7 +368,8 @@ class MarkdownDocumentWriter:
                 return [
                     cls._escape_physical_lines(
                         f"**{cls._escape_emphasis_text(title)}**"
-                        f"{_SENTENCE_BREAK}{qualifier}"
+                        f"{_SENTENCE_BREAK}{cls._escape_model_wildcards(qualifier)}",
+                        model_literals=False,
                     )
                 ]
             text = cls._element_text(element)
@@ -395,6 +397,14 @@ class MarkdownDocumentWriter:
             text = cls._element_text(element)
             return [cls._escape_physical_lines(text) if text else "[그림: 텍스트 없음]"]
         return cls._render_children(element, promoted)
+
+    @staticmethod
+    def _escape_model_wildcards(text: str) -> str:
+        # Source model placeholders must remain visible in CommonMark viewers.
+        # This is output escaping, not a model/heading inference or PDF rewrite.
+        return _MODEL_WILDCARDS.sub(
+            lambda match: match.group().replace("*", r"\*"), text
+        )
 
     @staticmethod
     def _escape_emphasis_text(text: str) -> str:
@@ -693,7 +703,7 @@ class MarkdownDocumentWriter:
             rendered_rows = [
                 "| "
                 + " | ".join(
-                    cls._element_text(cell)
+                    cls._escape_model_wildcards(cls._element_text(cell))
                     .replace(_SENTENCE_BREAK, "<br>")
                     .replace("|", r"\|")
                     for cell in row_cells
@@ -982,7 +992,7 @@ class MarkdownDocumentWriter:
             if kind == "title_text"
         )
         level = max(1, min(int(element.get("level", "1")), 6))
-        blocks = [f"{'#' * level} {title}"] if title else []
+        blocks = [f"{'#' * level} {cls._escape_model_wildcards(title)}"] if title else []
         text_parts: list[str] = []
 
         def flush_text() -> None:
@@ -2078,7 +2088,9 @@ class MarkdownDocumentWriter:
         return value
 
     @classmethod
-    def _escape_physical_lines(cls, value: str) -> str:
+    def _escape_physical_lines(cls, value: str, *, model_literals: bool = True) -> str:
+        if model_literals:
+            value = cls._escape_model_wildcards(value)
         value = value.replace(_SENTENCE_BREAK, "<br>\n")
         return "\n".join(
             cls._escape_line_prefix(line) for line in value.split("\n")

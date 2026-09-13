@@ -85,12 +85,35 @@ def restore_inline_order(children, diagnostics):
         order = []
         for line in sorted(lines, key=lambda item: -item["baseline"]):
             spatial = sorted(line["indices"], key=lambda i: places[i][1][0])
+            # A period is an RTL sentence boundary, except when the source
+            # places it directly between two ASCII digit runs on this baseline.
+            decimal_points = set()
+            for position in range(1, len(spatial) - 1):
+                left, point, right = spatial[position - 1:position + 2]
+                values = ["".join(f.text for f in fragments(updated[i])).strip()
+                          for i in (left, point, right)]
+                if (values[1] == "." and all(v and v.isascii() and v.isdecimal()
+                        for v in (values[0], values[2]))
+                        and abs(places[point][1][0] - places[left][1][2]) <= 0.05 * line["height"]
+                        and abs(places[right][1][0] - places[point][1][2]) <= 0.05 * line["height"]):
+                    decimal_points.add(point)
+            rtl_slashes = set()
+            for position in range(len(spatial) - 1):
+                slash, following = spatial[position:position + 2]
+                value = "".join(f.text for f in fragments(updated[slash])).strip()
+                mark = "".join(f.text for f in fragments(updated[following]))
+                if (value == "/" and "\u200f" in mark
+                        and all(c.isspace() or ud.category(c) == "Cf" for c in mark)
+                        and abs(places[following][1][0] - places[slash][1][2]) <= 0.05 * line["height"]):
+                    rtl_slashes.add(slash)
             groups = []
             def ltr_candidate(index):
                 value = "".join(f.text for f in fragments(updated[index]))
                 visible = "".join(c for c in value if ud.category(c) != "Cf").strip()
                 return (not places[index][3] and bool(value)
                         and "\u200f" not in value
+                        and not (visible == "." and index not in decimal_points)
+                        and index not in rtl_slashes
                         and not (any(c in ':;()[]"<>' for c in visible)
                                  and not any(c.isalnum() for c in visible))
                         and visible != "-"

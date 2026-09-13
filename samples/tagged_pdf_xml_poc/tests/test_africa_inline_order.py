@@ -22,6 +22,27 @@ def test_latin_island_in_arabic_line_preserves_its_left_to_right_word_order():
     assert [f.text for f in result.children] == ["شركة","Samsung","Electronics"]
 
 
+@pytest.mark.parametrize('latin', ['EC/1999/5', 'Samsung', 'B', 'Wireless One Connect'])
+def test_source_period_left_of_latin_island_ends_arabic_sentence(latin):
+    result, _ = reorder([('شركة', 210, 20), (' .', 98, 2), (latin, 100, 90)])
+    assert [f.text for f in result.children] == ['شركة', latin, ' .']
+
+
+def test_decimal_inside_latin_source_run_is_not_reversed():
+    result, _ = reorder([('بتردد', 210, 20), ('5.925', 100, 30)])
+    assert [f.text for f in result.children] == ['بتردد', '5.925']
+
+
+def test_separate_contiguous_decimal_period_stays_inside_latin_number():
+    result, _ = reorder([('بتردد', 210, 20), ('5', 100, 5), ('.', 105, 2), ('925', 107, 15)])
+    assert [f.text for f in result.children] == ['بتردد', '5', '.', '925']
+
+
+def test_period_between_distant_numbers_is_not_inferred_as_decimal():
+    result, _ = reorder([('بتردد', 210, 20), ('5', 90, 5), ('.', 105, 2), ('925', 117, 15)])
+    assert [f.text for f in result.children] == ['بتردد', '925', '.', '5']
+
+
 def test_arabic_word_between_numbers_prevents_ltr_island_merging():
     result, _ = reorder([("40",100,10),("إلى",112,10),("10",124,10),("من",138,10)])
     assert [f.text for f in result.children] == ["من","10","إلى","40"]
@@ -48,6 +69,16 @@ def test_rtl_model_value_separator_keeps_label_before_resolution():
 def test_explicit_rlm_slash_separates_latin_models_in_rtl_list():
     result, _ = reorder([("واط",90,10),("QN1EH",110,40),("/\u200f",151,3),("QN7*H",155,40)])
     assert [f.mcid for f in result.children] == [3,2,1,0]
+
+
+def test_separate_rlm_keeps_source_slash_between_models():
+    result, _ = reorder([('R8*H', 100, 20), ('/', 120, 3), ('\u200f', 123, 1), ('R9*H', 123, 20)])
+    assert [f.text for f in result.children] == ['R9*H', '\u200f', '/', 'R8*H']
+
+
+def test_url_slashes_without_rtl_marks_keep_latin_order():
+    result, _ = reorder([('موقع', 210, 20), ('https:', 100, 30), ('/', 130, 3), ('/', 133, 3), ('samsung.com', 136, 60)])
+    assert [f.text for f in result.children] == ['موقع', 'https:', '/', '/', 'samsung.com']
 
 
 def test_contiguous_european_number_fragments_are_one_ltr_island():

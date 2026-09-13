@@ -160,6 +160,7 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
             value = value[2:]
         value = _HEADING_PREFIX.sub("", value)
         value = _undo_writer_prefix_escape(value)
+        value = value.replace(r"\*", "*")  # CommonMark literal asterisk escape.
         source_lines.append(value)
     return _TEXT_TOKEN.findall("\n".join(source_lines))
 
@@ -181,6 +182,11 @@ def _undo_writer_prefix_escape(value: str) -> str:
     ):
         return source
     return value
+
+
+def test_markdown_token_oracle_decodes_literal_model_wildcards() -> None:
+    markdown = "# Header\n\n- metadata\n\nQN9\\*\\*H: 90 W\n"
+    assert _markdown_text_tokens(markdown) == ['QN9', '*', '*', 'H', ':', '90', 'W']
 
 
 def _starts_reference_definition(value: str) -> bool:
@@ -731,7 +737,7 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
     microphone_end = markdown.index(
         "## 03 Troubleshooting and Maintenance", microphone_start
     )
-    microphone = markdown[microphone_start:microphone_end]
+    microphone = markdown[microphone_start:microphone_end].replace(r"\*", "*")
     microphone_lines = [line.strip() for line in microphone.splitlines()]
     assert microphone_lines[:2] == [
         f"{microphone_sentences[0]}<br>",

@@ -711,7 +711,8 @@ def _assert_zg_note_markers_and_plain_model_labels(
         "[The Frame (LS03HW)]",
     )
     semantic_text = _element_text(root)
-    markdown_lines = [line.strip() for line in markdown.splitlines()]
+    # Compare displayed model text, including literal CommonMark wildcards.
+    markdown_lines = [line.strip().replace(r"\*", "*") for line in markdown.splitlines()]
     for label in bracketed_model_labels:
         assert label in semantic_text
         assert label in markdown_lines

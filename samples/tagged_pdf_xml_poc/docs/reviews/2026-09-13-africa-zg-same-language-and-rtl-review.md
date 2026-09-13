@@ -1,5 +1,9 @@
 # AFRICA / ZG 동일 언어와 RTL 후속 검토 — 2026-09-13
 
+> 후속 정정: 사용자의 누락 지적에서 비교 그림의 선택 범위 결함과 실제 Markdown 표시 결함을
+> 추가로 발견했다. 아래의 이전 그림 대신 `2026-09-13-africa-markdown-omission-audit.md`와
+> `outputs/xml_review_africa_20260913_omission_final_v3`를 현재 결과로 사용한다.
+
 ## 결과
 
 AFRICA의 공통 제목 21개가 ZG ENG/FRA와 각각 대응한다. 원문 비교 중 발견한

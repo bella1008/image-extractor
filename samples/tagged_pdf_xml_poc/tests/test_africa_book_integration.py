@@ -181,6 +181,34 @@ def test_arabic_jordan_url_preserves_source_ltr_island(africa):
     assert "http://www.samsung.com" in artifacts.semantic_markdown.read_text(encoding="utf-8")
 
 
+def test_arabic_jordan_directive_keeps_source_period_after_code(africa):
+    _, _, artifacts = africa
+    root = ET.parse(artifacts.semantic_xml).getroot()
+    node = root.find(".//*[@source-structure-path='0/12/0/15/0/1/0/0']")
+    assert [t.get('mcid') for t in node.iter('text')][-2:] == ['819', '818']
+    assert not any(t.get('sentence-break-offsets') for t in node.iter('text'))
+    import re
+    assert re.search(r'EC/1999/5\s*\.', artifacts.semantic_markdown.read_text(encoding='utf-8'))
+
+
+def test_arabic_qn9_90_watt_row_remains_in_complete_markdown(africa):
+    _, _, artifacts = africa
+    root = ET.parse(artifacts.semantic_xml).getroot()
+    node = root.find(".//*[@source-structure-path='0/12/0/7/0/1/0/5']")
+    assert [t.get('mcid') for t in node.iter('text')] == ['939', '938', '936', '937', '935']
+    md = artifacts.semantic_markdown.read_text(encoding='utf-8')
+    assert 'QN9\\*\\*H \u200f:90 واط' in md
+
+
+def test_arabic_support_models_keep_every_separator_between_models(africa):
+    _, _, artifacts = africa
+    root = ET.parse(artifacts.semantic_xml).getroot()
+    node = root.find(".//*[@source-structure-path='0/13/0/16/0/1']")
+    value = ''.join(t.text or '' for t in node.iter('text'))
+    compact = ''.join(c for c in value if not c.isspace() and c != '\u200f')
+    assert compact.endswith('R9*H/R8*H/QN1EH/QN7*H/QN8*H/QN9**H/S8*H/S9*H/M8*H/M9*H/U9***H/LS03H*.')
+
+
 def test_arabic_actual_text_decimal_digits_stay_one_source_number(africa):
     _, _, artifacts = africa
     semantic = ET.parse(artifacts.semantic_xml).getroot()

@@ -19,7 +19,7 @@ def main() -> int:
     except Exception as exc:
         parser.exit(1, f'Item review preparation failed; no business decision issued: {exc}\n')
     print(f"{result['status']}; checklist decision: {result['decision_status']}")
-    print(args.output / 'item_review.html')
+    print(args.output / 'item_observation.json')
     return 0
 
 

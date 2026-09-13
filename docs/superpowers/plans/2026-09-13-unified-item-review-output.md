@@ -12,6 +12,21 @@
 
 ## File map
 
+### Execution record — 2026-09-13
+
+Tasks 1–4 implementation and verification are complete. The unchecked boxes below preserve the original proposed command sequence, not the current status. Actual execution used these documented adjustments:
+
+- Added `tests/test_unified_item_output.py` first: 15 failures and 1 pass established the new-contract RED baseline. Updated focused suites then passed (114 passed, 2 optional backend skips before enabling the backend).
+- Final full suite with the real authoring backend enabled: **503 passed in 104.32s**, including both real XLSX integration cases. Compileall, pip check and Git whitespace validation passed.
+- New observation receipts explicitly use schema v2 with JSON only; archived v1 receipts require JSON plus HTML. Excel view is v2. Schema-specific artifact sets prevent accidental weakening of archived integrity checks.
+- Same-directory export additionally uses an exclusive writer lock and refuses pre-existing complete/partial artifacts without invalidating an earlier successful export. UI checks partial and active export state.
+- Generated `outputs/item_review_zc_20260913_unified/` from the PDF afresh rather than reusing the older extraction bundle. New HTML is absent. Saved workbook has Summary 12 rows, 14 items and 26 evidence rows. All retained cell values match the earlier r2 workbook, whose hash is unchanged.
+- Rendered five readable ranges across the three sheets, splitting wide detail sheets instead of producing three overly wide previews. All five were visually inspected. Real-result AppTest confirmed one folder input, 14 rows and JSON/Excel downloads only.
+- Independent read-only code review found no actionable correctness, regression or data-loss issue. Original checklist data, extraction code and other worktrees were not edited.
+- Instead of the four intermediate commits below, keep the coupled service/exporter/UI contracts, tests and documentation in one scoped implementation checkpoint after verification. Pre-change checkpoint: `fc3e74f`; resolve the implementation checkpoint with `git log -1 --format=%H -- src/item_review_excel.py`.
+
+Browser visual acceptance, full report integration and complete PC deployment remain outside this plan.
+
 - `src/item_review_service.py`: publish JSON-only new observation runs and read both new and legacy receipts.
 - `src/item_review_excel.py`: build the simplified three-sheet display contract and append checked Excel artifacts to the same run directory.
 - `src/item_review_ui.py`: load one directory and auto-detect a complete same-directory workbook.

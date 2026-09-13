@@ -60,14 +60,14 @@ def fake_builder(view_path, output_dir, node_executable, node_modules):
 def test_export_publishes_validated_workbook_and_consumer_returns_exact_bytes(tmp_path, completed_run, monkeypatch):
     api = implementation()
     monkeypatch.setattr(api, '_run_builder', fake_builder)
-    output = tmp_path / 'excel'
-    completion = api.export_item_review_excel(completed_run, output, Path('node'), Path('modules'))
+    output = completed_run
+    completion = api.export_item_review_excel(completed_run, Path('node'), Path('modules'))
     assert completion['status'] == 'ready_for_human_review'
     assert completion['decision_status'] == 'not_evaluated'
-    assert api.read_completed_item_excel(output, completed_run) == (output / 'item_review.xlsx').read_bytes()
+    assert api.read_completed_item_excel(completed_run) == (output / 'item_review.xlsx').read_bytes()
     assert completion['source_completion_sha256'] == hashlib.sha256((completed_run / 'item_review_complete.json').read_bytes()).hexdigest()
     with pytest.raises(FileExistsError):
-        api.export_item_review_excel(completed_run, output, Path('node'), Path('modules'))
+        api.export_item_review_excel(completed_run, Path('node'), Path('modules'))
 
 
 @pytest.mark.parametrize('mutation', ['source', 'view', 'workbook', 'builder_failure'])
@@ -81,8 +81,8 @@ def test_export_failure_never_publishes_completion(tmp_path, completed_run, monk
         else: path = output_dir / 'item_review.xlsx'
         path.write_bytes(b'changed')
     monkeypatch.setattr(api, '_run_builder', corrupt)
-    output = tmp_path / 'excel'
-    with pytest.raises(Exception): api.export_item_review_excel(completed_run, output, Path('node'), Path('modules'))
+    output = completed_run
+    with pytest.raises(Exception): api.export_item_review_excel(completed_run, Path('node'), Path('modules'))
     assert not (output / 'item_excel_complete.json').exists()
     assert (output / 'item_excel_failed.json').exists()
 
@@ -91,13 +91,13 @@ def test_export_failure_never_publishes_completion(tmp_path, completed_run, monk
 def test_consumer_rejects_changed_or_failed_export(tmp_path, completed_run, monkeypatch, mutation):
     api = implementation()
     monkeypatch.setattr(api, '_run_builder', fake_builder)
-    output = tmp_path / 'excel'
-    api.export_item_review_excel(completed_run, output, Path('node'), Path('modules'))
+    output = completed_run
+    api.export_item_review_excel(completed_run, Path('node'), Path('modules'))
     paths = {'xlsx': output / 'item_review.xlsx', 'view': output / 'item_excel_view.json',
              'source': completed_run / 'item_review_complete.json', 'failure': output / 'item_excel_failed.json'}
     if mutation == 'incomplete': (output / 'item_excel_complete.json').unlink()
     else: paths[mutation].write_bytes(b'changed')
-    with pytest.raises(Exception): api.read_completed_item_excel(output, completed_run)
+    with pytest.raises(Exception): api.read_completed_item_excel(completed_run)
 
 
 @pytest.mark.parametrize('kind', ['source', 'excel'])
@@ -105,11 +105,11 @@ def test_consumer_rejects_changed_or_failed_export(tmp_path, completed_run, monk
 def test_malformed_receipt_shape_is_a_validation_error(tmp_path, completed_run, monkeypatch, kind, content):
     api = implementation()
     monkeypatch.setattr(api, '_run_builder', fake_builder)
-    output = tmp_path / 'excel'
-    api.export_item_review_excel(completed_run, output, Path('node'), Path('modules'))
+    output = completed_run
+    api.export_item_review_excel(completed_run, Path('node'), Path('modules'))
     path = completed_run / 'item_review_complete.json' if kind == 'source' else output / 'item_excel_complete.json'
     path.write_text(content)
-    with pytest.raises(ValueError): api.read_completed_item_excel(output, completed_run)
+    with pytest.raises(ValueError): api.read_completed_item_excel(completed_run)
 
 
 def test_saved_workbook_contract_rejects_formula_and_unexpected_cell(tmp_path):
@@ -136,7 +136,7 @@ def test_completion_race_never_leaves_usable_receipt(tmp_path, completed_run, mo
     api = implementation()
     monkeypatch.setattr(api, '_run_builder', fake_builder)
     original_write, original_link = api._write_new, api.os.link
-    output = tmp_path / 'excel'
+    output = completed_run
     def write(path, text):
         original_write(path, text)
         if when == 'pending' and path.name == 'item_excel_complete.pending.json':
@@ -147,7 +147,7 @@ def test_completion_race_never_leaves_usable_receipt(tmp_path, completed_run, mo
             (completed_run / 'item_review_failed.json').write_text('{}')
     monkeypatch.setattr(api, '_write_new', write)
     monkeypatch.setattr(api.os, 'link', link)
-    with pytest.raises(ValueError): api.export_item_review_excel(completed_run, output, Path('node'), Path('modules'))
+    with pytest.raises(ValueError): api.export_item_review_excel(completed_run, Path('node'), Path('modules'))
     assert not (output / 'item_excel_complete.json').exists()
 
 
@@ -162,17 +162,15 @@ def test_real_artifact_backend_roundtrip(tmp_path, empty):
     data['target_source'] = report()['target_source']
     for item, text in zip(data['items'], ['=1+1', "'literal", '+cmd', '@SUM(A1)', '<script>x</script>']):
         item['author_proposal']['reviewer_note'] = text
-    from src.item_review_report import render_item_review_html
     run = tmp_path / 'run'
     run.mkdir()
-    contents = {'item_observation.json': json.dumps(data).encode(), 'item_review.html': render_item_review_html(data).encode()}
+    contents = {'item_observation.json': json.dumps(data).encode()}
     for name, content in contents.items(): (run / name).write_bytes(content)
-    (run / 'item_review_complete.json').write_text(json.dumps({'schema_version':'checklist-item-observation-run/1',
+    (run / 'item_review_complete.json').write_text(json.dumps({'schema_version':'checklist-item-observation-run/2',
         'status':'ready_for_human_review', 'decision_status':'not_evaluated', 'activation_status':'draft_only',
         'summary':data['summary'], 'artifacts':{n:hashlib.sha256(b).hexdigest() for n,b in contents.items()}}))
-    output = tmp_path / 'excel'
-    api.export_item_review_excel(run, output, Path(node_exe), Path(modules))
-    assert api.read_completed_item_excel(output, run) == (output / 'item_review.xlsx').read_bytes()
+    api.export_item_review_excel(run, Path(node_exe), Path(modules))
+    assert api.read_completed_item_excel(run) == (run / 'item_review.xlsx').read_bytes()
 
 
 def implementation():
@@ -205,15 +203,16 @@ def test_three_sheets_preserve_fourteen_items_and_twenty_six_current_association
     assert [s['name'] for s in view['sheets']] == ['Summary', 'Item Results', 'Source Evidence']
     assert len(items['rows']) == 14 and len(evidence['rows']) == 26
     assert items['rows'][0][1] == data['items'][0]['required_text']
-    assert all(row[2] == '검토 필요' and row[6] == '' for row in items['rows'])
+    assert all(row[2] == '검토 필요' and row[4] == '' for row in items['rows'])
     assert 'observation' not in items['headers'] and 'reason' not in items['headers']
     assert [r[2] for r in summary['rows'] if r[:2] == ['집계', '하위 항목']] == [14]
     assert any(r[:2] == ['검토 대상', 'PDF 파일'] and r[2] == 'current.pdf' for r in summary['rows'])
-    assert any(r[0] == '원장 작성 당시' and r[1] == 'PDF 파일' for r in summary['rows'])
+    assert len(summary['rows']) == 11
+    assert not any(r[0] == '원장 작성 당시' for r in summary['rows'])
     for r in evidence['rows']:
-        assert 'current_' in r[4]
-        assert r[2] in ('항목 문구', '조건 안내 후보')
-        assert json.loads(r[8])['text'] == r[3]
+        assert 'current_' in r[3]
+        assert r[1] in ('항목 문구', '조건 안내 후보')
+        assert json.loads(r[7])['text'] == r[2]
     assert data == before
 
 
@@ -250,6 +249,6 @@ def test_missing_and_ambiguous_evidence_not_coalesced():
     data['items'][0]['observation'] = 'ambiguous'
     data['summary'].update(found=13, ambiguous=1)
     view = implementation().build_item_excel_view(data)
-    refs = view['sheets'][1]['rows'][0][4].split('\n')
-    assert len(refs) == 2 and refs[0] != refs[1]
+    refs = [r for r in view['sheets'][2]['rows'] if r[0] == data['items'][0]['item_key']]
+    assert len(refs) == 2
     assert len(view['sheets'][2]['rows']) == 27

@@ -16,7 +16,7 @@ const viewPath = path.resolve(viewArg), outputDir = path.resolve(outputArg);
 const content = await fs.readFile(viewPath);
 if (digest(content) !== expectedHash) throw new Error('Display contract hash differs');
 const view = JSON.parse(content);
-if (view.schema_version !== 'item-review-excel-view/1' || view.activation_status !== 'draft_only'
+if (view.schema_version !== 'item-review-excel-view/2' || view.activation_status !== 'draft_only'
     || view.decision_status !== 'not_evaluated') throw new Error('Unsupported Excel view');
 if (view.sheets.map(s => s.name).join('|') !== 'Summary|Item Results|Source Evidence') throw new Error('Unexpected sheets');
 const column = n => {let result='';while(n){n--;result=String.fromCharCode(65+n%26)+result;n=Math.floor(n/26);}return result;};
@@ -57,19 +57,19 @@ for (const [index, spec] of view.sheets.entries()) {
   if(spec.name==='Item Results') {
     sheet.freezePanes.freezeColumns(1);
     sheet.getRangeByIndexes(1,2,spec.rows.length,1).format.fill='#FFF4CE';
-    sheet.getRangeByIndexes(1,6,spec.rows.length,1).format.fill='#FFF4CE';
+    sheet.getRangeByIndexes(1,4,spec.rows.length,1).format.fill='#FFF4CE';
     sheet.tabColor='#243E60';
   }
-  if(spec.name==='Source Evidence') sheet.freezePanes.freezeColumns(2);
+  if(spec.name==='Source Evidence') sheet.freezePanes.freezeColumns(1);
 }
 wb.recalculate();
 console.log((await wb.inspect({kind:'sheet',include:'id,name',maxChars:1500})).ndjson);
 console.log((await wb.inspect({kind:'table',range:'Item Results!A1:D4',include:'values,formulas',tableMaxRows:4,tableMaxCols:4,maxChars:2500})).ndjson);
 console.log((await wb.inspect({kind:'match',searchTerm:'#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A|#NUM!|#NULL!',
   options:{useRegex:true,maxResults:20},maxChars:1000})).ndjson);
-const previews=[['Summary','A1:C12','summary.png'],['Summary','A12:C23','sources.png'],
-  ['Item Results','A1:D7','items.png'],['Item Results','E1:J4','item_notes.png'],
-  ['Source Evidence','A1:H4','evidence.png'],['Source Evidence','I1:I3','evidence_details.png']];
+const previews=[['Summary','A1:C12','summary.png'],
+  ['Item Results','A1:D7','items.png'],['Item Results','E1:H4','item_notes.png'],
+  ['Source Evidence','A1:G4','evidence.png'],['Source Evidence','H1:H3','evidence_details.png']];
 for (const [sheetName,range,name] of previews) {
   const blob = await wb.render({sheetName,range,scale:1,format:'png'});
   await fs.writeFile(path.join(outputDir,name),new Uint8Array(await blob.arrayBuffer()),{flag:'wx'});

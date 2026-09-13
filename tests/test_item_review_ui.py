@@ -30,16 +30,16 @@ def completed(tmp_path, checked_bundle):
 def test_loader_returns_exact_validated_downloads_and_fourteen_pending_items(completed):
     screen = implementation().load_item_review_screen(completed)
     assert screen['json_bytes'] == (completed / 'item_observation.json').read_bytes()
-    assert screen['html_bytes'] == (completed / 'item_review.html').read_bytes()
+    assert 'html_bytes' not in screen
     assert screen['excel_bytes'] is None
     assert screen['report'] == json.loads(screen['json_bytes'])
     assert len(screen['report']['items']) == 14
     assert {item['result'] for item in screen['report']['items']} == {'needs_review'}
 
 
-@pytest.mark.parametrize('mutation', ['json', 'html', 'receipt', 'failure'])
+@pytest.mark.parametrize('mutation', ['json', 'receipt', 'failure'])
 def test_loader_refuses_changed_or_failed_runs(completed, mutation):
-    names = {'json': 'item_observation.json', 'html': 'item_review.html',
+    names = {'json': 'item_observation.json',
              'receipt': 'item_review_complete.json', 'failure': 'item_review_failed.json'}
     with (completed / names[mutation]).open('ab') as stream:
         stream.write(b'changed')
@@ -52,7 +52,7 @@ def test_loader_detects_change_between_validation_and_download_read(completed, m
     original = module.read_completed_item_review
     def changed(folder):
         report = original(folder)
-        path = folder / 'item_review.html'
+        path = folder / 'item_observation.json'
         path.write_bytes(path.read_bytes() + b'changed')
         return report
     monkeypatch.setattr(module, 'read_completed_item_review', changed)
@@ -60,7 +60,7 @@ def test_loader_detects_change_between_validation_and_download_read(completed, m
         module.load_item_review_screen(completed)
 
 
-@pytest.mark.parametrize('mutation', ['html', 'failure'])
+@pytest.mark.parametrize('mutation', ['json', 'failure'])
 def test_loader_rechecks_snapshot_after_final_validation(completed, monkeypatch, mutation):
     module = implementation()
     original = module.read_completed_item_review
@@ -70,7 +70,7 @@ def test_loader_rechecks_snapshot_after_final_validation(completed, monkeypatch,
         report = original(folder)
         calls += 1
         if calls == 2:
-            name = 'item_review.html' if mutation == 'html' else 'item_review_failed.json'
+            name = 'item_observation.json' if mutation == 'json' else 'item_review_failed.json'
             with (folder / name).open('ab') as stream:
                 stream.write(b'changed')
         return report
@@ -81,23 +81,29 @@ def test_loader_rechecks_snapshot_after_final_validation(completed, monkeypatch,
 
 def test_optional_excel_bytes_are_validated_and_failure_invalidates_request(completed, monkeypatch):
     fake = ModuleType('src.item_review_excel')
-    def read_excel(folder, run):
-        assert folder == Path('excel') and run == completed
+    from src.item_review_excel import EXCEL_STATE_FILES
+    fake.EXCEL_STATE_FILES = EXCEL_STATE_FILES
+    (completed / 'item_excel_complete.json').write_text('{}')
+    def read_excel(folder):
+        assert folder == completed
         return b'checked excel'
     fake.read_completed_item_excel = read_excel
     monkeypatch.setitem(sys.modules, 'src.item_review_excel', fake)
     module = implementation()
-    assert module.load_item_review_screen(completed, Path('excel'))['excel_bytes'] == b'checked excel'
+    assert module.load_item_review_screen(completed)['excel_bytes'] == b'checked excel'
     def fail(*args):
         raise ValueError('changed workbook')
     fake.read_completed_item_excel = fail
     with pytest.raises(ValueError, match='Excel unavailable'):
-        module.load_item_review_screen(completed, Path('excel'))
+        module.load_item_review_screen(completed)
 
 
 def test_excel_change_during_screen_validation_is_not_served(completed, monkeypatch):
     module = implementation()
     fake = ModuleType('src.item_review_excel')
+    from src.item_review_excel import EXCEL_STATE_FILES
+    fake.EXCEL_STATE_FILES = EXCEL_STATE_FILES
+    (completed / 'item_excel_complete.json').write_text('{}')
     current = [b'original verified export']
     fake.read_completed_item_excel = lambda *args: current[0]
     monkeypatch.setitem(sys.modules, 'src.item_review_excel', fake)
@@ -112,7 +118,7 @@ def test_excel_change_during_screen_validation_is_not_served(completed, monkeypa
         return report
     monkeypatch.setattr(module, 'read_completed_item_review', changed)
     with pytest.raises(ValueError, match='Excel unavailable'):
-        module.load_item_review_screen(completed, Path('excel'))
+        module.load_item_review_screen(completed)
 
 
 def app_test():
@@ -133,9 +139,9 @@ def test_app_starts_empty_and_requires_explicit_load(completed):
     assert len(table) == 14
     assert list(table.columns) == ['item_key', 'required_text', '검토 판정', '설명']
     assert set(table['검토 판정']) == {'검토 필요'}
-    assert len(app.get('download_button')) == 2
+    assert len(app.get('download_button')) == 1
     assert any(metric.value == '14' and metric.label == '검토 필요' for metric in app.metric)
-    assert len(app.expander) == 15
+    assert len(app.expander) == 14
     assert not any(element.proto.allow_html for element in app.markdown)
 
 
@@ -146,7 +152,7 @@ def test_app_drops_previous_display_and_downloads_on_changes(completed, mutation
     app.button[0].click().run()
     assert len(app.dataframe[0].value) == 14
     if mutation == 'file':
-        path = completed / 'item_review.html'
+        path = completed / 'item_observation.json'
         path.write_bytes(path.read_bytes() + b'changed')
     elif mutation == 'failure':
         (completed / 'item_review_failed.json').write_text('{}')
@@ -189,13 +195,15 @@ def test_malformed_top_level_json_clears_loaded_screen(completed, name, malforme
 
 def test_optional_excel_failure_removes_whole_display(completed, monkeypatch):
     fake = ModuleType('src.item_review_excel')
+    from src.item_review_excel import EXCEL_STATE_FILES
+    fake.EXCEL_STATE_FILES = EXCEL_STATE_FILES
+    (completed / 'item_excel_complete.json').write_text('{}')
     fake.read_completed_item_excel = lambda *args: b'checked excel'
     monkeypatch.setitem(sys.modules, 'src.item_review_excel', fake)
     app = app_test()
     app.text_input[0].set_value(str(completed))
-    app.text_input[1].set_value('excel')
     app.button[0].click().run()
-    assert not app.exception and len(app.get('download_button')) == 3
+    assert not app.exception and len(app.get('download_button')) == 2
     def failed(*args):
         raise ValueError('workbook changed')
     fake.read_completed_item_excel = failed
@@ -215,7 +223,7 @@ def test_download_data_is_revalidated_at_click(completed, monkeypatch):
     app = app_test()
     app.text_input[0].set_value(str(completed))
     app.button[0].click().run()
-    assert len(captured) == 2 and all(callable(data) for data in captured)
+    assert len(captured) == 1 and all(callable(data) for data in captured)
     assert captured[0]() == (completed / 'item_observation.json').read_bytes()
     (completed / 'item_review_failed.json').write_text('{}')
     for data in captured:

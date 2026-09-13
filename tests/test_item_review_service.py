@@ -114,8 +114,8 @@ def test_service_publishes_only_fourteen_children_with_separate_current_and_hist
     request = request_for(tmp_path, checked_bundle)
     receipt = service.run_item_review(request)
     report = service.read_completed_item_review(request.output_dir)
-    assert set(receipt['artifacts']) == {'item_observation.json', 'item_review.html'}
-    assert receipt['schema_version'] == 'checklist-item-observation-run/1'
+    assert set(receipt['artifacts']) == {'item_observation.json'}
+    assert receipt['schema_version'] == 'checklist-item-observation-run/2'
     assert receipt['status'] == 'ready_for_human_review' and receipt['activation_status'] == 'draft_only'
     assert report['summary']['not_examined'] == 14
     assert report['target_source']['pdf_sha256'] == hashlib.sha256(request.pdf.read_bytes()).hexdigest()
@@ -127,9 +127,8 @@ def test_service_publishes_only_fourteen_children_with_separate_current_and_hist
 
 
 @pytest.mark.parametrize('target', ['pdf', 'mapping', 'master_json', 'master_excel', 'master_seed', 'receipt', 'artifact'])
-def test_input_changes_during_render_never_complete(tmp_path, checked_bundle, monkeypatch, target):
+def test_input_changes_during_validation_never_complete(tmp_path, checked_bundle, monkeypatch, target):
     from dataclasses import replace
-    import src.item_review_report as renderer
     service = implementation()
     request = request_for(tmp_path, checked_bundle)
     mapping = tmp_path / 'mapping.json'
@@ -140,21 +139,21 @@ def test_input_changes_during_render_never_complete(tmp_path, checked_bundle, mo
              'master_excel': request.master_dir / 'checklist_item_master.xlsx',
              'master_seed': request.master_dir / 'master_seed.json',
              'receipt': request.bundle / 'review_run.json', 'artifact': request.bundle / 'semantic_document.md'}
-    original = renderer.render_item_review_html
+    original = service._validate_report
     def tamper(report):
         result = original(report)
         path = paths[target]
         path.write_bytes(path.read_bytes() + b'\n')
         return result
-    monkeypatch.setattr(renderer, 'render_item_review_html', tamper)
+    monkeypatch.setattr(service, '_validate_report', tamper)
     with pytest.raises(ValueError, match='changed'):
         service.run_item_review(request)
     assert not (request.output_dir / 'item_review_complete.json').exists()
     assert (request.output_dir / 'item_review_failed.json').exists()
 
 
-@pytest.mark.parametrize('phase', ['html', 'pending', 'link'])
-@pytest.mark.parametrize('target', ['item_observation.json', 'item_review.html', 'master_json'])
+@pytest.mark.parametrize('phase', ['json', 'pending', 'link'])
+@pytest.mark.parametrize('target', ['item_observation.json', 'master_json'])
 def test_output_and_input_changes_at_publication_boundaries_fail_closed(tmp_path, checked_bundle, monkeypatch, phase, target):
     service = implementation()
     request = request_for(tmp_path, checked_bundle)
@@ -172,7 +171,7 @@ def test_output_and_input_changes_at_publication_boundaries_fail_closed(tmp_path
         real_write = service._write_new
         def write(path, content):
             result = real_write(path, content)
-            if Path(path).name == ('item_review.html' if phase == 'html' else 'item_review_complete.pending.json'):
+            if Path(path).name == ('item_observation.json' if phase == 'json' else 'item_review_complete.pending.json'):
                 tamper()
             return result
         monkeypatch.setattr(service, '_write_new', write)
@@ -183,14 +182,14 @@ def test_output_and_input_changes_at_publication_boundaries_fail_closed(tmp_path
         service.read_completed_item_review(request.output_dir)
 
 
-@pytest.mark.parametrize('mutation', ['html', 'json', 'failure', 'receipt', 'summary', 'state', 'duplicate'])
+@pytest.mark.parametrize('mutation', ['json', 'failure', 'receipt', 'summary', 'state', 'duplicate'])
 def test_completed_reader_rejects_mutation_and_invalid_completed_state(tmp_path, checked_bundle, mutation):
     service = implementation()
     request = request_for(tmp_path, checked_bundle)
     service.run_item_review(request)
     output = request.output_dir
-    if mutation in ('html', 'json'):
-        path = output / ('item_review.html' if mutation == 'html' else 'item_observation.json')
+    if mutation == 'json':
+        path = output / 'item_observation.json'
         path.write_bytes(path.read_bytes() + b' ')
     elif mutation == 'failure':
         (output / 'item_review_failed.json').write_text('{}')
@@ -229,7 +228,7 @@ def test_completed_reader_detects_changes_during_its_own_validation(tmp_path, ch
     def tamper(data, *args, **kwargs):
         value = original(data, *args, **kwargs)
         if isinstance(value, dict) and value.get('schema_version') == 'checklist-item-observation/1':
-            path = request.output_dir / 'item_review.html'
+            path = request.output_dir / 'item_observation.json'
             path.write_bytes(path.read_bytes() + b' ')
         return value
     monkeypatch.setattr(service.json, 'loads', tamper)
@@ -254,14 +253,13 @@ def test_fresh_pdf_path_uses_environment_check_and_existing_extractor(tmp_path, 
     assert service.read_completed_item_review(request.output_dir)['target_source']['bundle_path'] == str((request.output_dir / 'extraction').resolve())
 
 
-@pytest.mark.parametrize('failure', ['renderer', 'publication', 'environment', 'missing_receipt', 'in_memory_mutation'])
+@pytest.mark.parametrize('failure', ['validation', 'publication', 'environment', 'missing_receipt', 'in_memory_mutation'])
 def test_failed_preparation_never_exposes_a_valid_completion(tmp_path, checked_bundle, monkeypatch, failure):
     from dataclasses import replace
-    import src.item_review_report as renderer
     service = implementation()
     request = request_for(tmp_path, checked_bundle)
     def fail(*args, **kwargs): raise ValueError('forced failure')
-    if failure == 'renderer': monkeypatch.setattr(renderer, 'render_item_review_html', fail)
+    if failure == 'validation': monkeypatch.setattr(service, '_validate_report', fail)
     elif failure == 'publication':
         real_link = service.os.link
         def link(source, destination, **kwargs):
@@ -273,12 +271,12 @@ def test_failed_preparation_never_exposes_a_valid_completion(tmp_path, checked_b
         monkeypatch.setattr(service, 'validate_extraction_environment', fail)
     elif failure == 'missing_receipt': (request.bundle / 'review_run.json').unlink()
     else:
-        real_render = renderer.render_item_review_html
+        real_render = service._validate_report
         def render(report):
             html = real_render(report)
             report['summary']['found'] = 900
             return html
-        monkeypatch.setattr(renderer, 'render_item_review_html', render)
+        monkeypatch.setattr(service, '_validate_report', render)
     with pytest.raises((ValueError, OSError)): service.run_item_review(request)
     assert not (request.output_dir / 'item_review_complete.json').exists()
     assert (request.output_dir / 'item_review_failed.json').exists()
@@ -298,7 +296,7 @@ def test_cli_passes_bounded_request_and_reports_output(tmp_path, monkeypatch, ca
     assert command.main() == 0
     assert seen[0] == implementation().ItemReviewRequest(Path('new.pdf'), Path('out'), bundle=Path('bundle'),
                                                         master_dir=Path('master'), mapping=Path('mapping.json'))
-    assert 'item_review.html' in capsys.readouterr().out
+    assert 'item_observation.json' in capsys.readouterr().out
 
 
 def test_cli_failure_is_nonzero_without_business_decision(monkeypatch, capsys):

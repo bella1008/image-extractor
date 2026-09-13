@@ -7,9 +7,9 @@ import streamlit as st
 from src.item_review_ui import load_item_review_screen
 
 
-def _download(run_dir, excel_dir, field):
+def _download(run_dir, field):
     # Streamlit invokes deferred data at click time, not when drawing the button.
-    return load_item_review_screen(run_dir, excel_dir)[field]
+    return load_item_review_screen(run_dir)[field]
 
 
 def main():
@@ -17,8 +17,7 @@ def main():
     st.title('구성품 항목별 검토')
     st.text('완료된 관찰 결과를 읽습니다. 모든 항목은 검토 필요이며 모델 적용은 미확정입니다.')
     run_text = st.text_input('완료된 관찰 결과 폴더', key='item_run_path').strip()
-    excel_text = st.text_input('완료된 Excel 내보내기 폴더 (선택)', key='item_excel_path').strip()
-    requested = (run_text, excel_text)
+    requested = run_text
     if st.session_state.get('loaded_item_paths') != requested:
         st.session_state.pop('loaded_item_paths', None)
     if st.button('불러오기', key='load_items', type='primary'):
@@ -30,9 +29,8 @@ def main():
         st.info('폴더를 입력한 후 불러오기를 누르세요.')
         return
     run_dir = Path(run_text).resolve()
-    excel_dir = Path(excel_text).resolve() if excel_text else None
     try:
-        screen = load_item_review_screen(run_dir, excel_dir)
+        screen = load_item_review_screen(run_dir)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         st.session_state.pop('loaded_item_paths', None)
         # Exception text may contain untrusted paths; never render it as Markdown.
@@ -41,7 +39,7 @@ def main():
         return
     report = screen['report']
     st.subheader('검토 대상 PDF')
-    st.json(report['target_source'])
+    st.text(report['target_source']['pdf_filename'])
     columns = st.columns(3)
     for column, key, label in zip(columns, ('item_count', 'needs_review', 'found'),
                                   ('하위 항목', '검토 필요', '단일 문구 근거'), strict=True):
@@ -62,20 +60,17 @@ def main():
             st.json(item['condition_candidates'])
             st.text('담당자 제안 — 모델 조건으로 자동 실행하지 않습니다.')
             st.json(item['author_proposal'])
-    with st.expander('원장 작성 당시 출처 — 현재 문서 근거와 별개'):
-        st.json(report['master_source'])
     st.subheader('검증된 결과 다운로드')
     for label, field, name, mime in (
         ('JSON 다운로드', 'json_bytes', 'item_observation.json', 'application/json'),
-        ('HTML 다운로드', 'html_bytes', 'item_review.html', 'text/html'),
         ('Excel 다운로드', 'excel_bytes', 'item_review.xlsx',
          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
     ):
         if screen[field] is not None:
-            st.download_button(label, data=partial(_download, run_dir, excel_dir, field),
+            st.download_button(label, data=partial(_download, run_dir, field),
                                file_name=name, mime=mime, key=field, on_click='rerun')
     if screen['excel_bytes'] is None:
-        st.info('Excel unavailable: 완료된 Excel 내보내기 폴더를 지정하지 않았습니다.')
+        st.info('Excel이 아직 생성되지 않았습니다.')
 
 
 if __name__ == '__main__':

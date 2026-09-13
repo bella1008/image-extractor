@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
 from src.item_review_service import (_validate_report, _require, _digest, _unchanged, _write_new,
-                                     read_completed_item_review)
+                                     read_completed_item_review, _snapshot_completed_item_files)
 
 
 def _cell(value):
@@ -25,7 +25,7 @@ def _cell(value):
 
 
 def build_item_excel_view(report: dict) -> dict:
-    """Build three exact matrices. Evidence IDs are report-local, not XML IDs."""
+    """Build user matrices linked by stable item key; provenance stays in JSON."""
     _validate_report(report)
     summary = [['검토 범위', '부모 체크항목', report['parent_check_id']],
                ['검토 범위', '상태', '모든 항목 검토 필요. 모델 적용 미확정. 자동 합격·불합격 아님.'],
@@ -34,40 +34,30 @@ def build_item_excel_view(report: dict) -> dict:
                        ('not_found', '검색 범위 내 미발견'), ('not_examined', '범위 미확정'),
                        ('needs_review', '검토 필요'), ('condition_candidate_items', '조건 안내 연결 후보')]:
         summary.append(['집계', label, report['summary'][key]])
-    for section, source in [('검토 대상', report['target_source']), ('원장 작성 당시', report['master_source'])]:
-        for key, label in [('pdf_filename', 'PDF 파일'), ('pdf_sha256', 'PDF SHA256'),
-                           ('semantic_xml_sha256', 'XML SHA256'), ('bundle_path', '추출 결과 위치'),
-                           ('receipt_ref', '추출 완료 기록'), ('receipt_sha256', '완료 기록 SHA256')]:
-            if key in source:
-                summary.append([section, label, source[key]])
+    summary.append(['검토 대상', 'PDF 파일', report['target_source']['pdf_filename']])
     items, evidence = [], []
     for item in report['items']:
-        references = []
         for field, kind in [('candidates', '항목 문구'), ('condition_candidates', '조건 안내 후보')]:
-            ids = []
             for window in item[field]:
-                eid = f'E{len(evidence) + 1:04}'
-                ids.append(eid)
                 entries = [e for p in window['parts'] for e in p.get('evidence', [])]
                 pages = sorted({e['page_index'] + 1 for e in entries if type(e.get('page_index')) is int})
                 paths = list(dict.fromkeys(e['xml_path'] for e in entries if e.get('xml_path')))
-                evidence.append([eid, item['item_key'], kind, window['text'], '\n'.join(window['owner_ids']),
+                evidence.append([item['item_key'], kind, window['text'], '\n'.join(window['owner_ids']),
                     '\n'.join(window['structure_types']), ', '.join(map(str, pages)), '\n'.join(paths),
                     json.dumps(window, ensure_ascii=False, sort_keys=True)])
-            references.append('\n'.join(ids))
         author = item['author_proposal']
         items.append([item['item_key'], item['required_text'], '검토 필요', item['description'],
-                      *references, '', author['proposed_model_rule'], author['proposal_evidence'], author['reviewer_note']])
+                      '', author['proposed_model_rule'], author['proposal_evidence'], author['reviewer_note']])
     sheets = [dict(name='Summary', headers=['구분', '항목', '값'], rows=summary, widths=[20, 28, 110], freeze='A2'),
-              dict(name='Item Results', headers=['고정 항목 키', '기준 문구', '검토 판정', '설명', '항목 근거 ID',
-                   '조건 후보 ID', '검토 메모', '원장 모델 조건 제안', '원장 제안 근거', '원장 검토 메모'],
-                   rows=items, widths=[30, 58, 14, 65, 20, 20, 45, 55, 55, 45], freeze='B2'),
-              dict(name='Source Evidence', headers=['근거 ID', '고정 항목 키', '근거 종류', '현재 원문', '현재 노드 ID',
+              dict(name='Item Results', headers=['고정 항목 키', '기준 문구', '검토 판정', '설명',
+                   '검토 메모', '원장 모델 조건 제안', '원장 제안 근거', '원장 검토 메모'],
+                   rows=items, widths=[30, 58, 14, 65, 45, 55, 55, 45], freeze='B2'),
+              dict(name='Source Evidence', headers=['고정 항목 키', '근거 종류', '현재 원문', '현재 노드 ID',
                    '태그 종류', 'PDF 페이지', 'XML 경로', '상세 근거 JSON'], rows=evidence,
-                   widths=[14, 30, 18, 85, 45, 20, 12, 70, 230], freeze='C2')]
+                   widths=[30, 18, 85, 45, 20, 12, 70, 230], freeze='B2')]
     for sheet in sheets:
         sheet['rows'] = [[_cell(v) for v in row] for row in sheet['rows']]
-    return {'schema_version': 'item-review-excel-view/1', 'activation_status': 'draft_only',
+    return {'schema_version': 'item-review-excel-view/2', 'activation_status': 'draft_only',
             'decision_status': 'not_evaluated', 'sheets': sheets}
 
 
@@ -103,14 +93,15 @@ def validate_item_workbook(content: bytes, view: dict) -> None:
         workbook.close()
 
 
-RUN_FILES = ('item_review_complete.json', 'item_observation.json', 'item_review.html')
+RUN_FILES = ('item_review_complete.json', 'item_observation.json')
 EXCEL_FILES = ('item_excel_complete.json', 'item_excel_view.json', 'item_review.xlsx')
+EXCEL_STATE_FILES = (*EXCEL_FILES, 'item_excel_failed.json', 'item_excel_complete.pending.json', 'item_excel.lock')
 
 
 def _source_snapshot(run_dir):
     run_dir = Path(run_dir)
-    snapshot = {run_dir / name: (run_dir / name).read_bytes() for name in RUN_FILES}
     try:
+        snapshot = _snapshot_completed_item_files(run_dir)
         report = read_completed_item_review(run_dir)
     except (AttributeError, TypeError, KeyError) as exc:
         raise ValueError('invalid source observation structure') from exc
@@ -130,13 +121,26 @@ def _run_builder(view_path, output_dir, node_executable, node_modules):
     _require(result.returncode == 0, 'Excel authoring failed; see authoring.log')
 
 
-def export_item_review_excel(run_dir: Path, output_dir: Path, node_executable: Path, node_modules: Path) -> dict:
-    output_dir, run_dir = Path(output_dir), Path(run_dir)
-    output_dir.mkdir(parents=True, exist_ok=False)
+def export_item_review_excel(run_dir: Path, node_executable: Path, node_modules: Path) -> dict:
+    output_dir = run_dir = Path(run_dir)
+    report, source = _source_snapshot(run_dir)
+    def refuse_existing():
+        for name in (*EXCEL_STATE_FILES[:-1], 'authoring.log'):
+            if (output_dir / name).exists():
+                raise FileExistsError(f'Excel output already exists: {name}')
+    refuse_existing()
+    lock = output_dir / 'item_excel.lock'
+    # Exclusive ownership prevents a second exporter from invalidating this run.
+    with lock.open('x', encoding='utf-8') as stream:
+        stream.write(str(os.getpid()))
+    try:
+        refuse_existing()
+    except Exception:
+        lock.unlink()
+        raise
     published = False
     final = output_dir / EXCEL_FILES[0]
     try:
-        report, source = _source_snapshot(run_dir)
         view = build_item_excel_view(report)
         view_path = output_dir / EXCEL_FILES[1]
         view_text = json.dumps(view, ensure_ascii=True, indent=2) + '\n'
@@ -176,11 +180,14 @@ def export_item_review_excel(run_dir: Path, output_dir: Path, node_executable: P
             _write_new(output_dir / 'item_excel_failed.json', json.dumps({'status': 'failed', 'reason': str(exc)}))
         except OSError: pass
         raise
+    finally:
+        lock.unlink(missing_ok=True)
 
 
-def read_completed_item_excel(output_dir: Path, run_dir: Path) -> bytes:
+def read_completed_item_excel(run_dir: Path) -> bytes:
     """Download only a completed workbook tied to the supplied observation run."""
-    output_dir, run_dir = Path(output_dir), Path(run_dir)
+    output_dir = run_dir = Path(run_dir)
+    _require(not (run_dir / 'item_excel.lock').exists(), 'Excel export is still running')
     _require(not (output_dir / 'item_excel_failed.json').exists(), 'Excel export failed')
     report, source = _source_snapshot(run_dir)
     snapshot = {output_dir / n: (output_dir / n).read_bytes() for n in EXCEL_FILES}
@@ -202,6 +209,7 @@ def read_completed_item_excel(output_dir: Path, run_dir: Path) -> bytes:
     validate_item_workbook(content, view)
     _unchanged(snapshot)
     _unchanged(source)
-    _require(not (output_dir / 'item_excel_failed.json').exists()
+    _require(not (run_dir / 'item_excel.lock').exists()
+             and not (output_dir / 'item_excel_failed.json').exists()
              and not (run_dir / 'item_review_failed.json').exists(), 'run failed during read')
     return content

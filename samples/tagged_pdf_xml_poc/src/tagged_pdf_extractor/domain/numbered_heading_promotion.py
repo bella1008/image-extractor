@@ -14,6 +14,7 @@ from tagged_pdf_extractor.domain.models import (
     TaggedDocument,
 )
 from tagged_pdf_extractor.domain.text_joining import join_text_parts
+from tagged_pdf_extractor.domain.profile_scope import parse_source_token
 
 
 _NUMBERED_LABEL = re.compile(r"^(?:0[1-9]|[1-9][0-9])$")
@@ -189,7 +190,10 @@ def _scan_document(
             visit_index = len(visits)
             visits.append(_ElementVisit(child, child_path))
             candidate = _as_candidate(
-                child, child_path, visit_index, language=language
+                child, child_path, visit_index, language=language,
+                compact_numeric_label=(document.raw_children is not None
+                    and parse_source_token(document.source_path.name) == "AFRICA_L05"
+                    and language == "ARA"),
             )
             if candidate is not None:
                 candidates.append(candidate)
@@ -205,6 +209,7 @@ def _as_candidate(
     visit_index: int,
     *,
     language: str | None,
+    compact_numeric_label: bool = False,
 ) -> _Candidate | None:
     if element.semantic_role != "list_item":
         return None
@@ -221,6 +226,12 @@ def _as_candidate(
     if len(label_children) != 1 or len(body_children) != 1:
         return None
     label = _normalized_text(label_children[0])
+    if compact_numeric_label:
+        # Two PDF-authored digits in separate RTL spans form one chapter label.
+        # Sequence and relative typography must still pass the existing gate.
+        compact = "".join(label.split())
+        if re.fullmatch(r"0[1-9]", compact):
+            label = compact
     title = _normalized_text(body_children[0])
     if _NUMBERED_LABEL.fullmatch(label) is None or not title:
         return None

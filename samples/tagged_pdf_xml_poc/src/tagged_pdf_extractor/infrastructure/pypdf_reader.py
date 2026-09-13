@@ -50,6 +50,15 @@ class TaggedPdfReader:
     def __init__(self, collector: McidTextCollector | None = None) -> None:
         self.collector = collector or McidTextCollector()
 
+    def read_for_profile(self, pdf_path, profile):
+        from tagged_pdf_extractor.domain.africa_book import africa_book_scope
+        from tagged_pdf_extractor.infrastructure.africa_actual_text import ActualTextRunner
+        if not africa_book_scope(profile):
+            return self.read(pdf_path)
+        return TaggedPdfReader(McidTextCollector(
+            runner=ActualTextRunner(arabic_pages_only=True)
+        )).read(pdf_path)
+
     @staticmethod
     def resolve(value: Any) -> Any:
         current = value
@@ -131,6 +140,20 @@ class TaggedPdfReader:
             mcid_bboxes[index] = result.bboxes_by_mcid
             seen_mcids[index] = result.seen_mcids
             diagnostics.extend(result.diagnostics)
+            evidence = getattr(getattr(self.collector, "runner", None), "evidence", None)
+            if evidence:
+                diagnostics.append(Diagnostic(
+                    "warning", "pdf_actual_text_applied",
+                    "PDF-authored ActualText replaced glyph decoding on an Arabic page.",
+                    {"page_index": index, "replacements": list(evidence)},
+                ))
+                evidence.clear()
+            rtl_lines = getattr(getattr(self.collector, "runner", None), "rtl_lines", None)
+            if rtl_lines:
+                diagnostics.append(Diagnostic("warning", "africa_rtl_glyph_source",
+                    "Source glyph ownership and text matrices observed before RTL flushing.",
+                    {"page_index": index, "lines": list(rtl_lines)}))
+                rtl_lines.clear()
 
         role_map = self._read_role_map(struct_root.get("/RoleMap"))
         children = self._walk_kids(

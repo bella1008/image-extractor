@@ -29,6 +29,8 @@ from tagged_pdf_extractor.domain.readability_formatting import (
 )
 from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitles
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
+from tagged_pdf_extractor.domain.africa_book import prepare_africa_book
+from tagged_pdf_extractor.domain.profile_scope import parse_source_token
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
 from tagged_pdf_extractor.ports.output_writer import (
     OutputValidation,
@@ -66,11 +68,19 @@ class ExtractDocument:
         if not pdf_path.is_file():
             raise IsADirectoryError(f"PDF source is not a file: {pdf_path}")
 
-        document = self.reader.read(pdf_path)
+        profile = (self.profile_repository.lookup(pdf_path)
+                   if self.profile_repository is not None
+                   and parse_source_token(pdf_path.name) == "AFRICA_L05" else None)
+        profile_reader = getattr(self.reader, "read_for_profile", None)
+        document = (profile_reader(pdf_path, profile) if profile is not None and callable(profile_reader)
+                    else self.reader.read(pdf_path))
+        if profile is not None:
+            document = prepare_africa_book(document, profile)
         document = promote_numbered_chapter_headings(document)
         profile_resolution = None
         if self.profile_repository is not None:
-            profile = self.profile_repository.lookup(pdf_path)
+            if profile is None:
+                profile = self.profile_repository.lookup(pdf_path)
             resolution = resolve_language_intervals(profile, document)
             profile_resolution = (profile, resolution)
         document = detect_table_subtitles(document)

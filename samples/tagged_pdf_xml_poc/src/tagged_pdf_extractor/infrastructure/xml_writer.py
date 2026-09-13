@@ -191,13 +191,14 @@ class XmlDocumentWriter:
                     ),
                 )
 
-        for child in document.children:
+        raw_children = document.raw_children if document.raw_children is not None else document.children
+        for child in raw_children:
             self._append_raw_child(root, child)
 
         self._write_and_verify(
             root,
             path,
-            expected_text=self._raw_text(document.children),
+            expected_text=self._raw_text(raw_children),
             output_name="raw",
             text_data_tags=frozenset({"part"}),
         )
@@ -525,6 +526,8 @@ class XmlDocumentWriter:
             attributes.update(
                 self._promotion_attributes(promotion, source_role=child.source_role)
             )
+            if child.language == "ARA" and child.source_structure_path is not None:
+                attributes["numbered-label"] = promotion.label
         if subtitle is not None:
             attributes.update(self._subtitle_attributes(subtitle))
         if line_break is not None:
@@ -785,6 +788,8 @@ class XmlDocumentWriter:
         element: StructureElement, tag: str
     ) -> dict[str, str]:
         attributes: dict[str, str] = {}
+        if element.source_structure_path is not None:
+            attributes["source-structure-path"] = "/".join(str(i) for i in element.source_structure_path)
         if tag == "unknown":
             attributes["source-role"] = element.source_role
         if element.heading_level is not None:

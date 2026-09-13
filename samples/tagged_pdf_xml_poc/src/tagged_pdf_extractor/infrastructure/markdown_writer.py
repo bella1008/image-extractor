@@ -311,6 +311,23 @@ class MarkdownDocumentWriter:
             prefix = "#" * min(level + 1, 6)
             return [f"{prefix} {cls._element_text(element)}"]
 
+        if (element.tag == "heading" and element.get("numbered-label") is not None
+                and element.get("promotion-reason") is not None):
+            level = max(1, min(int(element.get("level", "1")), 6))
+            compact_label = element.get("numbered-label")
+            if compact_label is not None:
+                children = cls._structural_children(element)
+                labels = [c for c in children if c.tag == "label"]
+                bodies = [c for c in children if c.tag == "list_body"]
+                if (element.get("promotion-reason") != "numbered_chapter_structure_sequence_typography"
+                        or len(labels) != 1 or len(bodies) != 1 or len(children) != 2
+                        or re.fullmatch(r"0[1-9]", compact_label) is None
+                        or "".join(cls._element_text(labels[0]).split()) != compact_label):
+                    raise ValueError(f"Invalid numbered-label source evidence: {compact_label!r}; "
+                                     f"{[(c.tag, cls._element_text(c)) for c in children]!r}")
+                text = compact_label + " " + cls._element_text(bodies[0])
+            return [f"{'#' * level} {text}"] if text else []
+
         if element.tag == "heading" and cls._has_mixed_content_descendant(
             element, promoted
         ):

@@ -216,6 +216,21 @@ Notes
 
 ### Tagged PDF XML/Markdown Review Follow-ups
 
+- [x] AFRICA_L05 BOOK scoped RTL repair (2026-09-13), branch
+  `feature/xml-markdown-review`, starting clean at
+  `840512002a80a12b19c712116530ab69b1459c3a`. Actual bookmark order is
+  ENG/FRA/SPA/POR/ARA (physical pages 2/8/14/20/35). Semantic Arabic reads
+  36 down to 27; Raw retains source order. ActualText restores chapter digits;
+  pure RTL glyph reconstruction retains glyph owners and combining marks.
+  Focused: `50 passed`; full real-sample POC: `1760 passed, 1 skipped`.
+  Public imports and compileall pass. No legacy GridCell or DB changes.
+- [ ] AFRICA extraction acceptance is BLOCKED: mixed RTL navigation/icon paths
+  still have incorrect logical reading order. The ENG/ARA Jordan-only source
+  structure also leaves strict heading-count parity false (22/21/21/21/22).
+  Continue from `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_final_v2`.
+  Review: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-book-xml-review.md`.
+  Do not waive parity broadly, fabricate localized headings, or create DB candidates.
+
 - [x] Task 8: gate cross-profile readability and multilingual-heading parity
   against the exact ZG, ZC, LATIN, KR, and XU real PDFs. Shared evidence policy:
   BBoxes and detector reasons remain optional XML/report audit evidence; Raw XML

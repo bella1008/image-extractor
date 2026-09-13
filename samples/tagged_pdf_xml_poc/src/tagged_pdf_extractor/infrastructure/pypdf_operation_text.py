@@ -134,6 +134,12 @@ def _text_run_bbox(
 class PypdfOperationTextRunner:
     """Run pypdf text state over original page operations."""
 
+    def _load_helpers(self):
+        return _load_pypdf_text_helpers()
+
+    def _before_operation(self, operator, operands):
+        """Optional source observer; the default extraction path is unchanged."""
+
     def run(
         self,
         page: Any,
@@ -145,7 +151,7 @@ class PypdfOperationTextRunner:
         callback_failure: _CallbackRaised | None = None
         try:
             Font, TextExtraction, ContentStream, NullObject = (
-                _load_pypdf_text_helpers()
+                self._load_helpers()
             )
             source_content = page.get("/Contents")
             if source_content is None:
@@ -246,6 +252,7 @@ class PypdfOperationTextRunner:
                 geometry_ambiguous = False
 
             for operands, operator in operations:
+                self._before_operation(operator, operands)
                 if operator in (b"BMC", b"BDC", b"EMC"):
                     extractor._flush_text()
                     _invoke_callback(on_boundary, operator, operands)

@@ -142,6 +142,30 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 `special_character_counts_preserved`와 각 문자의 `count_preserved`는 문서 전체 문자 개수만 비교하는 보수적인 집계 proxy입니다. 특정 OSD 경로의 순서·문맥·문장 연결이 보존됐다는 뜻은 아닙니다. 지정 ZC OSD 경로의 문맥 보존은 아래 표본을 통합 테스트에서 직접 찾아 별도로 검증합니다.
 
+## AFRICA BOOK XML 검증 — 2026-09-13
+
+`AFRICA_L05 + BOOK + ENG/FRA/SPA/POR/ARA`의 명시적 경로를 추가했습니다.
+실제 북마크 순서는 ENG/FRA/SPA/POR/ARA이며 Arabic 본문은 물리 35→30쪽,
+표지를 포함한 Arabic 구간은 36→27쪽으로 읽습니다. Raw XML은 원본 순서를
+보존하고 Semantic XML에 원래 `source-structure-path`를 기록합니다.
+
+Arabic 페이지에서 PDF가 제공한 `ActualText`만 사용해 장 번호를 복원합니다.
+같은 줄의 순수 RTL glyph는 원 glyph/MCID/행렬 근거로 Semantic 뷰에서 복원하며,
+발음기호 glyph 내부 codepoint 순서를 유지합니다. 혼합 문자, 불확실한 줄 경계,
+여러 줄에 걸친 MCID와 검증되지 않은 재배치는 이 규칙의 대상이 아닙니다.
+다른 profile의 기본 reader 및 가독성 규칙은 유지됩니다.
+
+결과는 **검증 차단 상태**입니다. 혼합 RTL UI 경로의 읽기 순서 오류와 strict
+heading-count gate가 남았습니다. 제목 수 차이 22/21/21/21/22는 ENG/ARA에만
+실제로 있는 Jordan 문구를 확인했으나 자동 gate를 완화하지 않았습니다.
+파일 생성이나 테스트 통과를 문서 검증 완료로 해석하면 안 됩니다.
+
+최종 bundle: `outputs/xml_review_africa_20260913_final_v2`.
+네 기본 산출물에 `review_document.json`, `review_run.json`을 추가했습니다.
+집중 50개, 전체 1,760개 테스트 통과; Windows symlink 1개 skip입니다.
+원문, crop, 남은 차단 문제와 재현 명령은
+[검토 기록](docs/reviews/2026-09-13-africa-book-xml-review.md)에 있습니다.
+
 ## 교차 프로필 가독성 근거 정책
 
 문장 경계, 목록 continuation, inline subtitle, 다국어 heading parity는 원문 문구나 번역 사전이 아니라 공통 구조·기하·글꼴 근거로만 판정합니다. BBox는 PDF에서 관찰될 때 XML과 보고서의 선택적 감사 근거로 보존하되 Raw XML 원문이나 Markdown에는 판정 속성을 섞지 않습니다. 좌표 계산은 문자 간격(`Tc`)을 반영하고, 아직 정확히 모델링하지 않는 단어 간격(`Tw`)·텍스트 상승(`Ts`) 상태에서는 BBox를 만들지 않습니다. BBox 등 판정에 필요한 근거가 없으면 해당 표시를 만들지 않는 fail-closed 방식입니다.
@@ -149,7 +173,7 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 - 목록 continuation은 목록과의 인접성, 같은 페이지와 언어, 수평 정렬, 세로 간격, 글꼴 크기, 충돌 구조 부재를 각각 통과해야 합니다. 앞 목록의 marker/body와 대상 문단은 완전한 기하·타이포그래피 근거가 필요하고, 뒤 목록은 구조 경계 및 모호하지 않은 동일 페이지·언어 근거로만 사용합니다. 표준 `P`가 아닌 사용자 정의 source role이 semantic `P`로 해석되는 경우에도 나머지 조건을 모두 통과해야 합니다.
 - inline subtitle은 단독 table wrapper, 유일한 inline leaf paragraph, offset 경계, 상대 굵기 근거가 모두 있을 때만 표시합니다.
 - 다국어 heading audit은 승격 heading, level이 확인된 source-role heading 후보, 구조적으로 검출된 section heading의 전체 level/origin/번호 label 서명을 비교합니다. heading 문구와 level 없는 문서 title은 서명에 포함하지 않습니다.
-- Runtime에는 buyer, 문구, 언어별 번역 heading을 추가하지 않습니다. 감사 근거는 `extraction_report.json`과 `semantic_document.xml`에 남고, 원문 보존용 `raw_structure.xml` 및 검토용 Markdown에는 audit 속성이 노출되지 않습니다.
+- 아래 공통 가독성 규칙에는 buyer, 문구, 언어별 번역 heading을 추가하지 않습니다. 별도 AFRICA profile 경로도 번역 heading을 사용하지 않습니다. 감사 근거는 `extraction_report.json`과 `semantic_document.xml`에 남고, 원문 보존용 `raw_structure.xml` 및 검토용 Markdown에는 audit 속성이 노출되지 않습니다.
 
 ## 2026-09-08 교차 프로필 검증 결과
 

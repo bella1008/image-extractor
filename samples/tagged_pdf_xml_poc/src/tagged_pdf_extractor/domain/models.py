@@ -107,6 +107,7 @@ class StructureElement:
     actual_text: str | None = None
     attributes: tuple[tuple[str, str], ...] = ()
     children: tuple[StructureElement | ContentFragment, ...] = ()
+    source_structure_path: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -497,6 +498,7 @@ class TaggedDocument:
     continuation_hints: tuple[ContinuationHint, ...] = ()
     multilingual_heading_audit: MultilingualHeadingAudit | None = None
     bookmark_page_bounds: tuple[BookmarkPageBounds, ...] = ()
+    raw_children: tuple[StructureElement | ContentFragment, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.bookmark_page_bounds, tuple):

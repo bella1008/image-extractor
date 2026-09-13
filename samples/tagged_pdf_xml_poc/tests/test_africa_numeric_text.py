@@ -20,3 +20,26 @@ def test_decimal_joins_only_the_exact_source_glyph_and_actual_text_sequence():
 ])
 def test_uncertain_or_changed_decimal_evidence_is_rejected(parts,replacements,gap):
     assert decimal_source_text(ContentFragment(29,802,parts),evidence(gap),replacements) is None
+
+
+@pytest.mark.parametrize("source,operations,actual,expected", [
+    ("Wi-Fi 7.125", [9,9], False, ("Wi-Fi 7.125",)),
+    ("Wi-Fi 7 .125", [9,9], False, None),
+    ("Wi-Fi 7.125", [9,10], False, None),
+    ("Wi-Fi 7.125", [None,None], False, None),
+    ("Wi-Fi 7.126", [9,9], False, None),
+    ("Wi-Fi 7.125", [9,9], True, None),
+])
+def test_ltr_decimal_requires_exact_single_operation_source(source,operations,actual,expected):
+    from tagged_pdf_extractor.domain.africa_numeric_text import ltr_decimal_source_parts
+    runs = [{"glyphs":list(source[:7]),"operation_index":operations[0],"actual_text":actual},
+            {"glyphs":list(source[7:]),"operation_index":operations[1],"actual_text":actual}]
+    assert ltr_decimal_source_parts(ContentFragment(6,743,("Wi-Fi 7 .125",)),runs) == expected
+
+
+def test_ltr_decimal_does_not_join_parts_or_modify_other_spaces():
+    from tagged_pdf_extractor.domain.africa_numeric_text import ltr_decimal_source_parts
+    run = {"glyphs":list("Wi-Fi 7.125 GHz"),"operation_index":9,"actual_text":False}
+    assert ltr_decimal_source_parts(ContentFragment(6,743,("Wi-Fi 7 ",".125 GHz",)),[run]) is None
+    run["glyphs"]=list("Wi-Fi 7.125  GHz")
+    assert ltr_decimal_source_parts(ContentFragment(6,743,("Wi-Fi 7 .125  GHz",)),[run]) == ("Wi-Fi 7.125  GHz",)

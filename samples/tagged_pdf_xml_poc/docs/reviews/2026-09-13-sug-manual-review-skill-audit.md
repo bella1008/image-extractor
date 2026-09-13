@@ -1,0 +1,60 @@
+# sug-manual-review 스킬 검토 — 2026-09-13
+
+검토 대상: `C:/Users/bella/.codex/skills/sug-manual-review/SKILL.md`와
+`references/zc-mvp-review-rules.md`. 이 파일은 수정 제안이며 전역 스킬을 설치·변경하지 않았다.
+현재 작업은 `samples/tagged_pdf_xml_poc`의 PDF → Raw XML → Semantic XML/Markdown 품질 검증이다.
+
+## 수정이 필요한 항목
+
+| 현재 지침 | 현재 작업에서의 문제 | 권장 변경 |
+| --- | --- | --- |
+| 설명과 Workflow가 ZC MVP, XLSX/JSON, `section_heading`, `lines_text` 중심 | 현재 XML 역할·경로와 Markdown 검증이 누락됨 | 시작 시 실제 추출 엔진과 검토 산출물을 확인하고 XML/legacy 절차를 분기 |
+| `safety_symbol_table`, `navigation_ui`, `condition_label` 등의 이름을 필수로 열거 | 의미 관계를 보존한 현재 `table`/`figure`/list 구조도 잘못된 이름으로 판정할 수 있음 | 의미 보존 기준을 우선하고 현재 XML 역할에 대응. legacy 키는 해당 엔진에서만 사용 |
+| ZC ENG/C-FRA workbook을 항상 첫 기준으로 제시 | FRA≠C-FRA, SPA≠M-SPA, POR≠B-POR. 언어·영어 변종·문서 범위 차이가 제목 차이로 나타남 | AGENTS/사용자가 정한 ZC 선행 gate를 준수한 뒤 가장 가까운 검증 완료 동일 언어 기준을 선택. 이번 추가 비교는 ZG ENG/FRA |
+| 제목 수·블록 순서 비교만 명시 | 승격 장 제목 수, 전체 제목, 표지·본문 집계가 혼합될 수 있음 | 본문/표지/연락처/공통 제목별 하위 구조를 분리. 원본에 입증된 지역 전용 항목을 명시적 예외로 기록 |
+| RTL 및 BOOK 페이지 역순 지침 없음 | 페이지 순서, 줄 내 읽기 순서, Unicode bidi 표시 문제를 혼동할 수 있음 | PDF 북마크와 RTL 페이지 순서를 확인하고 저장 문자열·논리 순서·최종 표시 화면을 각각 검사 |
+| `manual review required`의 종료 조건 없음 | 원문과 같은 `EC/1999/5`도 막연한 의미/현지어 Warning으로 남을 수 있음 | 문제 위치, 근거, 확인 방법, 종료 조건을 기록. 원문 일치가 입증되면 추출 Warning 종료; 번역 품질 평가는 요청된 경우 별도 수행 |
+| Auxiliary Sheets와 Excel `lines_text` 검사를 일반 절차로 연결 | 이번 작업에서 금지된 Excel/legacy 코드 수정을 유도할 수 있음 | XLSX를 요청하고 legacy exporter를 사용하는 경우에만 참조 문서 적용 |
+| navigation의 `{btn_*}`와 과거 모델 예시 중심 | 현재 아이콘은 실제 XML Figure/Markdown placeholder이며 OCR 문자가 아님 | 실제 Figure·표 셀·UI 경로와 crop을 추적. placeholder만으로 이미지 형상 확인 완료를 주장하지 않음 |
+
+## 유지할 규칙
+
+- PDF/profile에서 source_token·doc_type·정확한 언어 코드 확인. 샘플 폴더명으로 추정하지 않는다.
+- runtime 현지어 제목은 실제 추출 별칭만 사용. 번역·추측·후보/거절 별칭을 넣지 않는다.
+- 제목 뒤 목록·표·모델 조건·안전 구조가 큰 body로 합쳐졌는지 검사한다.
+- 원문 차이와 추출 결함을 분리하고 UI·안전 심볼·그림 범례를 우선 확인한다.
+- 다른 바이어에 검증 없이 규칙을 확대하지 않는다.
+
+## 권장 XML workflow 문안
+
+1. 허용된 worktree, branch, HEAD, 미커밋 변경을 기록한다. AGENTS와 프로젝트 문서를 읽는다.
+2. PDF 파일명/profile 및 실제 북마크에서 언어·문서 유형·BOOK 읽기 순서를 확인한다.
+3. 현재 추출기를 수정 전에 새 결과 폴더로 실행한다. Raw XML, Semantic XML/MD,
+   extraction_report와 현재 review bundle/review_run을 확인한다.
+4. 프로젝트가 요구하는 ENG 선행 기준을 통과한 뒤 같은 바이어 현지어를 ENG에 대응시킨다.
+   추가 바이어 비교는 동일 언어 코드를 사용한다. 사용자 확인 영어 변종은 비교 맥락으로 기록한다.
+   같은 언어가 없는 기준 PDF는 대체하지 말고 미비교 범위를 밝힌다.
+5. 원 PDF와 XML source path/page/MCID를 연결하여 읽기 순서, 제목별 구조,
+   표의 행·열·그림 셀, 모델 조건, UI, 표지·연락처의 source_header/국가 행을 검토한다.
+6. XML/MD 문자 보존과 순서를 확인한다. 문자 multiset은 누락·중복 보조 검사이며
+   순서/표시 검사의 대체물이 아니다. 수치 소수점·단위·괄호·인치 표시도 확인한다.
+7. RTL은 물리 페이지와 논리 읽기 순서를 분리한다. 최종 표시를 시험하지 않고
+   문자/MCID 일치만으로 시각적 일치를 승인하지 않는다. 재조판 줄바꿈의 픽셀 일치는 요구하지 않는다.
+8. Hard gate는 실제 구조·누락·순서 결함에 적용한다. Warning에는 정확한 위치와
+   확인 기준을 넣는다. 원문에 있는 표현 차이는 추출 결함으로 계속 남기지 않는다.
+9. 결함은 실제 XML 경로에서 실패 테스트 → 최소 범위 수정 → 새 폴더 재추출 → 재검증한다.
+   legacy GridCell/import 구조를 XML 수정 위치로 강제하지 않는다. 필요한 호환 검사는 유지한다.
+10. 테스트·회귀·compileall 결과, 남은 제한, 근거 경로와 로컬 복구 commit을 기록한다.
+    추출 검증에서 체크리스트 후보/DB 승인/외부 의미 API 작업을 자동으로 시작하지 않는다.
+
+## 스킬 적용 전 점검 사례
+
+- AFRICA BOOK ENG/FRA/SPA/POR/ARA: ZG에는 ENG/FRA만 대응, ARA는 p36→27.
+- LATIN/ZX M-SPA: AFRICA SPA의 동일 언어 기준으로 자동 사용하지 않는다.
+- ZC C-FRA legacy XLSX 검토: 기존 `lines_text`/보조 시트 지침이 여전히 유효하다.
+- XML 안전 심볼 표: `table` + `figure` 셀 근거가 있으면 기존 block_type 이름을 강요하지 않는다.
+- ENG 22 / FRA 21: 원본 Jordan-only와 공통 21개 제목별 구조를 확인하며 수를 억지로 맞추지 않는다.
+- Arabic `EC/1999/5`: 실제 glyph/PDF 일치로 추출 표기 Warning을 종료한다.
+- Arabic 괄호·인치: 원문 crop과 실제 렌더링을 보고 판단하며, 단순히 “아랍어를 모름”으로 보류하지 않는다.
+
+이 제안은 문서 검토 결과다. 스킬 변경/배포 테스트를 수행했다는 뜻은 아니다.

@@ -217,3 +217,42 @@ def test_rtl_model_list_keeps_slash_at_wrapped_line_boundary(africa):
     ids = [int(t.get("mcid")) for t in paragraph.iter("text")]
     assert ids[:14] == list(range(896,882,-1))
     assert ids.index(883) < ids.index(903) < ids.index(902) < ids.index(901) < ids.index(899)
+
+
+@pytest.mark.parametrize("page,mcid,token", [(6,743,"7.125"),(12,1599,"7,125"),(18,2437,"7,125"),(24,3276,"7,125")])
+def test_ltr_wifi_decimal_keeps_source_token_and_no_sentence_break(africa,page,mcid,token):
+    _, _, artifacts = africa
+    semantic = ET.parse(artifacts.semantic_xml).getroot()
+    fragment = semantic.find(f".//text[@page-index='{page}'][@mcid='{mcid}']")
+    assert token in fragment.text
+    assert fragment.get("sentence-break-offsets") is None
+    md = artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert "7 .<br>" not in md and "7 ,125" not in md
+
+
+@pytest.mark.parametrize("suffix", [4,6,7])
+def test_arabic_inch_conditions_restore_neutral_order_and_rtl_display(africa,suffix):
+    _, _, artifacts=africa
+    root=ET.parse(artifacts.semantic_xml).getroot()
+    paragraph=root.find(f".//*[@source-structure-path='0/12/0/7/0/1/0/{suffix}']")
+    assert paragraph.get("display-direction") == "rtl"
+    assert len(root.findall(".//*[@display-direction='rtl']")) == 4
+    clean=lambda s: ''.join(c for c in s if not c.isspace() and c not in '\u200e\u200f')
+    text=clean(''.join(t.text or '' for t in paragraph.iter('text')))
+    expected={4:'S90H("42):20واط,S90H("48-"83):40واط',
+              6:'LS03HE("43-"85):20واط',7:'LS03HE("98)/LS03HW:40واط'}
+    assert text==expected[suffix]
+    md=artifacts.semantic_markdown.read_text(encoding="utf-8")
+    assert md.count('<span dir="rtl">')==4
+
+
+
+def test_arabic_wifi_brackets_enclose_the_complete_source_precaution(africa):
+    _, _, artifacts=africa
+    root=ET.parse(artifacts.semantic_xml).getroot()
+    paragraph=root.find(".//*[@source-structure-path='0/12/0/12']")
+    assert paragraph.get('display-direction')=='rtl'
+    texts=list(paragraph.iter('text'))
+    assert texts[0].text.strip().startswith('[')
+    assert texts[-1].text.strip().endswith(']')
+    assert '7.125' in ''.join(t.text or '' for t in texts)

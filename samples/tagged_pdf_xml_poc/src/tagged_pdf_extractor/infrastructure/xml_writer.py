@@ -793,6 +793,11 @@ class XmlDocumentWriter:
         element: StructureElement, tag: str
     ) -> dict[str, str]:
         attributes: dict[str, str] = {}
+        if element.display_direction is not None:
+            if element.display_direction != "rtl" or tag != "paragraph" or element.language != "ARA":
+                raise ValueError("Invalid source numeric-condition direction")
+            attributes["display-direction"] = "rtl"
+            attributes["direction-reason"] = "source-glyph-numeric-condition"
         if element.source_structure_path is not None:
             attributes["source-structure-path"] = "/".join(str(i) for i in element.source_structure_path)
         if tag == "unknown":

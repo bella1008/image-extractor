@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 import unicodedata
+import re
 from pypdf.generic import decode_pdfdocencoding
 
 from tagged_pdf_extractor.infrastructure.pypdf_operation_text import (
@@ -21,6 +22,7 @@ class ActualTextRunner:
         self.arabic_pages_only = arabic_pages_only
         self.evidence: list[dict[str, Any]] = []
         self.rtl_lines = []
+        self.ltr_decimal_lines = []
 
     def run(self, page, *, on_boundary, on_text, on_xobject=None) -> None:
         events = []
@@ -37,6 +39,11 @@ class ActualTextRunner:
         if self.arabic_pages_only and use_replacements:
             from tagged_pdf_extractor.infrastructure.africa_glyphs import RtlGlyphObserver
             self.rtl_lines = RtlGlyphObserver().collect(page)
+        elif self.arabic_pages_only and any(
+                "Wi-Fi" in args[0] and re.search(r"\d[ \t]+[.,]\d", args[0])
+                for kind, args in events if kind == "text"):
+            from tagged_pdf_extractor.infrastructure.africa_glyphs import RtlGlyphObserver
+            self.ltr_decimal_lines = RtlGlyphObserver().collect(page)
         depth = 0
         active = None
         mcids = []

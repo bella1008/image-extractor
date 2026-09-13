@@ -63,12 +63,16 @@ def prepare_africa_book(document: TaggedDocument, profile: PdfProfile) -> Tagged
                        children=tuple(annotate(c, (*path, i)) for i, c in enumerate(node.children)))
 
     annotated = tuple(annotate(c, (i,)) for i, c in enumerate(document.children))
+    from tagged_pdf_extractor.domain.africa_numeric_text import restore_ltr_decimal_spacing
+    annotated, ltr_decimal_evidence = restore_ltr_decimal_spacing(annotated, document.diagnostics)
     from tagged_pdf_extractor.domain.africa_rtl import restore_rtl_glyph_lines
     annotated, glyph_evidence = restore_rtl_glyph_lines(annotated, document.diagnostics)
     from tagged_pdf_extractor.domain.africa_numeric_text import restore_actual_text_decimals
     annotated, decimal_evidence = restore_actual_text_decimals(annotated, document.diagnostics)
     from tagged_pdf_extractor.domain.africa_inline_order import restore_inline_order
     annotated, inline_evidence = restore_inline_order(annotated, document.diagnostics)
+    from tagged_pdf_extractor.domain.africa_rtl_conditions import restore_rtl_conditions
+    annotated, condition_evidence = restore_rtl_conditions(annotated, document.diagnostics)
     if len(annotated) != 1 or not isinstance(annotated[0], StructureElement):
         raise ValueError("AFRICA requires one source Document container")
     container = annotated[0]
@@ -93,4 +97,4 @@ def prepare_africa_book(document: TaggedDocument, profile: PdfProfile) -> Tagged
          "source_article_paths": [(0, i) for i, _ in positions]})
     return replace(document, raw_children=document.children,
                    children=(replace(container, children=tuple(siblings)),),
-                   bookmark_page_bounds=corrected, diagnostics=(*document.diagnostics, evidence, glyph_evidence, decimal_evidence, inline_evidence))
+                   bookmark_page_bounds=corrected, diagnostics=(*document.diagnostics, evidence, glyph_evidence, decimal_evidence, inline_evidence, ltr_decimal_evidence, condition_evidence))

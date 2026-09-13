@@ -234,9 +234,17 @@ Notes
   Focused: `101 passed`; full real-sample POC: `1811 passed, 1 skipped`.
   Raw/Semantic 4499 fragment identities and text survive. 18505 glyph origins
   match independent PyMuPDF geometry within 0.02 pt.
-- [ ] Human review: native Arabic bidi punctuation/line presentation, localized
-  meaning and image-only symbols. Explicit warnings remain; no DB candidates.
-  Review: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-book-xml-review.md`.
+- [x] ZG ENG/FRA same-language review and Arabic rendered-output follow-up (2026-09-13).
+  Common 21 headings match each; actual One Connect/password/declaration/source wording differences documented.
+  Fixed four LTR decimal spaces, three Arabic inch-condition paragraphs and Wi-Fi bracket boundaries.
+  Raw XML byte-identical; 4499 source identities retained. Marked/Edge rendering verifies four RTL spans.
+  Current: `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_followup_final_v3`.
+  Focused 141 passed; full 1851 passed, 1 Windows symlink skip; compileall/public imports pass.
+  Review: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-zg-same-language-and-rtl-review.md`.
+- [ ] User overall review with source crops for image-only symbols/barcode. Generic native/meaning warnings
+  closed for extraction scope; actual EC/1999/5 preserved. No DB candidates.
+- [x] Audit sug-manual-review skill against current XML workflow; proposal recorded in POC docs/reviews.
+  Global skill was not changed.
 
 - [x] Task 8: gate cross-profile readability and multilingual-heading parity
   against the exact ZG, ZC, LATIN, KR, and XU real PDFs. Shared evidence policy:

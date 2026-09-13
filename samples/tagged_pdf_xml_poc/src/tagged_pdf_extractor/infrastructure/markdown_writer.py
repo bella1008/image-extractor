@@ -4,6 +4,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 import math
+import html
 import os
 import re
 import tempfile
@@ -290,6 +291,19 @@ class MarkdownDocumentWriter:
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> list[str]:
+        if element.get("display-direction") is not None or element.get("direction-reason") is not None:
+            if (element.tag != "paragraph" or element.get("language") != "ARA"
+                    or element.get("display-direction") != "rtl"
+                    or element.get("direction-reason") != "source-glyph-numeric-condition"
+                    or not element.get("source-structure-path")
+                    or any(c.tag != "text" for c in cls._structural_children(element))):
+                raise ValueError("Invalid source numeric-condition direction")
+            from tagged_pdf_extractor.domain.africa_rtl_conditions import is_rtl_numeric_condition
+            text = cls._element_text(element)
+            if not is_rtl_numeric_condition(text):
+                raise ValueError("Invalid RTL numeric-condition text")
+            literal = html.escape(text, quote=False).replace("*", "&#42;")
+            return [f'<span dir="rtl">{literal}</span>']
         display_role = element.get("display-role")
         if (
             element.tag == "paragraph"

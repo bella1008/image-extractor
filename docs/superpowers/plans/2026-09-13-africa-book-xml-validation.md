@@ -19,6 +19,25 @@ Design: Keep Raw source order and MCID provenance. The exact AFRICA_L05 BOOK sco
 - [x] Recheck scopes: 21 common heading child-type groups match all languages. Jordan adds one heading, seven P containers and a 2x1 CE/declaration table only to ENG/ARA. Covers/contact/blank pages are separate.
 - [x] Exact fingerprinted source exception retains strict count=false and all three mismatches; changed SHA/profile/heading/level/table evidence fails closed.
 - [x] Final bundle xml_review_africa_20260913_recheck_final_v2. Focused 101 passed; full 1811 passed, 1 Windows symlink skip. Compileall and three public imports pass. 18505 source glyph origins match independent geometry within 0.02 pt.
-- [ ] Human native RTL presentation, meaning and image-only symbol review; no DB candidates.
+- [x] Follow-up closes native/meaning extraction warnings with source/render evidence.
+- [ ] User overall review including image-only symbol crops; no DB candidates.
 
 Verified repairs are saved in a local commit; its full recovery number is recorded in the final review_run.json. Structural extraction acceptance is distinct from human semantic approval.
+
+
+## Follow-up: ZG same-language review and decimal spacing
+
+Starting HEAD 28723bbcb45674e28611c4d9cdd28d14d52a20e7, clean. Compare ENG/FRA only with existing ZG XML; SPA/POR have no ZG match. User confirms British ENG context. Review global sug-manual-review skill as a proposal in this worktree.
+
+Source investigation: LTR Wi-Fi MCIDs 743/1599/2437/3276 use one TJ operator with kerning 116.7–117.1 before decimal punctuation, with no space glyph. pypdf inserts a space; ENG sentence formatting then breaks 7.125. Keep Raw unchanged. Collect opt-in LTR source runs only on AFRICA pages containing this candidate. Repair only under ENG/FRA/SPA/POR paragraph language, same MCID, one source operation, no ActualText, and exact whole-fragment agreement after deleting decimal-internal synthetic spaces. Do not join arbitrary words, source spaces, multiple operations or paragraphs. Glyph geometry is not required here: the single TJ operand supplies source character order and literal space evidence.
+
+- [x] Reproduce four real-language decimal failures before implementation.
+- [x] Add scoped source evidence and semantic repair with rejection tests.
+- [x] Re-extract to a new folder; compare fresh XML/MD and ZG sources.
+- [x] Clarify Arabic source fidelity versus renderer checks, and document skill review recommendations.
+- [x] Run focused/full/public import/compileall checks and independent review. Final recovery commit is recorded in review_run.json.
+
+
+RTL rendering probe reproduced three p30 inch-condition defects: neutral MCID punctuation remains in physical source order while numeric/model fragments are in logical order. Source crop and isolated browser trial validate neutral-fragment reversal ONLY inside a complete model/inch/value grammar; same-line glyph evidence must match each neutral fragment. The standalone comma MCID927 is to the right of model926 and must precede it in logical RTL. Preserve Raw, glyph evidence and source identities; use a typed RTL display hint on the three verified paragraphs. Do not change shared LTR island punctuation handling or other Arabic text. Add failing integration and rejected-evidence/Markdown validation tests, then render fresh Markdown spans against source crops before acceptance.
+
+Final follow-up: 141 focused and 1851 full tests passed; 1 Windows symlink skip. Four RTL spans rendered from actual Markdown through Marked/Edge and compared to source. LTR decimal and RTL punctuation/bracket defects are fixed in followup_final_v3; source image review remains.

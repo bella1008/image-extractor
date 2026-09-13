@@ -157,6 +157,12 @@ class TaggedPdfReader:
                     "Source glyph ownership and text matrices observed before RTL flushing.",
                     {"page_index": index, "lines": list(rtl_lines)}))
                 rtl_lines.clear()
+            decimal_lines = getattr(getattr(self.collector, "runner", None), "ltr_decimal_lines", None)
+            if decimal_lines:
+                diagnostics.append(Diagnostic("info", "africa_ltr_decimal_source",
+                    "Source glyph runs for LTR decimal kerning verification.",
+                    {"page_index": index, "lines": list(decimal_lines)}))
+                decimal_lines.clear()
 
         role_map = self._read_role_map(struct_root.get("/RoleMap"))
         children = self._walk_kids(

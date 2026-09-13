@@ -154,17 +154,23 @@ PDF ActualText, glyph 단위 복원, glyph advance와 figure 좌표로 혼합 �
 glyph 내부 발음기호 순서를 보존하며 불확실한 geometry는 재배치하지 않습니다.
 소수 조각도 원 glyph/ActualText/연속 좌표가 일치할 때만 합칩니다.
 
-**구조 검수 통과 / 사람 의미·표현 검토 필요**입니다. 공통 제목 21개와
+**추출 검수 통과 / 이미지 crop을 함께 사용하는 사용자 전반 검토 단계**입니다. 공통 제목 21개와
 각각의 하위 블록 종류·개수가 다섯 언어 모두 일치합니다. 본문 제목 수
 22/21/21/21/22는 그대로 기록하고 ENG/ARA에 실제 있는 Jordan 항목만
 PDF SHA·실제 제목/경로/표·공통 서명을 검증한 source exception으로 처리합니다.
 표지/연락처/빈 페이지는 별도로 집계합니다.
 
-최종 bundle: `outputs/xml_review_africa_20260913_recheck_final_v2`.
+최종 bundle: `outputs/xml_review_africa_20260913_followup_final_v3`.
 기본 XML/Markdown/report와 review_document.json, review_run.json을 확인했습니다.
-집중 101개, 전체 1811개 테스트 통과; Windows symlink 1개 skip입니다.
+집중 141개, 전체 1851개 테스트 통과; Windows symlink 1개 skip입니다.
 원문·crop·집계 정의·남은 Warning은
-[검토 기록](docs/reviews/2026-09-13-africa-book-xml-review.md)에 있습니다.
+[후속 검토 기록](docs/reviews/2026-09-13-africa-zg-same-language-and-rtl-review.md)에 있습니다.
+ZG의 동일 언어 ENG/FRA 공통 제목 21개를 비교했고 원본 차이를 별도로 확인했습니다.
+LTR 소수 공백과 Arabic 인치/괄호 결함을 source glyph로 수정했습니다.
+검증된 Arabic 숫자 조건 네 문단은 Semantic의 `display-direction`과 Markdown의
+`<span dir="rtl">`로 표시합니다. inline HTML의 dir 속성을 지원하는 Markdown
+미리보기를 사용하며 전체 `semantic_document.preview.html`과 PDF 비교 화면도 제공합니다.
+`sug-manual-review` 전역 스킬의 수정 제안은 docs/reviews의 skill audit에 있습니다.
 
 ## 교차 프로필 가독성 근거 정책
 

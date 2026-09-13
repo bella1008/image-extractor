@@ -108,6 +108,7 @@ class StructureElement:
     attributes: tuple[tuple[str, str], ...] = ()
     children: tuple[StructureElement | ContentFragment, ...] = ()
     source_structure_path: tuple[int, ...] | None = None
+    display_direction: Literal["rtl"] | None = None
 
 
 @dataclass(frozen=True)

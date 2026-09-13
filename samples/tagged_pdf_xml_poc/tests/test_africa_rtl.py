@@ -54,6 +54,57 @@ def test_mcid_spanning_multiple_source_lines_is_left_for_review():
     assert result.children[0] is fragment
 
 
+def geometry_line(glyphs, x, y, mcid=1):
+    item = line(glyphs, mcid)
+    item['runs'][0].update(baseline_y=y, font_name='source',
+        glyph_boxes=[[x+i*3,y,x+(i+1)*3,y+6.5] for i in range(len(glyphs))])
+    return item
+
+
+def test_complete_mcid_recovers_contiguous_glyphs_across_tiny_baseline_reset():
+    fragment = ContentFragment(30, 1, (' ضي الأر بالطر ف',))
+    lines = [geometry_line(['ي','ض','ر','لأ','ا',' ','ف'], 0, 100),
+             geometry_line(list('رطلاب'), 21, 100.0065)]
+    assert restore([fragment], lines).children[0].text == 'بالطرف الأرضي'
+
+
+@pytest.mark.parametrize('x,y', [(100,100.0065),(21,90),(0,100.0065)])
+def test_mcid_resets_do_not_join_other_columns_lines_or_backtracking(x,y):
+    fragment = ContentFragment(30, 1, (' ضي الأر بالطر ف',))
+    first = geometry_line(['ي','ض','ر','لأ','ا',' ','ف'],0,100)
+    assert restore([fragment],[first,geometry_line(list('رطلاب'),x,y)]).children[0] is fragment
+
+
+@pytest.mark.parametrize('missing_mark_style',[False,True])
+def test_contiguous_reset_keeps_an_actual_text_combining_glyph_atomic(missing_mark_style):
+    fragment = (ContentFragment(30,1,('ه','ِّ','وج'),text_styles=(TextStyle('source',6.5),TextStyle(None,None),TextStyle('source',6.5)))
+                if missing_mark_style else ContentFragment(30,1,('ه ِّوج',)))
+    first = geometry_line(['ه'],0,100)
+    mark = geometry_line(['ِّ'],3.2,99)
+    mark['runs'][0]['actual_text']=True
+    mark['runs'][0]['glyph_boxes']=[[3.2,99,3.2,105.5]]
+    last = geometry_line(['ج','و'],3,100)
+    assert restore([fragment],[first,mark,last]).children[0].text=='وجِّه'
+
+
+def test_contiguous_reset_still_rejects_actual_text_letters():
+    fragment=ContentFragment(30,1,('ه وج',))
+    first=geometry_line(['ه'],0,100);last=geometry_line(['ج','و'],3,100.0065)
+    last['runs'][0]['actual_text']=True
+    assert restore([fragment],[first,last]).children[0] is fragment
+
+
+@pytest.mark.parametrize('box', [[1000,99,1000,105.5],[3.2,500,3.2,506.5],
+                                  [1,99,1,105.5],[3.2,99,10,105.5]])
+def test_contiguous_reset_rejects_unanchored_combining_marks(box):
+    fragment=ContentFragment(30,1,('ه ِّوج',))
+    first=geometry_line(['ه'],0,100)
+    mark=geometry_line(['ِّ'],3.2,99); mark['runs'][0]['actual_text']=True
+    mark['runs'][0]['glyph_boxes']=[box]
+    last=geometry_line(['ج','و'],3,100)
+    assert restore([fragment],[first,mark,last]).children[0] is fragment
+
+
 def test_partial_mcid_evidence_never_drops_unobserved_text():
     fragment = ContentFragment(30, 1, ("ب تجن 12",))
     assert restore([fragment], [line(["ب", "ن", "ج", "ت"]) ]).children[0] is fragment

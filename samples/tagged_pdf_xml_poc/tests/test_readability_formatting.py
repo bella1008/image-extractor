@@ -14,6 +14,7 @@ from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     HeadingPromotion,
     InlineIconHint,
+    PdfProfile,
     LineBreakHint,
     SentenceBreakHint,
     StructureElement,
@@ -69,6 +70,38 @@ def _document(
         line_break_hints=line_break_hints,
         subtitle_hints=subtitle_hints,
     )
+
+
+@pytest.mark.parametrize('language', ['ENG','FRA','SPA','POR','ARA'])
+def test_africa_book_sentences_survive_verified_inline_icons(language):
+    paragraph = replace(_element('paragraph',
+        _styled_fragment('First sentence. Second sentence (',mcid=201),
+        _figure(), _styled_fragment(' > Settings > Support).',mcid=202)), language=language)
+    profile = PdfProfile('AFRICA_L05','BOOK',('ENG','FRA','SPA','POR','ARA'),5)
+    document = apply_readability_formatting(_document(paragraph),profile)
+    assert len(document.inline_icon_hints)==1
+    assert [(h.child_path,h.offsets) for h in document.sentence_break_hints]==[((0,0),(16,))]
+
+
+@pytest.mark.parametrize('token,kind,languages', [
+    ('ZG XN ZT_L05','BOOK',('ENG','DEU','FRA','ITA','DUT')),
+    ('AFRICA_L05','A2',('ENG','FRA','SPA','POR','ARA')),
+    ('AFRICA_L05','BOOK',('ENG','FRA','SPA','POR')),
+])
+def test_inline_sentence_opt_in_does_not_extend_to_other_profiles(token,kind,languages):
+    source = _document(_element('paragraph',
+        _styled_fragment('First sentence. Second sentence (',mcid=201),
+        _figure(), _styled_fragment(' > Settings > Support).',mcid=202)))
+    result = apply_readability_formatting(source,PdfProfile(token,kind,languages,len(languages)))
+    assert result.sentence_break_hints==()
+
+
+def test_africa_unknown_figure_still_blocks_paragraph_sentence_hints():
+    source = _document(_element('paragraph',
+        _styled_fragment('First sentence. Second sentence (',mcid=201),
+        _element('figure'), _styled_fragment(' > Settings > Support).',mcid=202)))
+    profile = PdfProfile('AFRICA_L05','BOOK',('ENG','FRA','SPA','POR','ARA'),5)
+    assert apply_readability_formatting(source,profile).sentence_break_hints==()
 
 
 def _list_body_document(

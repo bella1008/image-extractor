@@ -9,6 +9,49 @@ from tagged_pdf_extractor.cli import _build_use_case
 
 NAME = "BN68-25031G-00_SUG_Y26 TV ALL_AFRICA_L05_251230.0.pdf"
 
+
+@pytest.mark.parametrize("language,path", [
+    ("ENG", "0/2/0/3"), ("FRA", "0/4/0/3"), ("SPA", "0/6/0/3"),
+    ("POR", "0/8/0/3"), ("ARA", "0/12/0/3"),
+])
+def test_eco_sensor_sentences_break_before_navigation_icons(africa, language, path):
+    from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter as W
+    _, _, artifacts = africa
+    root = ET.parse(artifacts.semantic_xml).getroot()
+    paragraph = root.find(f".//*[@source-structure-path='{path}']")
+    assert paragraph.get("language") == language
+    assert len(paragraph.findall(".//figure[@display-role='inline-icon']")) == 2
+    # Two complete source sentences; the route remains inside sentence two.
+    breaks = paragraph.findall(".//text[@display-role='sentence-break-source']")
+    assert len(breaks) == 1
+    rendered = "\n\n".join(W._render_element(paragraph, {}))
+    assert rendered.count("<br>") == 1
+    assert rendered.count("[아이콘]") == 2
+
+
+@pytest.mark.parametrize('page,mcid,observed', [
+    (34,118,'يكن هذا الرمز موجودًا في أحد الأجهزة بسلك التيار'),
+    (34,120,'بالطرف الأرضي الواقي (التأريض).'),
+    (34,40,'الكهربائي. لا تلمس سلك التيار الكهربائي بأيدٍ مبتلة.'),
+    (33,156,'اليوم، مثل، في المطارات ومحطات القطار وغيرها، علمًا بأنه قد يؤدي'),
+    (33,190,'غير محدد، أو عند عدم التزام العميل باتّباع إرشادات تركيب المنتج.'),
+    (33,195,'الجبسية، اتصل بأقرب موزّع لديك للحصول على مزيد من المعلومات.'),
+    (33,277,'المتوفرة من أي شركة مصنِّعة أخرى إلى مواجهة صعوبات في استخدام'),
+    (32,315,'وجِّه دائمًا الأسلاك والكابلات المتصلة بالتلفزيون بحيث لا يمكن التعثر'),
+    (31,387,'يُرجى الاتصال بالسلطات المحلية للاطّلاع على المعلومات الخاصة بكيفية'),
+    (31,437,'أو مبيد الحشرات أو ملطِّف الجو أو المشحِّمات أو المنظفات؛ حيث قد'),
+])
+def test_arabic_source_lines_survive_small_glyph_position_resets(africa,page,mcid,observed):
+    from collections import Counter
+    _, _, artifacts=africa
+    root=ET.parse(artifacts.semantic_xml).getroot()
+    raw=ET.parse(artifacts.raw_xml).getroot()
+    text=root.find(f".//text[@page-index='{page}'][@mcid='{mcid}']")
+    source=raw.find(f".//fragment[@page-index='{page}'][@mcid='{mcid}']")
+    assert text.text.strip()==observed
+    assert Counter(c for c in text.text if not c.isspace())==Counter(
+        c for part in source.findall('part') for c in part.text or '' if not c.isspace())
+
 @pytest.fixture(scope="module")
 def africa(tmp_path_factory):
     source = Path(os.environ.get("TAGGED_PDF_AFRICA_SAMPLE", str(Path(__file__).resolve().parents[3] / "samples/SUG_RAW/TV_AFRICA" / NAME)))

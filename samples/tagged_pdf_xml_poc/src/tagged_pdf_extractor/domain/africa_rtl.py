@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict
 from dataclasses import replace
 import unicodedata as ud
+import math
 
 from tagged_pdf_extractor.domain.models import ContentFragment, Diagnostic
 
@@ -54,10 +55,13 @@ def restore_rtl_glyph_lines(children, diagnostics):
     candidates = defaultdict(list)
     line_orders = []
     proof = []
+    reset_candidates = {}
     for diagnostic in diagnostics:
         if diagnostic.code != "africa_rtl_glyph_source":
             continue
         page = diagnostic.context["page_index"]
+        reset_candidates.update({(page, mcid): value for mcid, value in
+                                 _contiguous_mcid_resets(diagnostic.context["lines"]).items()})
         eligible_lines = []
         for line in diagnostic.context["lines"]:
             if pure_rtl_line(line):
@@ -96,9 +100,10 @@ def restore_rtl_glyph_lines(children, diagnostics):
                           "direction": direction})
     def letters(text):
         return Counter(c for c in text if not c.isspace())
-    def glyph_styles(fragment):
+    def glyph_styles(fragment, *, reset_proven=False):
         return {style for part, style in zip(fragment.text_parts, fragment.text_styles)
-                if part.strip("\r\n")}
+                if part.strip("\r\n") and not (reset_proven and style.font_name is None
+                    and style.font_size is None and all(ud.category(c).startswith('M') for c in part))}
     replacements = {}
     for key, parts in candidates.items():
         fragment = source.get(key)
@@ -108,13 +113,23 @@ def restore_rtl_glyph_lines(children, diagnostics):
         text = parts[0]
         if letters(text) == letters(fragment.text) and len(glyph_styles(fragment)) <= 1:
             replacements[key] = text
+    reset_proof = []
+    reset_keys = set()
+    for key, (text, runs) in reset_candidates.items():
+        fragment = source.get(key)
+        if (key in replacements or key in duplicates or fragment is None
+                or letters(text) != letters(fragment.text) or len(glyph_styles(fragment,reset_proven=True)) > 1):
+            continue
+        replacements[key] = text
+        reset_keys.add(key)
+        reset_proof.append({"page_index": key[0], "mcid": key[1], "source_runs": runs})
     changes = []
     reorders = []
     def visit(node):
         if isinstance(node, ContentFragment):
             key = (node.page_index, node.mcid)
             value = replacements.get(key)
-            styles = glyph_styles(node)
+            styles = glyph_styles(node, reset_proven=key in reset_keys)
             if value is None or len(styles) > 1 or value == node.text:
                 return node
             changes.append({"page_index": key[0], "mcid": key[1],
@@ -141,5 +156,75 @@ def restore_rtl_glyph_lines(children, diagnostics):
     result = tuple(visit(child) for child in children)
     evidence = Diagnostic("warning", "africa_rtl_glyph_restored",
         "Pure RTL glyph lines restored in Semantic view; mixed/ambiguous lines remain source text.",
-        {"changes": changes, "reorders": reorders, "source_glyph_lines": proof})
+        {"changes": changes, "reorders": reorders, "source_glyph_lines": proof,
+         "contiguous_mcid_resets": reset_proof})
     return result, evidence
+
+
+def _contiguous_mcid_resets(lines):
+    """Recover one complete MCID split by tiny PDF text-position resets.
+
+    Evidence must be one physical baseline, one font and contiguous forward
+    glyph advances. Never join distinct columns, MCIDs or actual source lines.
+    Keep each PDF glyph's internal codepoints (ligatures/marks) together.
+    """
+    flattened = [(i, line, run) for i, line in enumerate(lines) for run in line['runs']]
+    groups = defaultdict(list)
+    for index, (line_id, line, run) in enumerate(flattened):
+        groups[run['mcid']].append((index, line_id, line, run))
+    result = {}
+    for mcid, items in groups.items():
+        if mcid is None or len({i[1] for i in items}) < 2:
+            continue
+        if [i[0] for i in items] != list(range(items[0][0], items[-1][0]+1)):
+            continue
+        runs = [i[3] for i in items]
+        # ActualText around a combining glyph is a PDF shaping aid here.
+        # It may not authorize letters; whole-MCID character equality below
+        # still checks that no source mark is added or removed.
+        direction_runs = [{**r, 'actual_text': False} if r.get('actual_text')
+                          and all(ud.category(c).startswith('M') for g in r['glyphs'] for c in g)
+                          else r for r in runs]
+        if (any(i[2]['pending_mark'] for i in items)
+                or len({r.get('font_name') for r in runs}) != 1
+                or fragment_direction({'runs': direction_runs, 'pending_mark': False}) != 'rtl'):
+            continue
+        glyphs = []
+        for run in runs:
+            boxes = run.get('glyph_boxes')
+            if (not boxes or len(boxes) != len(run['glyphs'])
+                    or any(len(b)!=4 or not all(math.isfinite(v) for v in b) for b in boxes)):
+                break
+            glyphs.extend(zip(run['glyphs'], boxes))
+        else:
+            bases = [(g,b) for g,b in glyphs if not all(ud.category(c).startswith('M') for c in g)]
+            if not bases:
+                continue
+            height = min(b[3]-b[1] for _,b in bases)
+            if height <= 0 or max(b[1] for _,b in bases)-min(b[1] for _,b in bases) > height*0.01:
+                continue
+            if any(right[0] <= left[0] or not -height*0.2 <= right[0]-left[2] <= height*0.2
+                   for (_,left),(_,right) in zip(bases,bases[1:])):
+                continue
+            if not _marks_anchor_to_following_base(glyphs, height):
+                continue
+            result[mcid] = (''.join(g for g,_ in reversed(glyphs)), runs)
+    return result
+
+
+def _marks_anchor_to_following_base(glyphs, height):
+    for index, (glyph, box) in enumerate(glyphs):
+        if not all(ud.category(c).startswith('M') for c in glyph):
+            continue
+        following = next(((g,b) for g,b in glyphs[index+1:]
+                          if not all(ud.category(c).startswith('M') for c in g)), None)
+        if following is None:
+            return False
+        base, anchor = following
+        if (not all(ud.bidirectional(c)=='AL' for c in base)
+                or abs(box[2]-box[0]) > height*0.01
+                or not anchor[0]-height*0.05 <= box[0] <= anchor[2]+height*0.05
+                or abs(box[1]-anchor[1]) > height*0.3
+                or abs((box[3]-box[1])-height) > height*0.01):
+            return False
+    return True

@@ -108,7 +108,7 @@ class ExtractDocument:
                 )
             document = replace(document, multilingual_heading_audit=audit)
         document = _detect_list_continuations(document)
-        document = apply_readability_formatting(document)
+        document = apply_readability_formatting(replace(document, readability_profile=profile))
         document = _remove_continuation_sentence_break_conflicts(document)
         baseline = self.baseline_reader.read_text(pdf_path)
         validation = self.writer.validate(document)

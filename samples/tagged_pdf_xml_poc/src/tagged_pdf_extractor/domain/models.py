@@ -533,6 +533,7 @@ class TaggedDocument:
     bookmark_page_bounds: tuple[BookmarkPageBounds, ...] = ()
     raw_children: tuple[StructureElement | ContentFragment, ...] | None = None
     source_sha256: str | None = None
+    readability_profile: PdfProfile | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.bookmark_page_bounds, tuple):

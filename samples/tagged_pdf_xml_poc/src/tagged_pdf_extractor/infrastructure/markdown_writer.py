@@ -1670,6 +1670,10 @@ class MarkdownDocumentWriter:
                         has_visible_text = True
                     if not visit_inline(child):
                         return False
+                elif cls._is_inline_icon(child):
+                    # Geometry and route context are validated for every icon
+                    # by _validate_display_evidence before rendering succeeds.
+                    continue
                 else:
                     return False
             return True
@@ -1705,6 +1709,8 @@ class MarkdownDocumentWriter:
                 if source:
                     tokens.append(_SemanticTextFragment(child, source))
             elif cls._is_preserved_line_break(child):
+                tokens.append(_SENTENCE_SOURCE_BOUNDARY)
+            elif cls._is_inline_icon(child):
                 tokens.append(_SENTENCE_SOURCE_BOUNDARY)
             elif child.tag in _SENTENCE_INLINE_TAGS:
                 tokens.extend(cls._sentence_inline_tokens(child))

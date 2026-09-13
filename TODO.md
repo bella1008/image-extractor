@@ -2,12 +2,14 @@
 
 ## Current Goal
 
-- 2026-09-13 AFRICA XML/Markdown 사용자 누락 지적 재검증: 현재 결과는
-  `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_omission_final_v3`.
-  비교 그림의 QN9**H:90 행 누락, ARA 마침표 16곳의 순서, 모델 별표의 Markdown 표시,
-  ARA p31 모델 구분 슬래시를 수정했다. 검토 근거/현재 상태는
-  `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-markdown-omission-audit.md`와
-  해당 출력의 `review_run.json`을 사용한다.
+- 2026-09-13 AFRICA ENG–ARA 전체 의미/구조 재검토: 현재 결과는
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_eng_ara_final`.
+  Eco Sensor 문장 줄바꿈(5개 언어), ARA 안전 문단의 glyph 조각 순서 10곳을 수정했다.
+  196개 ENG–ARA 본문 대응을 읽었으며 원문 의미 차이 9건과 이미지 검토를 남겼다.
+  특히 ARA p31 LS03H의 가로/세로 조건은 ENG와 반대인 원문 표현이다.
+  현재 보고서는 `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-eng-ara-full-review.md`,
+  HTML은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_eng_ara_full_review/semantic_document.preview.html`.
+  이전 누락 감사 결과/폴더는 그대로 보존했다.
 
 Build a local Python-based PDF manual review engine for SUG manuals.
 

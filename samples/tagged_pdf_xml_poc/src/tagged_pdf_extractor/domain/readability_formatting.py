@@ -9,6 +9,7 @@ import unicodedata
 from tagged_pdf_extractor.domain.models import (
     ContentFragment,
     InlineIconHint,
+    PdfProfile,
     SentenceBreakHint,
     StructureElement,
     TaggedDocument,
@@ -87,6 +88,10 @@ class _NavigationRouteEvidence:
 def detect_sentence_break_hints(
     document: TaggedDocument,
 ) -> tuple[SentenceBreakHint, ...]:
+    from tagged_pdf_extractor.domain.africa_book import africa_book_scope
+    profile = document.readability_profile
+    inline_icon_paths = (frozenset(h.child_path for h in detect_inline_icon_hints(document))
+                        if profile is not None and africa_book_scope(profile) else frozenset())
     line_break_paths = {hint.child_path for hint in document.line_break_hints}
     offsets_by_path: dict[tuple[int, ...], set[int]] = {}
 
@@ -94,6 +99,7 @@ def detect_sentence_break_hints(
         document.children,
         line_break_paths,
         document,
+        inline_icon_paths,
     ):
         text, locations = _join_flow(flow)
         for start in sentence_start_offsets(text):
@@ -126,11 +132,16 @@ def detect_inline_icon_hints(
     return tuple(hints_by_path[path] for path in sorted(hints_by_path))
 
 
-def apply_readability_formatting(document: TaggedDocument) -> TaggedDocument:
+def apply_readability_formatting(
+    document: TaggedDocument, profile: PdfProfile | None = None,
+) -> TaggedDocument:
+    if profile is not None:
+        document = replace(document, readability_profile=profile)
+    icons = detect_inline_icon_hints(document)
     return replace(
         document,
         sentence_break_hints=detect_sentence_break_hints(document),
-        inline_icon_hints=detect_inline_icon_hints(document),
+        inline_icon_hints=icons,
     )
 
 
@@ -472,6 +483,7 @@ def _eligible_flows(
     children: tuple[StructureElement | ContentFragment, ...],
     line_break_paths: set[tuple[int, ...]],
     document: TaggedDocument,
+    inline_icon_paths: frozenset[tuple[int, ...]] = frozenset(),
 ) -> tuple[tuple[_FragmentText, ...], ...]:
     flows: list[tuple[_FragmentText, ...]] = []
     heading_paths = {
@@ -529,21 +541,18 @@ def _eligible_flows(
                         line_break_paths,
                     )
                 )
+            paragraph_flows = (_leaf_paragraph_flows(
+                child, child_path, line_break_paths, inline_icon_paths,
+            ) if child.semantic_role == "paragraph" else ())
             if is_sentence_break_eligible_paragraph(
                 semantic_role=child.semantic_role,
                 source_role=child.source_role,
                 ancestor_roles=ancestors,
-                is_nonempty_inline_leaf=is_nonempty_inline_paragraph(child),
+                is_nonempty_inline_leaf=bool(paragraph_flows),
                 display_role=display_role,
                 heading_conflict=heading_conflict,
             ):
-                flows.extend(
-                    _leaf_paragraph_flows(
-                        child,
-                        child_path,
-                        line_break_paths,
-                    )
-                )
+                flows.extend(paragraph_flows)
             visit(
                 child.children,
                 child_path,
@@ -690,11 +699,13 @@ def _leaf_paragraph_flows(
     paragraph: StructureElement,
     paragraph_path: tuple[int, ...],
     line_break_paths: set[tuple[int, ...]],
+    inline_icon_paths: frozenset[tuple[int, ...]] = frozenset(),
 ) -> tuple[tuple[_FragmentText, ...], ...]:
     tokens = _inline_tokens(
         paragraph.children,
         paragraph_path,
         line_break_paths,
+        inline_icon_paths,
     )
     if _BLOCK_BOUNDARY in tokens:
         return ()
@@ -705,6 +716,7 @@ def _inline_tokens(
     siblings: tuple[StructureElement | ContentFragment, ...],
     parent_path: tuple[int, ...],
     line_break_paths: set[tuple[int, ...]],
+    inline_icon_paths: frozenset[tuple[int, ...]] = frozenset(),
 ) -> tuple[_FragmentText | object, ...]:
     tokens: list[_FragmentText | object] = []
     for index, child in enumerate(siblings):
@@ -717,9 +729,13 @@ def _inline_tokens(
         if child_path in line_break_paths:
             tokens.append(_SOURCE_BOUNDARY)
             continue
+        if child.semantic_role == "figure" and child_path in inline_icon_paths:
+            # Never infer a sentence across an image; inspect each text segment.
+            tokens.append(_SOURCE_BOUNDARY)
+            continue
         if child.semantic_role in _INLINE_ROLES:
             tokens.extend(
-                _inline_tokens(child.children, child_path, line_break_paths)
+                _inline_tokens(child.children, child_path, line_break_paths, inline_icon_paths)
             )
             continue
         tokens.append(_BLOCK_BOUNDARY)

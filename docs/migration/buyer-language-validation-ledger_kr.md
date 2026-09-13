@@ -1,0 +1,160 @@
+# 바이어·언어별 XML / ReviewDocument 검증 대장
+
+갱신: 2026-09-13. 이 작업장의 기록을 기준으로 시작한 대장입니다. 다른 작업장의 진행 상태를 모두 조사한 것은 아닙니다.
+
+## 기록 범위와 해석
+
+- 목록 기준: `metadata/pdf_profile_mapping/pdf_profile_mapping.json`의 23개 프로필, 73개 프로필·언어 조합. 프로필 하나에 여러 buyer_codes가 포함될 수 있으므로 바이어 수와 동일하지 않습니다.
+- 각 언어를 별도 행으로 관리합니다. 매핑 추가 시 빠진 행을 먼저 등록합니다. 매핑 밖 신규 파일도 발견 즉시 미등록 대상으로 추가합니다.
+- 아래는 프로필별 현황표이며 승인 범위는 반드시 별도 PDF/실행 기록에 묶습니다. 같은 바이어·언어라도 연도·모델·파일 해시가 다르면 추가 기록입니다.
+- `미조사`는 결과가 없다는 단정이 아닙니다. 다른 터미널의 결과와 승인 기록을 확인하기 전 상태입니다. 기존 GridCell 검수 완료를 XML 검수 완료로 옮기지 않습니다.
+- `기술 확인`은 기존 adapter 보존 검증 기록과 이번 파일 해시 대조를 뜻합니다. 원본 PDF 전체 내용의 사람 승인을 뜻하지 않습니다.
+- 사람 확인은 `미요청 / 확인 요청 / 일부 확인 / 확인 완료 / 수정 후 재확인`으로 기록합니다. 요청·부분 확인을 완료로 합치지 않습니다. 표본 검토 범위 밖은 미확인으로 남깁니다.
+- 이 문서는 작업/승인 기록입니다. 현재 runtime에 사람 승인 자동 차단 장치를 추가한 것은 아닙니다. 에이전트는 AGENTS 규칙에 따라 미확인 범위의 운영 승인·DB 반영을 진행하지 않습니다.
+
+## 전체 대상 목록
+
+| source_token | buyer_codes | 유형 | 언어 | XML 자동 검사 | ReviewDocument 보존 검사 | PDF 전체 사람 확인 | 요청 상태 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| AFRICA MENA_L05 | AFRICA;MENA | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA MENA_L05 | AFRICA;MENA | BOOK | FRA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA MENA_L05 | AFRICA;MENA | BOOK | SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA MENA_L05 | AFRICA;MENA | BOOK | POR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA MENA_L05 | AFRICA;MENA | BOOK | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA_L05 | AFRICA | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA_L05 | AFRICA | BOOK | FRA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA_L05 | AFRICA | BOOK | SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA_L05 | AFRICA | BOOK | POR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA_L05 | AFRICA | BOOK | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| ASIA_ENG | ASIA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| CE_L05 | CE | BOOK | RUS | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| CE_L05 | CE | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| CE_L05 | CE | BOOK | KAZ | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| CE_L05 | CE | BOOK | MON | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| CE_L05 | CE | BOOK | KYR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| KR_KOR | KR | A3 | KOR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| LATIN_L02 | LATIN | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| LATIN_L02 | LATIN | A2 | M-SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| MENA_L02 | MENA | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| MENA_L02 | MENA | A2 | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| PY_ENRU | PY | A2 | RUS | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| PY_ENRU | PY | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| SQ MI_HEAR | SQ;MI | A2 | HEB | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| SQ MI_HEAR | SQ;MI | A2 | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| TK_ARA | TK | A3 | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| TK_L02 | TK | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| TK_L02 | TK | A2 | TUR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| UA_ENG | UA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | FRA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | POR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | DEU | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | SWE | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | DAN | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | NOR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | FIN | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | CAT | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | GLG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XC_L12 | XC | BOOK | EUS | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XD_INS | XD | A3 | INS | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | HUN | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | POL | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | GRE | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | BUL | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | CRO | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | CZE | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | SLK | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | ROM | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | SER | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | ALB | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | MKD | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | SLV | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | LAT | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | LTU | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XH_L16 | XH | BOOK | EST | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XT_L02 | XT | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XT_L02 | XT | A2 | THA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XU_ENG | XU | A3 | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-2 |
+| XY_ENG | XY | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| ZA_ENG | ZA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| ZC_L02 | ZC | A2 | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 확인 요청 2026-09-13 | BASE-1 |
+| ZC_L02 | ZC | A2 | C-FRA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 확인 요청 2026-09-13 | BASE-1 |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DEU | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | FRA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ITA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DUT | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
+| ZW_TPE | ZW | A3 | TPE | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| ZX_L02 | ZX | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| ZX_L02 | ZX | A2 | M-SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+
+ZG/XN/ZT 공통 표지의 언어 미배정 텍스트 조각 9개는 위 5언어 확인에 포함시키지 않습니다. 별도 확인 대상이며, 표지/그림 등 언어 미배정 요소가 언어별 집계 밖에서 빠지지 않도록 관리합니다.
+
+## 실물 실행 근거
+
+아래 해시는 2026-09-13에 원본 PDF와 완료 기록 및 산출물을 대조했습니다. 기존 변환 검증 기록: [XML adapter 실물 검증](2026-09-10-xml-adapter-validation_kr.md).
+
+### BASE-1: ZC_L02
+
+- PDF: [BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf](<../../samples/SUG_RAW/TV_ZC/BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf>)
+- 언어: ENG, C-FRA. 표지 등 미배정 범위는 별도 기록.
+- 추출/변환 폴더: [outputs/xml_review_v2_zc_20260910](../../outputs/xml_review_v2_zc_20260910/)
+- PDF SHA-256: `e7ae68f7e314b500425bb81608aa1f3a1fe683ee555d7ea38db705b42649c4a1`
+- Semantic XML SHA-256: `8cecca8b0f41583e961a486d2bd157b81c9a59d7f4bc7ec87e47d5a0b1d6354c`
+- MD SHA-256: `0acc00334f304e45ba764ebd646bb17e9c1269ef86dbf77a872235d7de575dbc`
+- ReviewDocument SHA-256: `c7dd27a0b23b520b29cb6815bc88480c5d3d710f6cdc5e4fed077621dbb7f1db`
+- 추출 완료 기록 SHA-256: `3d2be6ad88564824e1866fd8040b0972d8920eb135f129498b8650014580264a`
+- 추출 계약: `tagged-pdf-xml/8405120`; 추출기 SHA-256: `fc64c8bc8e7909b27ed413fc802736b3a48fa5463f6316dba9e43f882ed3aa1e`.
+- 사람 전체 확인자/확인일/확인 범위/승인 근거: 미확정. 자동 검사 수치로 채우지 않음.
+
+### BASE-2: XU_ENG
+
+- PDF: [BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf](<../../samples/SUG_RAW/TV_XU/BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf>)
+- 언어: ENG. 표지 등 미배정 범위는 별도 기록.
+- 추출/변환 폴더: [outputs/xml_review_v2_xu_20260910](../../outputs/xml_review_v2_xu_20260910/)
+- PDF SHA-256: `f6d2a6d7c19672bcba92e1bfaaee364cdbcd8538006057a52af2f4ebb7e047f7`
+- Semantic XML SHA-256: `7b06b466493de44b1af6578159cb142e4125963c85bb70adcb2a85dba54c75a9`
+- MD SHA-256: `bd38072f0c60b53ae4da332288e7a5f7b96b88e9c194242b208b48aa3a218e9e`
+- ReviewDocument SHA-256: `4df631346da8875bca7425c0cfa995c0657a3e03a5b54f0b7aef4aa34af52074`
+- 추출 완료 기록 SHA-256: `84fcee2ba244510930b775f1ea422637e41f554fdaece5cdfe3a2776d19e347d`
+- 추출 계약: `tagged-pdf-xml/8405120`; 추출기 SHA-256: `fc64c8bc8e7909b27ed413fc802736b3a48fa5463f6316dba9e43f882ed3aa1e`.
+- 사람 전체 확인자/확인일/확인 범위/승인 근거: 미확정. 자동 검사 수치로 채우지 않음.
+
+### BASE-3: ZG XN ZT_L05
+
+- PDF: [BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf](<../../samples/SUG_RAW/TV_ZG/BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf>)
+- 언어: ENG, DEU, FRA, ITA, DUT. 표지 등 미배정 범위는 별도 기록.
+- 추출/변환 폴더: [outputs/xml_review_v2_zg_20260910_r2](../../outputs/xml_review_v2_zg_20260910_r2/)
+- PDF SHA-256: `931ccb150d7166812d071e13842f2268fc42ce653fbbcf7f0ae1d83e1979bb54`
+- Semantic XML SHA-256: `c94c77732cc945d143e52706db9b53249f4bbf1e6f7f921d53bb37ebf6d5e522`
+- MD SHA-256: `5fa04ca3632eeea6507beaab3e93ae3761d80264222594a366adb58c0e92a2bc`
+- ReviewDocument SHA-256: `35bc9b088e63443b82c8d04c58f4e915f0786b45556e708ad37c6440add8b811`
+- 추출 완료 기록 SHA-256: `b90e5f51dec93480dc3a50f73d84151227053f1d97c7b583ebcde1ed26b3d56e`
+- 추출 계약: `tagged-pdf-xml/8405120`; 추출기 SHA-256: `fc64c8bc8e7909b27ed413fc802736b3a48fa5463f6316dba9e43f882ed3aa1e`.
+- 사람 전체 확인자/확인일/확인 범위/승인 근거: 미확정. 자동 검사 수치로 채우지 않음.
+
+## 기존 사람 확인 기록의 취급
+
+TODO의 과거 기록에는 ZG의 DEU/FRA 문장 경계 및 ITA 부제 등 일부 항목, XU의 Warranty/RF 표 등에 대한 manual review가 있습니다. 이를 삭제하거나 “한 번도 검토하지 않음”으로 바꾸지 않습니다. 다만 확인자·정확한 PDF/추출본·확인 범위가 연결되기 전에는 전체 언어/전체 페이지의 누락 검수 완료로 확대하지 않습니다. 기존 ZC 기준 검수에도 같은 원칙을 적용합니다.
+
+## 현재 확인 요청
+
+### HR-20260913-001: ZC_L02 / ENG · C-FRA
+
+- 요청일: 2026-09-13. 대상: BASE-1의 `BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf`.
+- 이유: adapter/통합 실행 보존 검사는 있으나 현재 기록만으로 원본 전체 누락 검수의 사람 확인 범위를 확정할 수 없음.
+- 비교 자료: BASE-1 원본 PDF와 [동일 추출본 MD](../../outputs/xml_review_v2_zc_20260910/semantic_document.md).
+- 확인 범위: ENG와 C-FRA를 각각 확인. 제목·본문 누락, 읽는 순서, 표의 행/셀과 목록 항목, 그림·아이콘 주변 문구의 연결. 표지·뒷표지 포함. MD로 그림을 판단할 수 없으면 PDF 그림 위치를 지정하여 추가 근거 요청.
+- 응답 기록: ENG 확인자/날짜/확인한 페이지·항목/미확인 범위/지적 사항 = 미응답. C-FRA도 별도로 미응답.
+- 과거 동일 PDF/동일 추출본에서 이미 확인했다면 그 기록과 범위를 연결하여 중복 검수를 줄임. 단순 “진행해”는 원본 검수 승인으로 보지 않음.
+- 운영 반영: 사람 확인 범위가 확정되기 전에는 이 기술 검사 결과만으로 운영 승인이나 DB 후보 승인을 부여하지 않음. 독립적인 개발·자동 대조는 계속 가능.
+
+## 새 실행을 등록하는 방법
+
+새 PDF마다 다음 필드를 가진 기록을 추가하고 위 프로필·언어 행에서 연결합니다. 여러 실행은 과거 기록을 지우지 않고 추가합니다.
+
+`기록 ID / source_token / buyer_codes / doc_type / 언어 / PDF 파일명·SHA-256 / 추출 폴더·완료기록 해시 / 추출기 버전 / XML·MD·ReviewDocument 해시 / 자동 검사 결과와 범위 / 사람 확인 요청일·사유 / 확인자·확인일 / PDF 페이지·노드·확인 항목 / 부분·전체 범위 / 미해결 사항 / 재확인 상태 / 승인 대화·문서 근거`
+
+원본 내용이나 추출 구조가 바뀌면 영향받는 언어/구간의 사람 확인을 `수정 후 재확인`으로 남깁니다. 바이트/구조 동일성이 입증된 단순 실행 경로 변경은 기존 확인 근거와 동일성 검사를 연결할 수 있지만, 승인 범위를 넓힐 수는 없습니다.

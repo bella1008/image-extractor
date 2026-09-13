@@ -12,6 +12,7 @@
 - [승인된 마이그레이션 방향](docs/superpowers/specs/2026-09-10-xml-review-v2-design_kr.md)
 - [ReviewDocument 구조](docs/architecture/xml-review-v2-architecture_kr.md)
 - [비개발자용: 전체 흐름·ReviewDocument의 역할·사람이 확인하는 시점](docs/architecture/review-document-explained_kr.md)
+- [바이어·언어별 검증 상태와 사람 확인 요청 대장](docs/migration/buyer-language-validation-ledger_kr.md)
 - [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
 - [현재 진행 상태](TODO.md)
 

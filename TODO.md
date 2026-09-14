@@ -2,6 +2,14 @@
 
 ## Current Goal
 
+- 2026-09-14 CE 5언어 전원 불릿의 연속문장 및 서비스 비용 하위 조건 소속을 수정 검증했다.
+  최신 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_paragraph_final`.
+  최신 HTML: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_paragraph_review/semantic_document.preview.html`.
+  수정부 PDF/HTML 비교: 같은 폴더의 `paragraph_findings.html`.
+  전체 1,980 passed / 1 symlink skip, CE 관련 65개 포함. Hard gate 잔여 0.
+  원문 표현 6건 사용자 PASS 및 향후 편집 에이전트 사례는 승계한다.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-ce-paragraph-ownership.md`.
+
 - 2026-09-14 AFRICA 전 언어 사용자 검토 완료를 확정했다. CE_L05 BOOK의 실제 북마크 순서
   RUS → ENG → KAZ → MON → KYR로 추출 구조 검증을 진행했고 Hard gate는 해소했다.
   최종 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_final`.

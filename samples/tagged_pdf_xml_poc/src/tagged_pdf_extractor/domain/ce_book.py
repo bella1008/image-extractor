@@ -83,13 +83,22 @@ def prepare_ce_book(document, profile):
          'contact_language': 'RUS', 'cover_titles': titles})
     prepared = replace(document, raw_children=document.children, children=children,
                        bookmark_page_bounds=corrected, diagnostics=(*document.diagnostics, evidence, numeric))
-    return replace(prepared, text_display_hints=(*prepared.text_display_hints, *_standby_labels(children)))
+    from tagged_pdf_extractor.domain.ce_paragraph_ownership import repair_ce_paragraph_ownership
+    prepared = repair_ce_paragraph_ownership(prepared, profile)
+    return replace(prepared, text_display_hints=(*prepared.text_display_hints, *_standby_labels(prepared.children)))
 
 
 def _standby_labels(children):
     """Keep the two source-only subtitles visible without inventing common headings."""
     titles = {'RUS':'Режим ожидания', 'KAZ':'Күту режимі'}
     hints = []
+    paths = {}
+    def index_paths(nodes, parent_path=()):
+        for i, node in enumerate(nodes):
+            if not isinstance(node, ContentFragment):
+                paths[id(node)] = (*parent_path, i)
+                index_paths(node.children, paths[id(node)])
+    index_paths(children)
     for parent in elements(children):
         for title, body in zip(parent.children, parent.children[1:]):
             if (isinstance(title, ContentFragment) or isinstance(body, ContentFragment)
@@ -102,7 +111,7 @@ def _standby_labels(children):
                     or title_style.font_size <= body_style.font_size
                     or title.source_structure_path is None):
                 continue
-            hints.append(TextDisplayHint(title.source_structure_path, 'strong_label',
+            hints.append(TextDisplayHint(paths[id(title)], 'strong_label',
                 title_style.font_weight, title_style.font_size, body_style.font_weight,
                 body_style.font_size, 'ce_source_standby_subtitle_larger_than_following_body'))
     return tuple(hints)

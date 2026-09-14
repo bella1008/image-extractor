@@ -88,3 +88,48 @@ def test_source_standby_subtitle_is_distinguished_from_body(ce, language, title)
     assert len(nodes) == 1 and nodes[0].get('language') == language
     assert nodes[0].get('display-role') == 'strong-label'
     assert W._render_element(nodes[0], {}) == [f'**{title}**']
+
+
+@pytest.mark.parametrize("index,language", enumerate(LANGUAGES))
+def test_power_continuation_is_inside_first_bullet_with_sentence_break(ce, index, language):
+    _, _, artifacts = ce
+    root = E.parse(artifacts.semantic_xml).getroot()
+    raw = E.parse(artifacts.raw_xml).getroot()
+    source = next(n for n in raw.iter('element')
+                  if n.get('source-role') == 'UnorderList_1-Bullet'
+                  and n.get('page-index') == str(index * 8 + 1))
+    target = next(n for n in root.iter() if n.get('object-ref') == source.get('object-ref'))
+    parents = {c:n for n in root.iter() for c in n}
+    assert parents[target].tag == 'list_body'
+    assert parents[parents[target]].tag == 'list_item'
+    assert target.get('language') == language and target.get('source-structure-path')
+    source_text = ' '.join(''.join(t.text or '' for t in source.iter('part')).split())
+    rendered = '\n'.join(W._render_list_item(parents[parents[target]], {}, indent=''))
+    assert '<br>\n  ' + source_text in rendered
+    assert rendered.count('\n- ') == 0
+
+
+@pytest.mark.parametrize("index,language", enumerate(LANGUAGES))
+def test_fee_conditions_are_children_of_the_source_introduction(ce, index, language):
+    _, _, artifacts = ce
+    root = E.parse(artifacts.semantic_xml).getroot()
+    raw = E.parse(artifacts.raw_xml).getroot()
+    source = [n for n in raw.iter('element') if n.get('source-role') == 'UnorderList_1-Bullet'
+              and n.get('page-index') == str(index * 8 + 7)
+              and ''.join(t.text or '' for t in n.iter('part')).strip().startswith('(')]
+    assert len(source) == 2
+    parents = {c:n for n in root.iter() for c in n}
+    items = [next(n for n in root.iter() if n.get('object-ref') == s.get('object-ref')) for s in source]
+    assert all(parents[n].tag == 'list_item' for n in items)
+    lists = [parents[parents[n]] for n in items]
+    assert lists[0] is lists[1] and lists[0].tag == 'list'
+    group = parents[lists[0]]
+    assert group.tag == 'section'
+    assert [n.tag for n in group if n.tag != 'attributes'] == ['paragraph', 'list']
+    intro = group.find('paragraph')
+    assert ''.join(t.text or '' for t in intro.iter('text')).strip().endswith(':')
+    rendered = '\n\n'.join(W._render_element(group, {}))
+    for item in items:
+        label = ''.join(t.text or '' for t in item.iter('text')).strip()[:3]
+        assert '- ' + label in rendered
+        assert item.get('language') == language and item.get('source-structure-path')

@@ -66,3 +66,7 @@ gate는 네 파일의 hash를 확인한 동일 바이트를 파싱한다. reader
 ReviewDocument의 node_id/XML 위치는 실행 결과의 추적용이다. common_id/check_id에 합치지 않는다. checklist의 evidence_file은 과거 승인 근거이므로 감사에 보존하고, 새 PDF의 검출 근거는 실행 결과에서 별도로 관리한다.
 
 한 common_id에서 영어 문단 하나와 프랑스어 문단 두 개가 대응할 수 있다. 이 관계는 검토용 alignment 자료에 `left_node_ids`, `right_node_ids` 배열로 표현하며 node나 DB 행을 강제로 동일 개수로 만들지 않는다. 원문 의미 동등성은 자동 번역으로 승인하지 않는다.
+
+다국어 QA는 참고 의견 전용 후속 기능이다. 어느 바이어가 어떤 영문 기준에서 번역되는지는 `buyer -> buyer_group -> english_base` 기본 구조로 관리하고, ZC처럼 buyer 전용 영문 기준이 필요한 경우 `buyer_overrides`로 예외 처리한다. 예외는 번역 승인이나 DB 적용 조건이 아니라 비교 기준 선택을 위한 메타데이터다.
+
+모델명이나 회사 시스템 값으로 확인해야 하는 항목은 고정 체크리스트 문구처럼 처리하지 않는다. ReviewDocument는 `Specifications` 하위의 볼드체 항목명, 모델 조건, 값, 쉼표로 이어진 복수 모델값, 원문 순서와 근거를 보존한다. 실제 모델별 Pass/Fail은 후속 사양 검토 기능이 외부 기준값을 받은 뒤 수행하며, 기준값이 없으면 `확인 필요`로 남긴다.

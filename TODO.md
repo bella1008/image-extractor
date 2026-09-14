@@ -2,6 +2,14 @@
 
 ## Current Goal
 
+- 2026-09-14 CE 문장 소속 수정 후 기존 바이어 5개/15언어를 재추출하여 같은 두 관계를 감사했다.
+  새 미해결 구조 문제: ZC C-FRA 및 AFRICA ARA의 전원 연속문장 2곳,
+  ZG ENG/DEU/FRA/ITA/DUT 및 XU ENG 비용 하위 조건 6곳. 총 8개는 아직 수정 전이다.
+  기존 회귀 PASS가 해당 관계 전체의 검토 완료를 의미하지 않음을 확인했다.
+  감사: `samples/tagged_pdf_xml_poc/outputs/xml_review_cross_buyer_20260914_ownership_audit/ownership_findings.html`.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-cross-buyer-paragraph-ownership-audit.md`.
+  CE 5언어의 직전 수정 결과는 유지되며, 이 감사로 다른 바이어를 재승인하지 않는다.
+
 - 2026-09-14 CE 5언어 전원 불릿의 연속문장 및 서비스 비용 하위 조건 소속을 수정 검증했다.
   최신 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_paragraph_final`.
   최신 HTML: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_paragraph_review/semantic_document.preview.html`.

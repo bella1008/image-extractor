@@ -18,7 +18,9 @@ def _general_evidence_row(row):
             json.dumps(detail,ensure_ascii=False,sort_keys=True,separators=(',', ':'))]
 
 
-def build_combined_review_view(report):
+def build_combined_review_view(report, *, version='combined-review-excel-view/2'):
+    if version not in ('combined-review-excel-view/1', 'combined-review-excel-view/2'):
+        raise ValueError('unsupported combined view version')
     checklist_view = validate_combined_report(report)
     item_view = build_item_excel_view(report['items'])
     summary = report['summary']
@@ -57,7 +59,29 @@ def build_combined_review_view(report):
              '태그 종류','PDF 페이지','XML 경로','상세 근거 JSON'],rows=evidence,
              widths=[27,30,20,90,55,65,12,95,255],freeze='C2'),
     ]
+    if version == 'combined-review-excel-view/2':
+        # Display current-run evidence, never historical author proposals as facts.
+        item_rows = []
+        for item in report['items']['items']:
+            pages = sorted({entry['page_index'] + 1
+                            for window in item['candidates'] for part in window['parts']
+                            for entry in part.get('evidence', [])
+                            if type(entry.get('page_index')) is int})
+            item_rows.append([item['item_key'], item['required_text'],
+                              '\n\n'.join(w['text'] for w in item['candidates']),
+                              '검토 필요', item['description'], ', '.join(map(str, pages)),
+                              '\n\n'.join(w['text'] for w in item['condition_candidates']), ''])
+        sheets[2] = dict(name='Item Results', headers=['고정 항목 키', '기준 문구', '현재 원문',
+                         '검토 판정', '설명', 'PDF 페이지', '조건 안내 원문 (후보)', '검토 메모'],
+                         rows=item_rows, widths=[30, 58, 58, 14, 65, 12, 65, 45], freeze='B2')
+        sheets[3]['headers'] = sheets[3]['headers'][:-1]
+        sheets[3]['rows'] = [row[:-1] for row in sheets[3]['rows']]
+        sheets[3]['widths'] = sheets[3]['widths'][:-1]
+        summary_rows[8] = ['사용 방법', '근거 확인',
+                           'Source Evidence에서 체크 ID 또는 고정 항목 키로 필터하세요. PDF 페이지는 파일의 실제 페이지 순서입니다.']
+        summary_rows[9] = ['검토 범위', '포함 기능',
+                           '체크리스트 문구 조사. PDF 변경 비교·회사 사양 검토·다국어 의미/맞춤법 검토는 미실행.']
     for sheet in sheets:
         sheet['rows'] = [[_cell(value) for value in row] for row in sheet['rows']]
-    return {'schema_version':'combined-review-excel-view/1','decision_status':'not_evaluated',
+    return {'schema_version':version,'decision_status':'not_evaluated',
             'activation_status':'draft_only','sheets':sheets}

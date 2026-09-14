@@ -15,7 +15,7 @@ def api():
 def test_four_sheets_keep_children_and_separate_counts(combined_inputs):
     report=build_combined_report(*combined_inputs)
     before=deepcopy(report)
-    view=api().build_combined_review_view(report)
+    view=api().build_combined_review_view(report, version='combined-review-excel-view/1')
     assert view['schema_version']=='combined-review-excel-view/1'
     assert [s['name'] for s in view['sheets']]==['Summary','Checklist Results','Item Results','Source Evidence']
     summary,checklist,items,evidence=view['sheets']
@@ -65,3 +65,29 @@ def test_general_evidence_compacts_only_repeated_display_fields():
                                           'node_details','visual_node_ids','caveats')}
     assert '\n' not in cells[-1] and ': ' not in cells[-1]
     assert row==before
+
+
+def test_reviewer_view_shows_current_item_evidence_without_internal_json(combined_inputs):
+    report = build_combined_report(*combined_inputs)
+    before = deepcopy(report)
+    view = api().build_combined_review_view(report)
+    assert view['schema_version'] == 'combined-review-excel-view/2'
+    sheet = view['sheets'][2]
+    rows = [dict(zip(sheet['headers'], row, strict=True)) for row in sheet['rows']]
+    for shown, original in zip(rows, report['items']['items'], strict=True):
+        assert shown['현재 원문'] == '\n\n'.join(w['text'] for w in original['candidates'])
+        assert shown['조건 안내 원문 (후보)'] == '\n\n'.join(w['text'] for w in original['condition_candidates'])
+        pages = sorted({e['page_index'] + 1 for w in original['candidates'] for p in w['parts']
+                        for e in p.get('evidence', []) if type(e.get('page_index')) is int})
+        assert shown['PDF 페이지'] == ', '.join(map(str, pages))
+        assert shown['검토 판정'] == '검토 필요' and shown['검토 메모'] == ''
+    assert not any('원장' in h for h in sheet['headers'])
+    evidence = view['sheets'][3]
+    assert '상세 근거 JSON' not in evidence['headers']
+    assert len(evidence['rows']) == report['summary']['checklist_evidence_count'] + report['summary']['item_evidence_count']
+    assert report == before
+
+
+def test_unknown_view_version_is_rejected(combined_inputs):
+    with pytest.raises(ValueError, match='version'):
+        api().build_combined_review_view(build_combined_report(*combined_inputs), version='future/99')

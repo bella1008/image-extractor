@@ -144,9 +144,11 @@ def read_completed_combined_review(output_dir):
     report = parse_json(snapshots[output/FILES[0]])
     validate_combined_report(report)
     require(_json(receipt.get('summary')) == _json(report['summary']), 'combined receipt summary differs')
-    view = build_combined_review_view(report)
-    require(_json(parse_json(snapshots[output/FILES[1]])) == _json(view), 'combined view differs')
+    saved_view = parse_json(snapshots[output/FILES[1]])
+    require(isinstance(saved_view, dict), 'invalid combined view')
+    view = build_combined_review_view(report, version=saved_view.get('schema_version'))
+    require(_json(saved_view) == _json(view), 'combined view differs')
     validate_workbook(snapshots[output/FILES[2]],view)
     _unchanged(snapshots)
     ready()
-    return {'report':report,'json_bytes':snapshots[output/FILES[0]],'excel_bytes':snapshots[output/FILES[2]]}
+    return {'report':report,'view':view,'json_bytes':snapshots[output/FILES[0]],'excel_bytes':snapshots[output/FILES[2]]}

@@ -102,3 +102,31 @@ def test_reader_detects_mutation_during_workbook_validation(combined_inputs,tmp_
         (output/'review_report.json').write_bytes(b'changed')
     monkeypatch.setattr(service,'validate_workbook',changed)
     with pytest.raises(ValueError): service.read_completed_combined_review(output)
+
+
+def test_reader_keeps_legacy_view_and_exact_workbook(combined_inputs, tmp_path, monkeypatch):
+    service = api()
+    build = service.build_combined_review_view
+    with monkeypatch.context() as patch:
+        patch.setattr(service, 'build_combined_review_view',
+                      lambda report: build(report, version='combined-review-excel-view/1'))
+        output = export(tmp_path, patch)
+    original = (output / 'review_report.xlsx').read_bytes()
+    screen = service.read_completed_combined_review(output)
+    assert screen['view']['schema_version'] == 'combined-review-excel-view/1'
+    assert screen['excel_bytes'] == original
+
+
+def test_rehashed_view_cannot_change_displayed_source(combined_inputs, tmp_path, monkeypatch):
+    output = export(tmp_path, monkeypatch)
+    service = api()
+    view_path = output / 'review_report_view.json'
+    view = json.loads(view_path.read_bytes())
+    view['sheets'][2]['rows'][0][2] = 'invented evidence'
+    view_path.write_text(service._json(view))
+    receipt_path = output / service.COMPLETE
+    receipt = json.loads(receipt_path.read_bytes())
+    receipt['artifacts'][view_path.name] = service.digest(view_path.read_bytes())
+    receipt_path.write_text(service._json(receipt))
+    with pytest.raises(ValueError, match='combined view differs'):
+        service.read_completed_combined_review(output)

@@ -15,19 +15,19 @@ WRAPPER = ROOT / 'scripts/build_combined_review_excel.mjs'
 
 
 def view():
-    item = ['고정 항목 키', '기준 문구', '검토 판정', '설명', '검토 메모',
-            '원장 모델 조건 제안', '원장 제안 근거', '원장 검토 메모']
+    item = ['고정 항목 키', '기준 문구', '현재 원문', '검토 판정', '설명',
+            'PDF 페이지', '조건 안내 원문 (후보)', '검토 메모']
     specs = [
         ('Summary', ['구분', '항목', '값'], [['범위', f'항목{i}', i] for i in range(11)], [20, 28, 110], 'A2'),
         ('Checklist Results', ['체크 ID', '기준 제목', '언어', '기준 문구', '현재 원문', '검토 판정', '설명', 'PDF 페이지', '검토 메모'],
          [['CHK-002', '구성품', 'ENG', '=1+1', "'literal", '검토 필요', '+cmd', '1', '@SUM(A1)']],
          [28, 30, 12, 58, 70, 14, 65, 12, 45], 'B2'),
-        ('Item Results', item, [['key', '=1+1', '검토 필요', '설명', '', '+cmd', '@SUM(A1)', "'literal"]],
-         [30, 58, 14, 65, 45, 55, 55, 45], 'B2'),
-        ('Source Evidence', ['체크 ID', '고정 항목 키', '근거 종류', '현재 원문', '현재 노드 ID', '태그 종류', 'PDF 페이지', 'XML 경로', '상세 근거 JSON'],
-         [['CHK-002', 'key', '구성품 문구', '=1+1', 'node1', 'paragraph', '1', '/p', '{"text":"=1+1"}']],
-         [28, 30, 18, 85, 45, 20, 12, 70, 230], 'C2')]
-    return dict(schema_version='combined-review-excel-view/1', activation_status='draft_only',
+        ('Item Results', item, [['key', '=1+1', '=1+1', '검토 필요', '+cmd', '1', '@SUM(A1)', "'literal"]],
+         [30, 58, 58, 14, 65, 12, 65, 45], 'B2'),
+        ('Source Evidence', ['체크 ID', '고정 항목 키', '근거 종류', '현재 원문', '현재 노드 ID', '태그 종류', 'PDF 페이지', 'XML 경로'],
+         [['CHK-002', 'key', '구성품 문구', '=1+1', 'node1', 'paragraph', '1', '/p']],
+         [28, 30, 18, 85, 45, 20, 12, 70], 'C2')]
+    return dict(schema_version='combined-review-excel-view/2', activation_status='draft_only',
                 decision_status='not_evaluated', sheets=[dict(name=n, headers=h, rows=r, widths=w, freeze=f)
                                                        for n, h, r, w, f in specs])
 

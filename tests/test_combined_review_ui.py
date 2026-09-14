@@ -32,6 +32,9 @@ def test_one_folder_shows_separate_counts_tables_and_downloads(completed):
     assert [m.value for m in app.metric] == ['59', '14']
     assert len(app.get('download_button')) == 2
     assert all('검토 메모' not in t.value.columns for t in app.dataframe)
+    assert '현재 원문' in app.dataframe[1].value.columns
+    assert '조건 안내 원문 (후보)' in app.dataframe[1].value.columns
+    assert '원장 모델 조건 제안' not in app.dataframe[1].value.columns
     assert not any(element.proto.allow_html for element in app.markdown)
 
 

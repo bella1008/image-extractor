@@ -15,6 +15,7 @@
 - [바이어·언어별 검증 상태와 사람 확인 요청 대장](docs/migration/buyer-language-validation-ledger_kr.md)
 - [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
 - [현재 진행 상태](TODO.md)
+- [검토자용 통합 Excel v2 표본과 사용법](docs/migration/2026-09-14-reviewer-report-v2_kr.md)
 
 공통 데이터 모델과 XML adapter·품질 gate·새 추출 실행 경로를 구현했다. 아래 파일럿 기능은 제공하지만 전체 DB v2·Excel·Streamlit의 운영 전환이 완료된 것은 아니다.
 기존 Markdown은 XML POC의 writer로 계속 생성한다. 새 실행 경로는 기존 네 파일에 `review_document.json`과 완료 기록 `review_run.json`을 추가한다.

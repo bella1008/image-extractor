@@ -5,7 +5,6 @@ from pathlib import Path
 import streamlit as st
 
 from src.combined_review_service import read_completed_combined_review
-from src.combined_review_view import build_combined_review_view
 from src.combined_review_input import prepare_combined_request
 from src.combined_review_run import run_combined_review
 from src.review_service import ROOT
@@ -62,7 +61,7 @@ def main():
     try:
         run_dir = Path(run_text).resolve()
         screen = read_completed_combined_review(run_dir)
-        view = build_combined_review_view(screen['report'])
+        view = screen['view']
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         st.session_state.pop('loaded_combined_path', None)
         st.error('결과를 검증하지 못했습니다. 현재 화면과 다운로드를 사용할 수 없습니다.')

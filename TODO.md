@@ -6,7 +6,10 @@
   RUS → ENG → KAZ → MON → KYR로 추출 구조 검증을 진행했고 Hard gate는 해소했다.
   최종 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_final`.
   검토 시작: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_review/review_start.html`.
-  다음 사람 검토는 CE 원문 표현 6건(특히 MON 안전 문구)과 현지어 의미 검토이며 DB 작업이 아니다.
+  사용자가 CE 원문 표현 6건 모두 원장 충실도 PASS로 처리했다. 향후 번역/편집 에이전트 평가 사례는
+  `docs/review_agent_cases/ce_l05_translation_editorial_cases.json`에 보존했다.
+  에이전트 제작 시 6건 탐지, 숫자 표기 오탐 방지, TRAMS 승인 KYR 용어 조회를 평가에 반영한다.
+  현재 에이전트 구현이나 DB 작업을 시작한 것은 아니다.
   보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-ce-book-xml-review.md`.
 
 - 2026-09-14 ARA p35 안전 표의 한 줄 경고 문구에서 강제 문장 줄바꿈을 제거했다.

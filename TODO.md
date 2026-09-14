@@ -33,7 +33,7 @@
 - [x] 통합 레포트 설계 승인 및 CLI 구현: 같은 PDF/XML/추출 완료 기록/context의 완료 관찰 두 개 → 자체 보관 통합 JSON → 4시트 Excel 하나. 상위59건/그중 구성품상세14건 분리 집계, 근거40+26행/내부제외488행/원본547행 보존. 기존 DB/부모 판정/관찰 원문 변경 없음. 실제 결과 `outputs/combined_review_zc_20260913_r2/`, 사용법 `docs/migration/2026-09-13-combined-review-report_kr.md`.
 - [x] 통합 결과의 단일 폴더 Streamlit 조회/다운로드 및 공통 실행 명령 연결. PDF 추출 1회/동일 bundle 공유, `_internal`에 중간 자료 보관, 최상위 통합 Excel/JSON. 일반 관찰 v2 JSON-only/구 v1 HTML 검증 호환, 전체 실행 lock/실패 차단, 다운로드 때 재검증. 실제 `outputs/combined_review_zc_20260913_shared_r2/`. 사용법 `docs/migration/2026-09-13-combined-run-ui_kr.md`.
 - [x] 비개발자용 전체 구조·ReviewDocument/adapter/검토 기능 책임·사람 검토 시점 설명 문서 작성: `docs/architecture/review-document-explained_kr.md`. 기술적 보존 검사와 PDF 원문/업무 승인을 구분.
-- [ ] 화면 PDF 업로드/검토 실행 연결: 현재는 완료된 결과 보기 전용이며 기존 CLI가 PDF 검토를 실행함. 모델 적용 승인/DB 편집은 별도 단계.
+- [x] 2026-09-14 화면 PDF 경로 입력/검토 실행 연결. 실행마다 새 폴더, 완료 결과 자동 조회/다운로드, 실패 시 이전 결과 비움, launcher XML 패키지 경로 자동 설정. 현재 ZC ENG 체크리스트 관찰 전용. 사용법 `docs/migration/2026-09-14-checklist-ui-run_kr.md`. 실제 결과 `outputs/checklist_20260914_130233_25dbc00a184e/`; XML/MD/ReviewDocument 기존 검증본과 바이트 동일. 모델 적용 승인/DB 편집은 별도 단계.
 - [x] 항목별 HTML 실물 렌더 검수 후속은 사용자 요청으로 종료. 새 결과의 HTML 생성/노출을 중단하고 과거 파일은 보관한다.
 - [ ] 모델 적용 자료/사람 승인 절차와 실제 항목 evaluator 연결. 현재 원장의 제안문은 실행하지 않음. 다른 9개 item_list 행은 아직 분리 정의 전.
 - [ ] 사용자 Excel 개정 실물 검수 및 배포용 writer 연결. 최초 양식을 최종 승인본으로 간주하지 않음.
@@ -66,6 +66,9 @@ Excel 양식 초안: `outputs/review_excel_prototype_20260911/review_report_prot
 메인의 기존 DB와 기존 추출기는 변경하지 않았다. 자세한 복구 범위는 `docs/migration/2026-09-10-recovery_kr.md`를 읽는다.
 
 ## Current Goal
+
+2026-09-14 화면 실행 연결 검증: 관련58 passed, compileall(src/tests/scripts) 및 diff check 통과.
+실제 AppTest PDF→Excel/JSON→자동 표시 59/14행·다운로드2개 확인. 전체 suite 재실행은 아님.
 
 Build a local Python-based PDF manual review engine for SUG manuals.
 

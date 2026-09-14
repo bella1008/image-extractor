@@ -24,7 +24,12 @@ def main(argv=None):
     parser.add_argument('--combined', action='store_true', help='Open the combined checklist/item viewer')
     args = parser.parse_args(argv)
     env = os.environ.copy()
-    env['PYTHONPATH'] = str(ROOT) + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
+    package_paths = [str(ROOT)]
+    if args.combined:
+        package_paths.append(str(ROOT / 'samples/tagged_pdf_xml_poc/src'))
+    if env.get('PYTHONPATH'):
+        package_paths.append(env['PYTHONPATH'])
+    env['PYTHONPATH'] = os.pathsep.join(package_paths)
     app = 'combined_review_app.py' if args.combined else 'item_review_app.py'
     command = [sys.executable, '-m', 'streamlit', 'run', str(ROOT / 'scripts' / app),
                '--server.address', '127.0.0.1', '--browser.gatherUsageStats', 'false',

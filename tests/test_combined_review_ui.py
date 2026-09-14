@@ -23,7 +23,7 @@ def app_test():
 def test_one_folder_shows_separate_counts_tables_and_downloads(completed):
     app = app_test()
     assert not app.exception and not app.dataframe and not app.get('download_button')
-    assert len(app.text_input) == 1
+    assert app.text_input(key='combined_pdf_path') is not None
     app.text_input[0].set_value(str(completed)).run()
     assert not app.dataframe
     app.button[0].click().run()
@@ -81,3 +81,53 @@ def test_launcher_selects_combined_viewer_on_localhost(monkeypatch):
     assert launcher.main(['--combined', '--port', '8765']) == 0
     assert seen[0][4] == str(APP)
     assert seen[0][seen[0].index('--server.address') + 1] == '127.0.0.1'
+
+
+def test_screen_runs_real_workflow_and_loads_new_folder(checked_bundle, tmp_path, monkeypatch):
+    import shutil
+    from src import xml_review_run, combined_review_service
+    from tests.test_combined_review_service import builder
+    monkeypatch.setenv('ITEM_REVIEW_NODE', __import__('sys').executable)
+    monkeypatch.setenv('ITEM_REVIEW_NODE_MODULES', str(tmp_path))
+    monkeypatch.setattr(combined_review_service, '_run_builder', builder)
+    calls = []
+    def extract(pdf, output, mapping):
+        calls.append(pdf)
+        shutil.copytree(checked_bundle[0], output)
+    monkeypatch.setattr(xml_review_run, 'extract_review_document', extract)
+    app = app_test()
+    app.text_input(key='combined_pdf_path').set_value(str(checked_bundle[2]))
+    app.text_input(key='combined_output_root').set_value(str(tmp_path / 'results'))
+    app.button(key='run_combined').click().run()
+    assert not app.exception and not app.error
+    assert [m.value for m in app.metric] == ['59', '14']
+    first = Path(app.text_input(key='combined_run_path').value)
+    assert first.parent == tmp_path / 'results'
+    assert (first / 'review_report.xlsx').is_file()
+    assert len(calls) == 1
+    app.button(key='run_combined').click().run()
+    second = Path(app.text_input(key='combined_run_path').value)
+    assert second != first and first.is_dir()
+    assert len(calls) == 2 and not app.exception
+
+
+@pytest.mark.parametrize('failure', ['input', 'workflow'])
+def test_failed_run_clears_old_downloads(completed, checked_bundle, monkeypatch, failure):
+    from src import combined_review_run
+    def fail(request):
+        raise RuntimeError('test workflow failure')
+    monkeypatch.setattr(combined_review_run, 'run_combined_review', fail)
+    monkeypatch.delenv('ITEM_REVIEW_NODE', raising=False)
+    app = app_test()
+    app.text_input(key='combined_run_path').set_value(str(completed))
+    app.button(key='load_combined').click().run()
+    assert app.get('download_button')
+    if failure == 'workflow':
+        monkeypatch.setenv('ITEM_REVIEW_NODE', __import__('sys').executable)
+        monkeypatch.setenv('ITEM_REVIEW_NODE_MODULES', str(completed.parent))
+        app.text_input(key='combined_pdf_path').set_value(str(checked_bundle[2]))
+    app.button(key='run_combined').click().run()
+    assert app.error and not app.exception
+    assert not app.get('download_button') and not app.dataframe
+    if failure == 'workflow':
+        assert any('test workflow failure' in element.value for element in app.text)

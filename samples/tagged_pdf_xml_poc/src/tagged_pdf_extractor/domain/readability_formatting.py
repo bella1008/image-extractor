@@ -485,6 +485,8 @@ def _eligible_flows(
     document: TaggedDocument,
     inline_icon_paths: frozenset[tuple[int, ...]] = frozenset(),
 ) -> tuple[tuple[_FragmentText, ...], ...]:
+    from tagged_pdf_extractor.domain.africa_safety_label_readability import safety_label_paths
+    kept_labels = safety_label_paths(document)
     flows: list[tuple[_FragmentText, ...]] = []
     heading_paths = {
         path
@@ -543,7 +545,7 @@ def _eligible_flows(
                 )
             paragraph_flows = (_leaf_paragraph_flows(
                 child, child_path, line_break_paths, inline_icon_paths,
-            ) if child.semantic_role == "paragraph" else ())
+            ) if child.semantic_role == "paragraph" and child_path not in kept_labels else ())
             if is_sentence_break_eligible_paragraph(
                 semantic_role=child.semantic_role,
                 source_role=child.source_role,

@@ -10,6 +10,17 @@ from tagged_pdf_extractor.cli import _build_use_case
 NAME = "BN68-25031G-00_SUG_Y26 TV ALL_AFRICA_L05_251230.0.pdf"
 
 
+def test_arabic_safety_hazard_label_remains_one_markdown_line(africa):
+    from tagged_pdf_extractor.infrastructure.markdown_writer import MarkdownDocumentWriter as W
+    _, _, artifacts=africa
+    root=ET.parse(artifacts.semantic_xml).getroot()
+    label=root.find(".//*[@source-structure-path='0/17/1/6/0/1/0/0']")
+    source='خطر التعرض لصدمة كهربائية. لا تفتحه.'
+    assert ''.join(t.text or '' for t in label.iter('text'))==source
+    assert not label.findall(".//text[@display-role='sentence-break-source']")
+    assert '\n\n'.join(W._render_element(label,{}))==source
+
+
 @pytest.mark.parametrize("language,path", [
     ("ENG", "0/2/0/3"), ("FRA", "0/4/0/3"), ("SPA", "0/6/0/3"),
     ("POR", "0/8/0/3"), ("ARA", "0/12/0/3"),

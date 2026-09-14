@@ -2,7 +2,13 @@
 
 ## Current Goal
 
-- 2026-09-13 AFRICA ENG–ARA 전체 의미/구조 재검토: 현재 결과는
+- 2026-09-14 ARA p35 안전 표의 한 줄 경고 문구에서 강제 문장 줄바꿈을 제거했다.
+  현재 출력은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260914_ara_safety_label_final`,
+  HTML은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260914_ara_safety_label_review/semantic_document.preview.html`.
+  원문/표 구조는 동일하며 기존 전체 의미 검토를 승계한다. 사용자 ARA 직접 검토 의견도 기록했다.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-africa-safety-label-line.md`.
+
+- 2026-09-13 AFRICA ENG–ARA 전체 의미/구조 재검토: 당시 결과는
   `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_eng_ara_final`.
   Eco Sensor 문장 줄바꿈(5개 언어), ARA 안전 문단의 glyph 조각 순서 10곳을 수정했다.
   196개 ENG–ARA 본문 대응을 읽었으며 원문 의미 차이 9건과 이미지 검토를 남겼다.

@@ -1,6 +1,6 @@
 # 바이어·언어별 XML / ReviewDocument 검증 대장
 
-갱신: 2026-09-13. 이 작업장의 기록을 기준으로 시작한 대장입니다. 다른 작업장의 진행 상태를 모두 조사한 것은 아닙니다.
+갱신: 2026-09-14. 이 작업장의 기록을 기준으로 시작한 대장입니다. 다른 작업장의 진행 상태를 모두 조사한 것은 아닙니다.
 
 ## 기록 범위와 해석
 
@@ -79,8 +79,8 @@
 | XU_ENG | XU | A3 | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-2 |
 | XY_ENG | XY | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | ZA_ENG | ZA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| ZC_L02 | ZC | A2 | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 확인 요청 2026-09-13 | BASE-1 |
-| ZC_L02 | ZC | A2 | C-FRA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 확인 요청 2026-09-13 | BASE-1 |
+| ZC_L02 | ZC | A2 | ENG | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002 |
+| ZC_L02 | ZC | A2 | C-FRA | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002 |
 | ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
 | ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DEU | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
 | ZG XN ZT_L05 | ZG;XN;ZT | BOOK | FRA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
@@ -148,9 +148,18 @@ TODO의 과거 기록에는 ZG의 DEU/FRA 문장 경계 및 ITA 부제 등 일�
 - 비교 자료: BASE-1 원본 PDF와 [동일 추출본 MD](../../outputs/xml_review_v2_zc_20260910/semantic_document.md).
 - 확인 범위: ENG와 C-FRA를 각각 확인. 제목·본문 누락, 읽는 순서, 표의 행/셀과 목록 항목, 그림·아이콘 주변 문구의 연결. 표지·뒷표지 포함. MD로 그림을 판단할 수 없으면 PDF 그림 위치를 지정하여 추가 근거 요청.
 - 자동 추가 점검 2026-09-13: PyMuPDF PDF 텍스트와 MD/ReviewDocument 문자열을 토큰 기준으로 대조했다. PDF 2페이지, PDF 토큰 7,951개, MD 토큰 8,572개, ReviewDocument 문자열 토큰 168,165개. 3글자 이상 고유 PDF 토큰 중 MD와 ReviewDocument 양쪽의 미포함 후보는 `boîtierwireless` 1개이며, MD/ReviewDocument에는 `boîtier Wireless`처럼 띄어쓰기 있는 형태가 존재하므로 의미 누락으로 보지 않는다. 이 점검은 자동 텍스트 보존 확인이며 그림·아이콘 시각 요소와 사람의 전체 원문 승인으로 확대하지 않는다.
-- 응답 기록: ENG 확인자/날짜/확인한 페이지·항목/미확인 범위/지적 사항 = 미응답. C-FRA도 별도로 미응답.
+- 응답 기록 2026-09-14: 사용자가 `outputs/xml_review_v2_zc_20260910/semantic_document.md` 기준으로 ZC ENG와 C-FRA의 나머지 텍스트 확인을 완료했다고 보고했다. 표지의 연락처 제목 `Contact Samsung world wide` 및 `Comment contacter Samsung dans le monde`는 원본 PDF에서 bold로 보이나 현재 MD에는 bold가 표시되지 않는다고 지적했다.
 - 과거 동일 PDF/동일 추출본에서 이미 확인했다면 그 기록과 범위를 연결하여 중복 검수를 줄임. 단순 “진행해”는 원본 검수 승인으로 보지 않음.
 - 운영 반영: 사람 확인 범위가 확정되기 전에는 이 기술 검사 결과만으로 운영 승인이나 DB 후보 승인을 부여하지 않음. 독립적인 개발·자동 대조는 계속 가능.
+
+### HR-20260914-002: 표지 연락처 제목 bold 표시 후속
+
+- 요청일: 2026-09-14. 대상: ZC_L02 ENG/C-FRA에서 사용자가 확인한 표지 연락처 제목.
+- 사용자 확인: MD에는 `Contact Samsung world wide`와 `Comment contacter Samsung dans le monde`가 일반 텍스트로 표시되지만 원본 PDF에서는 bold로 보인다.
+- 자동 확인: `BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf`의 해당 두 줄은 PyMuPDF 기준 모두 `font=SamsungOne-600`, `size=7.0`으로 추출된다. 현재 `semantic_document.md`에는 각각 491행, 999행에 일반 텍스트로 출력된다.
+- 범위 참고: 샘플 PDF의 `Contact Samsung world wide` 계열 표지 연락처 제목도 확인 가능한 범위에서는 `SamsungOne-600`으로 관찰된다. 다만 모든 언어의 번역 제목을 사람이 확인했다는 뜻은 아니며, 언어별 추출 결과가 생길 때 같은 이슈를 계속 기록한다.
+- 현재 판단: 문구 누락이 아니라 표지 연락처 제목의 시각적 강조 표시가 MD/ReviewDocument 표시 계층에 아직 반영되지 않은 표시 품질 이슈다.
+- 후속 방향: ReviewDocument의 표지 연락처 제목 역할 또는 MD display hint로 보존할지 결정한 뒤, 특정 문구 하드코딩 없이 font weight와 표지 연락처 구조를 함께 사용해 fail-closed로 처리한다.
 
 ## 새 실행을 등록하는 방법
 

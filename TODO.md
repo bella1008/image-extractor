@@ -7,7 +7,8 @@
 - [x] 2026-09-14 검토자용 통합 Excel 표시 v2: 구성품 기준/현재 원문/페이지/조건 안내 후보 나란히 표시. 원장 제안과 상세 JSON은 내부 보존, Summary12행/4시트 유지. 저장 버전별 구/신 검증 및 화면 일치. 실제 표본 `outputs/checklist_reviewer_zc_20260914_v2/`, JSON 기존 실행과 바이트 동일. 관련54개 및 실제 작성2개 통과, 전 셀·4시트 렌더·실제 AppTest 확인. 설명 `docs/migration/2026-09-14-reviewer-report-v2_kr.md`. 사용성 회신은 가능할 때 받으며 내부 검증을 막지 않음.
 
 - [x] 2026-09-13 사용자 요구: 원본 PDF 누락/구조 확인이 필요하면 반드시 명시적으로 요청. [바이어·언어 검증 대장](docs/migration/buyer-language-validation-ledger_kr.md)에 매핑23프로필/73언어조합 등록, 기존3 PDF/8조합의 adapter 근거 연결. 나머지는 다른 작업장 포함 미조사이며 미추출로 단정하지 않음.
-- [ ] HR-20260913-001: ZC_L02 ENG/C-FRA 원본 전체 확인 범위 확정 요청. 기존 확인 기록이 있으면 동일 PDF/추출본·범위로 연결. 무응답/진행 허가는 검수 승인이 아님.
+- [x] HR-20260913-001: ZC_L02 ENG/C-FRA MD 텍스트 확인 기록 연결. 2026-09-14 사용자가 `outputs/xml_review_v2_zc_20260910/semantic_document.md` 기준으로 ENG/C-FRA 나머지 텍스트 확인 완료를 보고함. 표지 연락처 제목 bold 표시는 별도 후속 HR-20260914-002로 분리.
+- [ ] HR-20260914-002: 표지 연락처 제목 bold 표시 후속. ZC `Contact Samsung world wide`/`Comment contacter Samsung dans le monde`는 원본 PDF에서 `SamsungOne-600`, MD 491/999행에서는 일반 텍스트. 샘플 PDF의 Contact Samsung 계열도 확인 가능한 범위에서 `SamsungOne-600`. 특정 문구 하드코딩 없이 표지 연락처 구조+font weight 기반 display hint 또는 ReviewDocument 역할 보존으로 처리할지 설계.
 - [ ] 다른 작업장의 바이어별 추출 및 사람 확인 기록을 대장에 합산. 신규 RTL(ARA/HEB), 비라틴 문자, BOOK/복합 표/표지 사례를 ReviewDocument 설계 회귀 표본으로 확보. 전체 조합 완료 전에 기본 설계/개발은 진행하되 미확인 조합을 운영 지원으로 선언하지 않음.
 
 - [x] 복구 커밋 `4b001ff9a1a4f8ef91bed75a8ab314f4189d9476`, XML 기준 `840512002a80a12b19c712116530ab69b1459c3a` 보존.

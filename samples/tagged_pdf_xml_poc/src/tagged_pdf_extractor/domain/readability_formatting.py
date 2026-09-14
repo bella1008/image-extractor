@@ -89,9 +89,10 @@ def detect_sentence_break_hints(
     document: TaggedDocument,
 ) -> tuple[SentenceBreakHint, ...]:
     from tagged_pdf_extractor.domain.africa_book import africa_book_scope
+    from tagged_pdf_extractor.domain.ce_book import ce_book_scope
     profile = document.readability_profile
     inline_icon_paths = (frozenset(h.child_path for h in detect_inline_icon_hints(document))
-                        if profile is not None and africa_book_scope(profile) else frozenset())
+                        if profile is not None and (africa_book_scope(profile) or ce_book_scope(profile)) else frozenset())
     line_break_paths = {hint.child_path for hint in document.line_break_hints}
     offsets_by_path: dict[tuple[int, ...], set[int]] = {}
 

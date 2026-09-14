@@ -54,6 +54,10 @@ class TaggedPdfReader:
         from dataclasses import replace
         from hashlib import sha256
         from tagged_pdf_extractor.domain.africa_book import africa_book_scope
+        from tagged_pdf_extractor.domain.ce_book import ce_book_scope
+        if ce_book_scope(profile):
+            from tagged_pdf_extractor.infrastructure.ce_source_evidence import add_ce_source_evidence
+            return add_ce_source_evidence(self.read(pdf_path), profile)
         from tagged_pdf_extractor.infrastructure.africa_actual_text import ActualTextRunner
         if not africa_book_scope(profile):
             return self.read(pdf_path)

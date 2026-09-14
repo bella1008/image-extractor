@@ -2,6 +2,13 @@
 
 ## Current Goal
 
+- 2026-09-14 AFRICA 전 언어 사용자 검토 완료를 확정했다. CE_L05 BOOK의 실제 북마크 순서
+  RUS → ENG → KAZ → MON → KYR로 추출 구조 검증을 진행했고 Hard gate는 해소했다.
+  최종 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_final`.
+  검토 시작: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_review/review_start.html`.
+  다음 사람 검토는 CE 원문 표현 6건(특히 MON 안전 문구)과 현지어 의미 검토이며 DB 작업이 아니다.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-ce-book-xml-review.md`.
+
 - 2026-09-14 ARA p35 안전 표의 한 줄 경고 문구에서 강제 문장 줄바꿈을 제거했다.
   현재 출력은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260914_ara_safety_label_final`,
   HTML은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260914_ara_safety_label_review/semantic_document.preview.html`.

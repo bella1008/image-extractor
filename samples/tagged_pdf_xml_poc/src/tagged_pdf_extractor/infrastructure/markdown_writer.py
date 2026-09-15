@@ -148,6 +148,10 @@ class _ListLabelAnalysis:
     retained_content_labels: tuple[str, ...]
 
 
+class _TrustedInlineHtml(str):
+    """HTML emitted only after validating an explicit semantic inline marker."""
+
+
 class MarkdownDocumentWriter:
     def write(
         self,
@@ -297,7 +301,8 @@ class MarkdownDocumentWriter:
                     or element.get("display-direction") != "rtl"
                     or element.get("direction-reason") != "source-glyph-numeric-condition"
                     or not element.get("source-structure-path")
-                    or any(c.tag != "text" for c in cls._structural_children(element))):
+                    or any(c.tag != "text" and not cls._has_source_space_marker(c)
+                           for c in cls._structural_children(element))):
                 raise ValueError("Invalid source numeric-condition direction")
             from tagged_pdf_extractor.domain.africa_rtl_conditions import is_rtl_numeric_condition
             text = cls._element_text(element)
@@ -426,7 +431,7 @@ class MarkdownDocumentWriter:
             if text:
                 lines.extend(
                     f"{indent}{line}"
-                    for line in cls._escape_physical_lines(text).splitlines()
+                    for line in cls._escape_event_parts(text_parts).splitlines()
                 )
             text_parts.clear()
 
@@ -470,7 +475,7 @@ class MarkdownDocumentWriter:
             nonlocal has_content, marker_emitted
             text = cls._join_text_parts(text_parts)
             if text:
-                escaped_lines = cls._escape_physical_lines(text).splitlines()
+                escaped_lines = cls._escape_event_parts(text_parts).splitlines()
                 if marker_emitted:
                     lines.extend(
                         f"{content_indent}{line}" for line in escaped_lines
@@ -568,7 +573,9 @@ class MarkdownDocumentWriter:
         for child in cls._structural_children(element):
             if child in excluded:
                 continue
-            if child.tag == "figure" and cls._is_inline_icon(child):
+            if cls._has_ltr_model_marker(child) or cls._has_source_space_marker(child):
+                yield "text", child
+            elif child.tag == "figure" and cls._is_inline_icon(child):
                 yield "text", child
             elif child in promoted:
                 yield "block", child
@@ -669,6 +676,9 @@ class MarkdownDocumentWriter:
         table: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> str:
+        if any(a.get('name') == 'review-table' and a.get('value') == 'source-spans'
+               for a in table.findall('attributes/attribute')):
+            return cls._render_source_spans_table(table)
         if any(element in promoted for element in table.iter()):
             return cls._render_table_with_promotions(table, promoted)
 
@@ -715,6 +725,31 @@ class MarkdownDocumentWriter:
             return "\n".join((rendered_rows[0], separator, *rendered_rows[1:]))
 
         return cls._render_complex_table(table_children, promoted)
+
+    @classmethod
+    def _render_source_spans_table(cls, table: ET.Element) -> str:
+        """HTML in Markdown retains explicitly reviewed PDF merged-cell geometry."""
+        allowed={'table','table_row','table_cell','table_header','paragraph','span','link','text','attributes','attribute'}
+        if any(n.tag not in allowed for n in table.iter()):
+            raise ValueError('source-spans table contains unreviewed nested structure')
+        lines=['<table>']
+        for row in cls._structural_children(table):
+            if row.tag!='table_row':raise ValueError('source-spans requires rows')
+            lines.append('<tr>')
+            for cell in cls._structural_children(row):
+                if cell.tag not in _CELL_TAGS:raise ValueError('source-spans requires cells')
+                attrs=[]
+                for a in cell.findall('attributes/attribute'):
+                    name=a.get('name','').lstrip('/').lower()
+                    if name in {'rowspan','colspan'}:
+                        value=a.get('value','')
+                        if not value.isdigit() or not 1<=int(value)<=1000:raise ValueError('invalid source table span')
+                        attrs.append(f' {name}="{int(value)}"')
+                value=html.escape(cls._element_text(cell)).replace(_SENTENCE_BREAK,'<br>')
+                tag='th' if cell.tag=='table_header' else 'td'
+                lines.append(f'<{tag}{"".join(attrs)}>{value}</{tag}>')
+            lines.append('</tr>')
+        return '\n'.join((*lines,'</table>'))
 
     @classmethod
     def _render_complex_table(
@@ -841,7 +876,9 @@ class MarkdownDocumentWriter:
         promoted: dict[ET.Element, dict[str, object]],
     ) -> Iterable[tuple[str, ET.Element]]:
         for child in cls._structural_children(element):
-            if child.tag == "figure" and cls._is_inline_icon(child):
+            if cls._has_ltr_model_marker(child) or cls._has_source_space_marker(child):
+                yield "text", child
+            elif child.tag == "figure" and cls._is_inline_icon(child):
                 yield "text", child
             elif child in promoted or child.tag in {"list", "table", "figure"}:
                 yield "block", child
@@ -850,8 +887,9 @@ class MarkdownDocumentWriter:
             else:
                 yield from cls._mixed_content_events(child, promoted)
 
-    @staticmethod
+    @classmethod
     def _has_mixed_content_descendant(
+        cls,
         element: ET.Element,
         promoted: dict[ET.Element, dict[str, object]],
     ) -> bool:
@@ -860,6 +898,7 @@ class MarkdownDocumentWriter:
             and (
                 descendant in promoted
                 or descendant.tag in {"list", "table", "figure"}
+                or cls._has_ltr_model_marker(descendant)
             )
             for descendant in element.iter()
         )
@@ -877,7 +916,7 @@ class MarkdownDocumentWriter:
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
             if text:
-                blocks.append(cls._escape_physical_lines(text))
+                blocks.append(cls._escape_event_parts(text_parts))
             text_parts.clear()
 
         def flush_deferred_figures() -> None:
@@ -923,9 +962,9 @@ class MarkdownDocumentWriter:
             text = cls._join_text_parts(text_parts)
             if text:
                 if heading_emitted:
-                    blocks.append(cls._escape_physical_lines(text))
+                    blocks.append(cls._escape_event_parts(text_parts))
                 else:
-                    escaped_lines = cls._escape_physical_lines(text).splitlines()
+                    escaped_lines = cls._escape_event_parts(text_parts).splitlines()
                     blocks.append(
                         "\n".join(
                             (f"{'#' * level} {escaped_lines[0]}", *escaped_lines[1:])
@@ -998,7 +1037,7 @@ class MarkdownDocumentWriter:
         def flush_text() -> None:
             text = cls._join_text_parts(text_parts)
             if text:
-                blocks.append(cls._escape_physical_lines(text))
+                blocks.append(cls._escape_event_parts(text_parts))
             text_parts.clear()
 
         for kind, value in events:
@@ -1029,6 +1068,9 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _element_text_parts(cls, element: ET.Element) -> Iterable[str]:
+        if cls._has_source_space_marker(element):
+            yield cls._source_space_text(element)
+            return
         if cls._is_preserved_line_break(element):
             yield _PRESERVED_LINE_BREAK
             return
@@ -1036,6 +1078,8 @@ class MarkdownDocumentWriter:
             yield f" {_INLINE_ICON_TOKEN} "
             return
         if element.tag == "text":
+            if element.get('join-previous') == 'source-token':
+                yield '\x00JOIN_PREVIOUS\x00'
             yield cls._text_with_sentence_breaks(element)
             return
 
@@ -1070,7 +1114,20 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _join_text_parts(cls, parts: Iterable[str]) -> str:
-        source_parts = tuple(parts)
+        source_parts_list = []
+        join_previous = False
+        for part in parts:
+            if part.startswith('\x00JOIN_PREVIOUS\x00'):
+                join_previous = True
+                part = part.removeprefix('\x00JOIN_PREVIOUS\x00')
+                if not part:
+                    continue
+            if join_previous and source_parts_list:
+                source_parts_list[-1] = source_parts_list[-1].rstrip() + part.lstrip()
+            else:
+                source_parts_list.append(part)
+            join_previous = False
+        source_parts = tuple(source_parts_list)
         normalized: list[str] = []
         for source_index, part in enumerate(source_parts):
             if part == _PRESERVED_LINE_BREAK:
@@ -1165,13 +1222,86 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _event_text_part(cls, element: ET.Element) -> str:
+        if cls._has_source_space_marker(element):
+            return cls._source_space_text(element)
+        if cls._has_ltr_model_marker(element):
+            return cls._ltr_model_event(element)
         if cls._is_preserved_line_break(element):
             return _PRESERVED_LINE_BREAK
         if cls._is_inline_icon(element):
             return f" {_INLINE_ICON_TOKEN} "
         if element.tag == "text":
-            return cls._text_with_sentence_breaks(element)
+            prefix = '\x00JOIN_PREVIOUS\x00' if element.get('join-previous') == 'source-token' else ''
+            return prefix + cls._text_with_sentence_breaks(element)
         return cls._visible_text(element)
+
+    @staticmethod
+    def _has_source_space_marker(element: ET.Element) -> bool:
+        return any(a.get('name') in {'review-whitespace', 'review-whitespace-source-token',
+                   'review-whitespace-source-sha256'} for a in element.findall('attributes/attribute'))
+
+    @classmethod
+    def _source_space_text(cls, element: ET.Element) -> str:
+        from tagged_pdf_extractor.domain.tk_arabic_source import VERIFIED_SOURCE_SHA256, VERIFIED_SPACE_BOUNDARIES
+        expected = {'review-whitespace': 'source-boundary', 'review-whitespace-source-token': 'TK_ARA',
+                    'review-whitespace-source-sha256': VERIFIED_SOURCE_SHA256}
+        attrs = element.findall('attributes/attribute')
+        children = cls._structural_children(element)
+        scope = next((v for v in VERIFIED_SPACE_BOUNDARIES.values()
+                      if '/'.join(map(str, v[0])) == element.get('source-structure-path')), None)
+        if (element.tag != 'span' or element.get('language') != 'ARA' or element.get('page-index') != '1'
+                or scope is None or len(attrs) != len(expected)
+                or {a.get('name'): a.get('value') for a in attrs} != expected
+                or len(children) != 3 or any(c.tag != 'text' or len(c) for c in children)
+                or [(c.get('page-index'), c.get('mcid')) for c in children]
+                    != [('1', str(mcid)) for mcid in scope[1:]]):
+            raise ValueError('Invalid reviewed source-space boundary')
+        previous, space, following = (cls._text_with_sentence_breaks(c) for c in children)
+        if not previous.strip() or not following.strip() or space != ' ':
+            raise ValueError('Invalid reviewed source-space text')
+        return previous + space + following
+
+    @staticmethod
+    def _has_ltr_model_marker(element: ET.Element) -> bool:
+        return any(a.get('name') in {'review-inline','review-source-token','review-source-sha256'}
+                   for a in element.findall('attributes/attribute'))
+
+    @classmethod
+    def _ltr_model_event(cls, element: ET.Element) -> str:
+        from tagged_pdf_extractor.domain.tk_arabic_source import VERIFIED_SOURCE_SHA256
+        expected={'review-inline':'ltr-model-token','review-source-token':'TK_ARA',
+                  'review-source-sha256':VERIFIED_SOURCE_SHA256}
+        attributes=element.findall('attributes/attribute')
+        children=cls._structural_children(element)
+        if (element.tag!='span' or element.get('language')!='ARA'
+                or element.get('page-index')!='1'
+                or element.get('source-structure-path')!='0/0/1/72/0/1'
+                or len(attributes)!=len(expected)
+                or {a.get('name'):a.get('value') for a in attributes}!=expected
+                or len(children)!=2 or any(c.tag!='text' or len(c) for c in children)
+                or [(c.get('page-index'),c.get('mcid')) for c in children]!=[('1','770'),('1','771')]):
+            raise ValueError('Invalid source-owned LTR model marker')
+        token, wildcard = [decode_data_element(c) for c in children]
+        if (re.fullmatch(r'[A-Z][A-Z0-9]+',token) is None or wildcard!='*'
+                or children[1].get('join-previous')!='source-token'):
+            raise ValueError('Invalid source-owned LTR model text')
+        return _TrustedInlineHtml('<bdi dir="ltr">'+html.escape(token+wildcard).replace('*','&#42;')+'</bdi>')
+
+    @classmethod
+    def _escape_event_parts(cls, parts: Iterable[str]) -> str:
+        parts = tuple(parts)
+        if not any(isinstance(part, _TrustedInlineHtml) for part in parts):
+            return cls._escape_physical_lines(cls._join_text_parts(parts))
+        # Protect only generated HTML from line-prefix escaping. Pick a marker
+        # absent from every source part, so source text cannot impersonate it.
+        marker = '\x00trusted-inline\x00'
+        while any(marker in part for part in parts):
+            marker += '\x00'
+        protected = (
+            marker + part if isinstance(part, _TrustedInlineHtml) else part
+            for part in parts
+        )
+        return cls._escape_physical_lines(cls._join_text_parts(protected)).replace(marker, '')
 
     @staticmethod
     def _is_inline_icon(element: ET.Element) -> bool:

@@ -17,8 +17,9 @@ const wrap = body => '<!doctype html><html><head><meta charset="utf-8"><style>'+
   const page = await browser.newPage({viewport:{width:1360,height:950}});
   const summaries = [], allRows = [];
   const signature = () => page.locator('body').evaluate(e => ({
-    text:e.innerText.replace(/\s/g,''), elements:[...e.querySelectorAll('h1,h2,h3,h4,p,ul,ol,li,table,tr,td,th,a,strong,em,br')]
-      .map(n=>[n.tagName,n.textContent.replace(/\s/g,''),n.getAttribute('href')])}));
+    text:e.innerText.replace(/\s/g,''), elements:[...e.querySelectorAll('h1,h2,h3,h4,p,ul,ol,li,table,tr,td,th,a,strong,em,br,bdi')]
+      .map(n=>[n.tagName,n.textContent.replace(/\s/g,''),n.getAttribute('href'),
+        n.getAttribute('rowspan'),n.getAttribute('colspan'),n.tagName==='BDI'?n.dir:null])}));
   for (const run of read(path.join(output,'manifest.json')).runs) {
     const folder = path.join(output,run.buyer), input = read(path.join(folder,'render_input.json'));
     const html = marked.parse(fs.readFileSync(path.join(folder,'semantic_document.md'),'utf8'));
@@ -36,6 +37,16 @@ const wrap = body => '<!doctype html><html><head><meta charset="utf-8"><style>'+
     await page.goto(pathToFileURL(destination).href);
     const previewSignature = await signature();
     const previewEqual = JSON.stringify(sourceSignature) === JSON.stringify(previewSignature);
+    const isolatedModels = await page.locator('bdi').evaluateAll(es=>es.map(e=>{
+      const value=e.textContent, text=e.firstChild, star=value.lastIndexOf('*');
+      let starAfterPrevious=true;
+      if(star>0 && text && text.nodeType===Node.TEXT_NODE){
+        const a=document.createRange(),b=document.createRange();
+        a.setStart(text,star-1);a.setEnd(text,star);b.setStart(text,star);b.setEnd(text,star+1);
+        starAfterPrevious=b.getBoundingClientRect().left>=a.getBoundingClientRect().left;
+      }
+      return {text:value,direction:e.dir,unicodeBidi:getComputedStyle(e).unicodeBidi,star_after_previous_character:starAfterPrevious};
+    }));
     const rows = [];
     for (const row of input.ownership) {
       const dom = await page.evaluate(row => {
@@ -63,12 +74,14 @@ const wrap = body => '<!doctype html><html><head><meta charset="utf-8"><style>'+
     const proof = {buyer:run.buyer,xml_markdown_full_character_sequence:fullEqual,
       source_nonspace_characters:plain(input.source_text).length,rendered_nonspace_characters:clean(sourceView).length,
       unit_count:input.units.length,unit_failures:unitFailures,md_preview_text_and_structure_equal:previewEqual,
-      ownership_dom_pass:rows.every(r=>r.dom.passed),ownership:rows};
+      ownership_dom_pass:rows.every(r=>r.dom.passed),ownership:rows,isolated_models:isolatedModels,
+      isolated_model_display_pass:isolatedModels.every(m=>m.direction==='ltr'&&m.unicodeBidi==='isolate'&&m.star_after_previous_character)
+        && JSON.stringify(isolatedModels.map(m=>m.text))===JSON.stringify(input.expected_ltr_models||[])};
     dump(path.join(folder,'html_validation.json'),proof);
     const review=read(path.join(folder,'review_document.json'));
     Object.assign(review.hard_gates,{xml_markdown_full_character_sequence:fullEqual,
       xml_markdown_all_units:unitFailures.length===0,md_preview_text_and_structure_equal:previewEqual,
-      ownership_dom_pass:proof.ownership_dom_pass});
+      ownership_dom_pass:proof.ownership_dom_pass,isolated_model_display_pass:proof.isolated_model_display_pass});
     review.status=Object.values(review.hard_gates).every(Boolean)?'targeted_extraction_review_pass':'hard_gate_failed';
     review.html_preview=destination;
     dump(path.join(folder,'review_document.json'),review);

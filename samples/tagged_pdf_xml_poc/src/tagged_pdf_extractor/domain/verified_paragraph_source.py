@@ -6,6 +6,10 @@ p8/18/28/38/48; XU BN68-24437C p2. Original fragment text stays untouched.
 """
 
 POWER_SOURCE = {
+    ('TK_L02', 'A2', 'TUR'): (
+        '• Prizleri, uzatma kablolarını veya adaptörleri voltaj ve kapasitelerinden fazla, aşırı yüklemeyin. Bu, yangın veya elektrik çarpmasına neden olabilir.',
+        'Voltaj ve amper bilgileri için kılavuzun güç özellikleri bölümüne veya ürün üzerindeki güç kaynağı etiketine bakın.',
+    ),
     ('ZC_L02', 'A2', 'C-FRA'): (
         '• Ne surchargez ni vos prises murales ni vos câbles d’extension ni vos Adaptateur '
         '(tension et puissance installée) Une surcharge pourrait entraîner un incendie ou des décharges électriques.',
@@ -24,6 +28,12 @@ _ENG_FEE = (
     '(b) You bring the unit to the Samsung service centre, but it is found that the product has no defect (i.e., where the user manual has not been read).',
 )
 FEE_SOURCE = {
+    ('TK_L02', 'A2', 'ENG'): _ENG_FEE,
+    ('TK_L02', 'A2', 'TUR'): (
+        'Aşağıdaki durumlarda bir yönetim ücreti alınabilir:',
+        '(a) Talep etmeniz üzerine bir mühendis çağrılır, ancak üründe hiç arıza olmadığı görülürse (yani, kullanıcı kılavuzu okunmadığında).',
+        '(b) Üniteyi Samsung servis merkezine götürdüğünüzde, ancak üründe bir arıza olmadığı görülürse (yani, kullanıcı kılavuzu okunmadığında).',
+    ),
     ('ZG XN ZT_L05', 'BOOK', 'ENG'): _ENG_FEE,
     ('XU_ENG', 'A3', 'ENG'): _ENG_FEE,
     ('ZG XN ZT_L05', 'BOOK', 'DEU'): (

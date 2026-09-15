@@ -2,6 +2,14 @@
 
 ## Current Goal
 
+- 2026-09-15 사용자가 대표 바이어 결과의 추가 검토가 필요 없음을 확인하고 TK 추출을 승인했다.
+  TK_L02 A2 ENG/TUR 및 TK_ARA A3의 XML 추출·원문 구조 검증 완료.
+  최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_tk_20260915_source_verified/tk_review.html`.
+  Hard gate 0, XML→MD 360개 단위 PASS, 공백 경계 8곳 및 RTL 모델 별표 검증.
+  원문 편집 후보 7건은 별도 보존. 전체 XML 2,264 passed / 1 symlink skip, TK 집중 148 passed.
+  기존 7개 바이어의 XML·MD 21파일 바이트 동일. 현재 XML 라인 커버리지 95.81%, 분기 91.30%.
+  계획: `docs/superpowers/plans/2026-09-15-tk-xml-review.md`.
+
 - 2026-09-15 대표 바이어 문장 소속의 잔여 8건을 수정·검증했다.
   ZC C-FRA / AFRICA ARA 전원 연속문장, ZG 5언어 / XU ENG 비용 하위 조건.
   ZC/CE/AFRICA/ZG 집중, XU A3 해당 구조, KR/LATIN 자동 회귀를 수행했다.
@@ -9,7 +17,7 @@
   31개 소속 관계 및 XML→MD 2,489개 검토 단위 PASS, 이번 범위 Hard gate 0.
   전체 2,082 passed / 1 Windows symlink skip. CE/KR/LATIN XML·MD 바이트 동일.
   보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-15-representative-paragraph-ownership.md`.
-  다음 신규 바이어: TK_L02 ENG/TUR → TK_ARA A3. 이번 대표 회귀와 별도 단계로 진행한다.
+  이후 TK_L02 ENG/TUR → TK_ARA A3는 위 최신 항목에서 추출 검증을 완료했다.
 
 - 2026-09-14 CE 문장 소속 수정 후 기존 바이어 5개/15언어를 재추출하여 같은 두 관계를 감사했다.
   새 미해결 구조 문제: ZC C-FRA 및 AFRICA ARA의 전원 연속문장 2곳,

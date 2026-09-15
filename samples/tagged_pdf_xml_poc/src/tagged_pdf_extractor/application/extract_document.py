@@ -31,6 +31,8 @@ from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitle
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 from tagged_pdf_extractor.domain.africa_book import prepare_africa_book
 from tagged_pdf_extractor.domain.ce_book import prepare_ce_book
+from tagged_pdf_extractor.domain.tk_sheet import prepare_tk_sheet
+from tagged_pdf_extractor.domain.tk_arabic import prepare_tk_arabic
 from tagged_pdf_extractor.domain.verified_paragraph_ownership import repair_verified_paragraph_ownership
 from tagged_pdf_extractor.domain.profile_scope import parse_source_token
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
@@ -72,13 +74,15 @@ class ExtractDocument:
 
         profile = (self.profile_repository.lookup(pdf_path)
                    if self.profile_repository is not None
-                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05"} else None)
+                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05", "TK_L02", "TK_ARA"} else None)
         profile_reader = getattr(self.reader, "read_for_profile", None)
         document = (profile_reader(pdf_path, profile) if profile is not None and callable(profile_reader)
                     else self.reader.read(pdf_path))
         if profile is not None:
             document = prepare_africa_book(document, profile)
             document = prepare_ce_book(document, profile)
+            document = prepare_tk_sheet(document, profile)
+            document = prepare_tk_arabic(document, profile)
         if (profile is None and self.profile_repository is not None
                 and parse_source_token(pdf_path.name) in {"ZC_L02", "ZG XN ZT_L05", "XU_ENG"}):
             profile = self.profile_repository.lookup(pdf_path)

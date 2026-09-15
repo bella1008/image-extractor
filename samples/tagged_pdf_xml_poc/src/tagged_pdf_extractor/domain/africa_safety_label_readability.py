@@ -1,5 +1,6 @@
 """Keep the PDF-observed AFRICA Arabic safety-table hazard label together."""
 from tagged_pdf_extractor.domain.africa_book import africa_book_scope
+from tagged_pdf_extractor.domain.tk_arabic import tk_ara_scope
 from tagged_pdf_extractor.domain.models import ContentFragment, StructureElement, TaggedDocument
 
 
@@ -8,7 +9,7 @@ _SOURCE_LABEL = 'خطر التعرض لصدمة كهربائية. لا تفتح�
 
 def safety_label_paths(document: TaggedDocument) -> frozenset[tuple[int, ...]]:
     profile = document.readability_profile
-    if profile is None or not africa_book_scope(profile):
+    if profile is None or not (africa_book_scope(profile) or tk_ara_scope(profile)):
         return frozenset()
     found = set()
 

@@ -493,6 +493,8 @@ class XmlDocumentWriter:
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)
             attributes = self._fragment_attributes(child)
+            if child.join_previous:
+                attributes['join-previous'] = 'source-token'
             if sentence_break is not None:
                 attributes.update(self._sentence_break_attributes(sentence_break))
                 consumed_sentence_break_paths.add(child_path)

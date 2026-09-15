@@ -60,6 +60,7 @@ class ContentFragment:
     object_ref: str | None = None
     text_styles: tuple[TextStyle, ...] = ()
     text_bboxes: tuple[BBox | None, ...] = ()
+    join_previous: bool = False
 
     def __post_init__(self) -> None:
         if self.text_styles and len(self.text_parts) != len(self.text_styles):

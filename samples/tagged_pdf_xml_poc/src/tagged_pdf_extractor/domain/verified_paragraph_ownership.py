@@ -12,6 +12,7 @@ from tagged_pdf_extractor.domain.paragraph_eligibility import is_nonempty_inline
 from tagged_pdf_extractor.domain.verified_paragraph_source import FEE_SOURCE, POWER_SOURCE
 
 _PROFILES = {
+    ('TK_L02', 'A2'): ('ENG', 'TUR'),
     ('ZC_L02', 'A2'): ('ENG', 'C-FRA'),
     ('AFRICA_L05', 'BOOK'): ('ENG', 'FRA', 'SPA', 'POR', 'ARA'),
     ('ZG XN ZT_L05', 'BOOK'): ('ENG', 'DEU', 'FRA', 'ITA', 'DUT'),

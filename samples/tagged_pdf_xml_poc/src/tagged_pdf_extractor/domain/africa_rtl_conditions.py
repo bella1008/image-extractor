@@ -20,7 +20,9 @@ def condition_key(text):
 
 def is_rtl_numeric_condition(text):
     key = condition_key(text)
-    return bool(_PATTERN.fullmatch(key) or _WIFI_PATTERN.fullmatch(key))
+    # TK source uses U+060C between clauses. Validate its grammar without
+    # replacing that source punctuation in XML or Markdown.
+    return bool(_PATTERN.fullmatch(key.replace('،', ',')) or _WIFI_PATTERN.fullmatch(key))
 
 
 def _visible_glyphs(runs):

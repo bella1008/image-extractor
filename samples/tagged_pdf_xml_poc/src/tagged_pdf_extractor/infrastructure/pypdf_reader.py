@@ -55,11 +55,16 @@ class TaggedPdfReader:
         from hashlib import sha256
         from tagged_pdf_extractor.domain.africa_book import africa_book_scope
         from tagged_pdf_extractor.domain.ce_book import ce_book_scope
+        from tagged_pdf_extractor.domain.tk_sheet import tk_l02_scope
+        if tk_l02_scope(profile):
+            from tagged_pdf_extractor.infrastructure.tk_source_evidence import add_tk_source_evidence
+            return add_tk_source_evidence(self.read(pdf_path), profile)
         if ce_book_scope(profile):
             from tagged_pdf_extractor.infrastructure.ce_source_evidence import add_ce_source_evidence
             return add_ce_source_evidence(self.read(pdf_path), profile)
         from tagged_pdf_extractor.infrastructure.africa_actual_text import ActualTextRunner
-        if not africa_book_scope(profile):
+        from tagged_pdf_extractor.domain.tk_arabic import tk_ara_scope
+        if not (africa_book_scope(profile) or tk_ara_scope(profile)):
             return self.read(pdf_path)
         document = TaggedPdfReader(McidTextCollector(
             runner=ActualTextRunner(arabic_pages_only=True)

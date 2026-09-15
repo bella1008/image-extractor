@@ -11,6 +11,7 @@ from tagged_pdf_extractor.domain.verified_paragraph_ownership import repair_veri
 from tagged_pdf_extractor.domain.verified_paragraph_source import FEE_SOURCE, POWER_SOURCE
 
 PROFILES = {
+    'TK_L02': PdfProfile('TK_L02', 'A2', ('ENG', 'TUR'), 2),
     'ZC_L02': PdfProfile('ZC_L02', 'A2', ('ENG', 'C-FRA'), 2),
     'AFRICA_L05': PdfProfile('AFRICA_L05', 'BOOK', ('ENG', 'FRA', 'SPA', 'POR', 'ARA'), 5),
     'ZG XN ZT_L05': PdfProfile('ZG XN ZT_L05', 'BOOK', ('ENG', 'DEU', 'FRA', 'ITA', 'DUT'), 5),
@@ -63,7 +64,7 @@ def test_explicit_profile_language_dispatch_and_idempotence(key):
 def test_other_profiles_are_untouched(key, change):
     document, profile, _ = example(key)
     if change == 'source_token':
-        profile = replace(profile, source_token='TK_L02')
+        profile = replace(profile, source_token='UNVERIFIED_L02')
     elif change == 'doc_type':
         profile = replace(profile, doc_type='A2' if profile.doc_type != 'A2' else 'A3')
     else:
@@ -104,7 +105,7 @@ def test_unverified_source_context_is_untouched(key, change):
     elif change == 'role':
         target = replace(target, source_role='Description-L')
     elif change == 'language':
-        target = replace(target, language='TUR')
+        target = replace(target, language='UNVERIFIED')
     elif change == 'page':
         target = replace(target, children=(replace(target.children[0], page_index=99),))
     elif change == 'non_inline':

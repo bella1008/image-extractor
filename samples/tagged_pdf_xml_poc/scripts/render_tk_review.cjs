@@ -1,0 +1,23 @@
+// Run after render_representative_review.cjs has proved each MD/HTML pair.
+const fs=require('fs'),path=require('path');
+const out=path.resolve(process.argv[2]);
+const read=p=>JSON.parse(fs.readFileSync(path.join(out,p),'utf8'));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const manifest=read('manifest.json');
+const reports=manifest.runs.map(r=>read(r.buyer+'/review_document.json'));
+const languages=reports.flatMap(r=>Object.entries(r.language_stats).map(([language,stats])=>({language,...stats})));
+let body='<h1>TK XML 추출 검토</h1><p>아래 전체 HTML은 semantic_document.md에서 생성하며 문자와 DOM 구조 동일성을 자동 검증합니다. 원문 의미 검토 후보는 추출 결함과 구분합니다.</p><ul>';
+for(const r of reports)body+='<li><a href="'+r.source.buyer+'/semantic_document.preview.html">'+esc(r.source.source_token)+' 전체 HTML</a> · <a href="'+r.source.buyer+'/semantic_document.md">Markdown</a> · <a href="'+r.source.buyer+'/semantic_document.xml">XML</a> · '+esc(r.status)+'</li>';
+body+='</ul><h2>언어별 구조 수</h2><table><tr><th>언어</th><th>제목(표지 포함)</th><th>문단</th><th>목록</th><th>항목</th><th>표</th><th>그림</th></tr>';
+for(const s of languages)body+='<tr>'+[s.language,s.headings,s.blocks.paragraph,s.blocks.list,s.blocks.list_item,s.blocks.table,s.blocks.figure].map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>';
+body+='</table><p>본문 제목은 각 23개입니다. 표·블록 개수는 TUR 모델/제조사/기관 추가 표와 ARA 규제/폐기 문구의 실제 원문 배치 차이 때문에 다릅니다. 같게 만들기 위해 원문을 추가하거나 삭제하지 않습니다.</p><h2>제목 대응</h2><table><tr>'+languages.map(s=>'<th>'+s.language+'</th>').join('')+'</tr>';
+for(let i=0;i<Math.max(...languages.map(s=>s.heading_texts.length));i++)body+='<tr>'+languages.map(s=>'<td'+(s.language==='ARA'?' dir="rtl"':'')+'>'+esc(s.heading_texts[i])+'</td>').join('')+'</tr>';
+body+='</table><h2>원문 의미 검토 후보</h2><p>다음 문구는 PDF와 일치하므로 추출은 통과합니다. 번역·편집 에이전트의 향후 검토 사례이며 원문을 자동 수정하지 않습니다.</p><ul><li>TK-TUR-01 · p2 558 0 R: değiştirmiyorsanız — 기존 TV를 유지·이동하는 ENG 조건과의 의미 대응 확인.</li><li>TK-TUR-02 · p2 510 0 R: koruyucu film çıkarılırsa ekran kararabilir — 보호 필름 제거 여부 조건의 ENG 대응 확인.</li><li>TK-ENG-01 · p1 1589 0 R: icncorporated — PDF 원문 철자 그대로 보존.</li></ul><h2>이미지 원문 확인</h2><p>아이콘·QR·barcode와 TUR 수입자 배지의 İthalatçı Firma는 OCR 텍스트 추출로 주장하지 않습니다. 원문 이미지 및 crop을 함께 확인합니다.</p><img style="max-width:720px" src="TK_L02/tur_importer_badge.png"><h2>PDF 전체 페이지</h2>';
+for(const run of manifest.runs)for(let p=1;p<=2;p++)body+='<p><a href="'+run.buyer+'/pdf_p'+p+'.png">'+run.buyer+' PDF '+p+'p 원문</a></p>';
+body+='<h2>검증 상세</h2><ul>';
+for(const run of manifest.runs)body+='<li><a href="'+run.buyer+'/review_document.json">'+run.buyer+' 구조·crop 근거</a> · <a href="'+run.buyer+'/html_validation.json">XML→MD→HTML 검증</a></li>';
+body+='</ul>';
+body+='<h2>원문 표현 사례 7건 · 향후 번역/편집 검토용</h2>';
+for(const c of read('source_findings.json').cases)body+='<article><h3>'+esc(c.case_id)+' · '+esc(c.language)+' PDF '+c.pages.join(',')+'p</h3><p>'+esc(c.finding)+'</p><blockquote'+(c.language==='ARA'?' dir="rtl"':'')+'>'+esc(c.source_text)+'</blockquote><p><a href="'+c.source_token+'/'+c.case_id+'.png">PDF crop</a> · 원문 일치 / 추출 PASS / 편집 검토 후보</p></article>';
+body+='<p><a href="source_checks.html">수정된 문장·표·모델 조건의 PDF/Markdown 비교</a> · <a href="source_findings.json">향후 에이전트용 사례 JSON</a></p>';
+fs.writeFileSync(path.join(out,'tk_review.html'),'<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{font:17px Arial;max-width:1280px;margin:32px auto;line-height:1.7}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:9px;vertical-align:top}th{background:#eef2f6}[dir=rtl]{font-family:Tahoma}h1,h2{margin-top:1.5em}</style><body>'+body+'</body></html>');

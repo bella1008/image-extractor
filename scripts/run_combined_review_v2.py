@@ -1,6 +1,5 @@
 """Prepare one ZC ENG PDF's checklist and item report in one folder."""
 import argparse
-import os
 from pathlib import Path
 
 from src.combined_review_run import CombinedReviewRequest, run_combined_review
@@ -16,11 +15,11 @@ def main(argv=None):
     parser.add_argument('--mapping', type=Path, default=DEFAULT_MAPPING)
     parser.add_argument('--draft', type=Path, default=DEFAULT_DRAFT)
     parser.add_argument('--master-dir', type=Path, default=DEFAULT_ITEM_MASTER)
-    parser.add_argument('--node', type=Path, default=os.environ.get('ITEM_REVIEW_NODE'))
-    parser.add_argument('--node-modules', type=Path, default=os.environ.get('ITEM_REVIEW_NODE_MODULES'))
+    parser.add_argument('--node', type=Path, help='Optional developer Artifact Tool runtime')
+    parser.add_argument('--node-modules', type=Path, help='Optional developer Artifact Tool dependencies')
     args = parser.parse_args(argv)
-    if args.node is None or args.node_modules is None:
-        parser.error('Set ITEM_REVIEW_NODE and ITEM_REVIEW_NODE_MODULES, or pass --node and --node-modules')
+    if (args.node is None) != (args.node_modules is None):
+        parser.error('Supply both --node and --node-modules, or omit both for Python')
     try:
         run_combined_review(CombinedReviewRequest(args.pdf, args.output, args.node, args.node_modules,
                                                   bundle=args.bundle, mapping=args.mapping,

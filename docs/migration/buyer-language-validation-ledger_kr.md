@@ -1,6 +1,6 @@
 # 바이어·언어별 XML / ReviewDocument 검증 대장
 
-갱신: 2026-09-14. 이 작업장의 기록을 기준으로 시작한 대장입니다. 다른 작업장의 진행 상태를 모두 조사한 것은 아닙니다.
+갱신: 2026-09-15. 이 작업장의 기록을 기준으로 시작한 대장입니다. 다른 작업장의 진행 상태를 모두 조사한 것은 아닙니다.
 
 ## 기록 범위와 해석
 
@@ -79,8 +79,8 @@
 | XU_ENG | XU | A3 | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-2 |
 | XY_ENG | XY | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | ZA_ENG | ZA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| ZC_L02 | ZC | A2 | ENG | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002 |
-| ZC_L02 | ZC | A2 | C-FRA | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002 |
+| ZC_L02 | ZC | A2 | ENG | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002, RUN-20260915-PILOT-ZC |
+| ZC_L02 | ZC | A2 | C-FRA | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002, RUN-20260915-PILOT-ZC |
 | ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
 | ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DEU | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
 | ZG XN ZT_L05 | ZG;XN;ZT | BOOK | FRA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
@@ -160,6 +160,21 @@ TODO의 과거 기록에는 ZG의 DEU/FRA 문장 경계 및 ITA 부제 등 일�
 - 범위 참고: 샘플 PDF의 `Contact Samsung world wide` 계열 표지 연락처 제목도 확인 가능한 범위에서는 `SamsungOne-600`으로 관찰된다. 다만 모든 언어의 번역 제목을 사람이 확인했다는 뜻은 아니며, 언어별 추출 결과가 생길 때 같은 이슈를 계속 기록한다.
 - 현재 판단: 문구 누락이 아니라 표지 연락처 제목의 시각적 강조 표시가 MD/ReviewDocument 표시 계층에 아직 반영되지 않은 표시 품질 이슈다.
 - 후속 방향: ReviewDocument의 표지 연락처 제목 역할 또는 MD display hint로 보존할지 결정한 뒤, 특정 문구 하드코딩 없이 font weight와 표지 연락처 구조를 함께 사용해 fail-closed로 처리한다.
+
+## RUN-20260915-PILOT-ZC: PC 배포 경로 보존 검사
+
+- 실행일: 2026-09-15. source_token `ZC_L02`, buyer `ZC`, doc_type `A2`, 추출 언어 ENG/C-FRA, PDF 1~2페이지.
+- PDF: `BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf`.
+- PDF SHA-256: `e7ae68f7e314b500425bb81608aa1f3a1fe683ee555d7ea38db705b42649c4a1`.
+- 폴더: `outputs/review_pilot_20260915_smoke/다른 PC 검토 프로그램/outputs/zc_fresh/_internal/extraction/`.
+- 추출기: `tagged-pdf-xml/8405120`, SHA-256 `fc64c8bc8e7909b27ed413fc802736b3a48fa5463f6316dba9e43f882ed3aa1e`.
+- XML SHA-256: `8cecca8b0f41583e961a486d2bd157b81c9a59d7f4bc7ec87e47d5a0b1d6354c`.
+- MD SHA-256: `0acc00334f304e45ba764ebd646bb17e9c1269ef86dbf77a872235d7de575dbc`.
+- ReviewDocument SHA-256: `c7dd27a0b23b520b29cb6815bc88480c5d3d710f6cdc5e4fed077621dbb7f1db`.
+- 추출 완료 기록 SHA-256: `3d2be6ad88564824e1866fd8040b0972d8920eb135f129498b8650014580264a`.
+- 자동 검사: 별도 Python 설치 환경에서 새 추출. XML/MD/ReviewDocument는 `outputs/checklist_20260914_130233_25dbc00a184e/_internal/extraction/`와 바이트 동일. 체크리스트 출력은 ENG만 59개/하위14개, C-FRA 체크리스트는 실행하지 않음.
+- 사람 확인: 추가 요청 없음. 추출 내용 변경이 없는 실행 경로 검사로 기존 HR-20260914-002의 확인 범위를 계승하며 확대하지 않음. 다국어 의미 일치 검사나 그림·아이콘의 추가 시각 승인은 수행하지 않음.
+- 미해결: 표지 연락처 제목 bold 표시 후속은 그대로 유지.
 
 ## 새 실행을 등록하는 방법
 

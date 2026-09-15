@@ -4,6 +4,10 @@
 
 이 절이 새 v2 작업의 현재 상태다. 아래 GridCell/MVP 기록은 과거 구현 이력이다.
 
+- [x] 2026-09-15 통합 Excel Python 작성기 연결. 기본 UI/CLI의 Node 환경 의존성 제거, 명시적 Node 호출 호환 유지. 실제 ZC 기존 Excel 1,232셀·열/행 크기·고정창·표 스타일 동일, report/view JSON 바이트 동일. 관련97개 통과/개발용 Artifact 작성2개 skip, 새 Python 실물 작성은 테스트와 실물 양쪽에서 검증. 4시트7영역 렌더 및 독립 코드 검토 완료. 표본 `outputs/checklist_reviewer_zc_20260915_python/`.
+- [x] 2026-09-15 PC 전달용 ZIP builder·전용 환경 설치·시작 명령·한국어 안내 구현. 85개 파일+해시 manifest, GridCell 실행기/Git/기존 결과/PDF/Node 제외. 한글·공백 경로 재배치/무결성/원본 보호 테스트 통과. 배포 명세 `docs/migration/2026-09-15-python-delivery_kr.md`.
+- [x] 2026-09-15 새 가상환경 실제 설치·ZC PDF 전체 실행·완료 결과 AppTest 확인. `outputs/review_pilot_20260915_smoke/다른 PC 검토 프로그램/outputs/zc_fresh/`, XML/MD/ReviewDocument 기존 검증본과 바이트 동일. 검증 대장 `RUN-20260915-PILOT-ZC`. 최종 전달 ZIP `outputs/review_pilot_20260915/review-pilot.zip`.
+
 - [x] 2026-09-14 검토자용 통합 Excel 표시 v2: 구성품 기준/현재 원문/페이지/조건 안내 후보 나란히 표시. 원장 제안과 상세 JSON은 내부 보존, Summary12행/4시트 유지. 저장 버전별 구/신 검증 및 화면 일치. 실제 표본 `outputs/checklist_reviewer_zc_20260914_v2/`, JSON 기존 실행과 바이트 동일. 관련54개 및 실제 작성2개 통과, 전 셀·4시트 렌더·실제 AppTest 확인. 설명 `docs/migration/2026-09-14-reviewer-report-v2_kr.md`. 사용성 회신은 가능할 때 받으며 내부 검증을 막지 않음.
 
 - [x] 2026-09-13 사용자 요구: 원본 PDF 누락/구조 확인이 필요하면 반드시 명시적으로 요청. [바이어·언어 검증 대장](docs/migration/buyer-language-validation-ledger_kr.md)에 매핑23프로필/73언어조합 등록, 기존3 PDF/8조합의 adapter 근거 연결. 나머지는 다른 작업장 포함 미조사이며 미추출로 단정하지 않음.
@@ -32,17 +36,18 @@
 - [x] 별도 ItemReviewService/CLI: 원장 Excel/JSON/고정 seed 대조 → 현재 XML에서 하위14개 다시 조사 → JSON/오프라인 HTML/완료 기록. 원장 과거 근거와 검토 대상 근거 분리, 복수 근거/미발견/범위 미확정 구분. 실물 PDF 새 추출·검증 묶음 재사용 모두 14개 발견/12개 조건 안내 후보, 전부 needs_review. 기존547행 경로 미변경. `docs/migration/2026-09-11-item-observation-service_kr.md` 참고.
 - [x] 항목별 결과 Excel writer/검증 완료 기록과 읽기 전용 Streamlit 화면 연결. Summary/Item Results/Source Evidence 3시트, 항목14/현재 근거26, 판정+설명/출처 분리. 새 출력 폴더로 생성, 완료된 관찰 결과와 연결된 Excel만 다운로드. 실물 `outputs/item_excel_zc_20260911_r2/`, 사용법 `docs/migration/2026-09-11-item-excel-ui_kr.md`.
 - [x] 2026-09-13 사용자 개정: 항목 결과 JSON과 Excel을 동일 실행 폴더에 저장. 새 HTML 생성/다운로드 중단, Summary 12행, 임시 근거 ID 제거, 고정 항목 키 연결, 화면 폴더 입력 하나. observation 완료 기록 v2/Excel view v2 사용. 기존 v1 관찰 결과는 HTML 해시까지 검증하는 읽기 호환 유지.
-- [ ] 전체 PC 배포 의존성 정리: 현재 새 Excel 생성은 Node/Artifact Tool 작성 환경 필요. 화면 읽기/다운로드는 Python으로 가능. 번들 작성 도구 재배포 가능 여부 및 Python-only 대체 writer 검토 후 결정; 현재 구현을 담당자 전체 배포 완료로 간주하지 않음.
+- [x] 통합 경로 PC 배포 의존성 정리: Python-only 작성기 선택/구현. 개발용 Node 도구는 ZIP에서 제외. 과거 item-only 작성기는 개발 호환 경로이며 담당자 진입점은 통합 화면이다.
+- [ ] 담당자 실제 PC에서 파일럿 설치/실행 확인. 현재 작업 PC의 별도 설치 검증과 실제 담당자 PC의 설치 완료를 구분한다.
 - [x] 통합 레포트 설계 승인 및 CLI 구현: 같은 PDF/XML/추출 완료 기록/context의 완료 관찰 두 개 → 자체 보관 통합 JSON → 4시트 Excel 하나. 상위59건/그중 구성품상세14건 분리 집계, 근거40+26행/내부제외488행/원본547행 보존. 기존 DB/부모 판정/관찰 원문 변경 없음. 실제 결과 `outputs/combined_review_zc_20260913_r2/`, 사용법 `docs/migration/2026-09-13-combined-review-report_kr.md`.
 - [x] 통합 결과의 단일 폴더 Streamlit 조회/다운로드 및 공통 실행 명령 연결. PDF 추출 1회/동일 bundle 공유, `_internal`에 중간 자료 보관, 최상위 통합 Excel/JSON. 일반 관찰 v2 JSON-only/구 v1 HTML 검증 호환, 전체 실행 lock/실패 차단, 다운로드 때 재검증. 실제 `outputs/combined_review_zc_20260913_shared_r2/`. 사용법 `docs/migration/2026-09-13-combined-run-ui_kr.md`.
 - [x] 비개발자용 전체 구조·ReviewDocument/adapter/검토 기능 책임·사람 검토 시점 설명 문서 작성: `docs/architecture/review-document-explained_kr.md`. 기술적 보존 검사와 PDF 원문/업무 승인을 구분.
 - [x] 2026-09-14 화면 PDF 경로 입력/검토 실행 연결. 실행마다 새 폴더, 완료 결과 자동 조회/다운로드, 실패 시 이전 결과 비움, launcher XML 패키지 경로 자동 설정. 현재 ZC ENG 체크리스트 관찰 전용. 사용법 `docs/migration/2026-09-14-checklist-ui-run_kr.md`. 실제 결과 `outputs/checklist_20260914_130233_25dbc00a184e/`; XML/MD/ReviewDocument 기존 검증본과 바이트 동일. 모델 적용 승인/DB 편집은 별도 단계.
 - [x] 항목별 HTML 실물 렌더 검수 후속은 사용자 요청으로 종료. 새 결과의 HTML 생성/노출을 중단하고 과거 파일은 보관한다.
 - [ ] 모델 적용 자료/사람 승인 절차와 실제 항목 evaluator 연결. 현재 원장의 제안문은 실행하지 않음. 다른 9개 item_list 행은 아직 분리 정의 전.
-- [ ] 사용자 Excel 개정 실물 검수 및 배포용 writer 연결. 최초 양식을 최종 승인본으로 간주하지 않음.
+- [ ] 사용자 Excel 사용성 의견 반영. 배포용 writer는 연결 완료이며 최초 양식을 최종 승인본으로 간주하지 않음.
 - [ ] XML 위치 선택·문구 매칭을 검증한 뒤 evaluator 구현. 모든 approved 545행의 XML 호환 상태는 아직 pending이며 자동 판정 미연결.
 - [ ] 추출 검수 Excel와 최종 검토 Excel의 실제 표본 선정·양식 명세·새 exporter 구현.
-- [ ] ReviewService/CLI, Streamlit 연결 및 프로필별 결과 검증.
+- [ ] ZC 영어 이외 프로필의 체크리스트 실행 확장·검증. ZC의 ReviewService/CLI/Streamlit 연결은 완료.
 - [ ] 사용자 양식 검수, 설명되지 않는 차이 해소, GridCell active 코드 정리 및 PC 배포.
 
 검증(2026-09-11): 루트 `python -m pytest tests -q` 285 passed / 6 subtests passed; 전용 `.venv`에서도 285 passed. `python -m compileall -q src tests scripts` 통과. 이번 연속 구현 신규55개. 독립 리뷰의 구역 경계·출력 변경·완료 기록 부분 저장 지적을 회귀 테스트로 수정.

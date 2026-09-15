@@ -15,15 +15,15 @@ def test_prepare_validates_before_creating_output(tmp_path, monkeypatch):
     assert first.pdf == pdf
     assert first.output_dir != second.output_dir
     assert not first.output_dir.parent.exists()
-    assert first.node_executable == Path(sys.executable)
+    assert first.node_executable is None and first.node_modules is None
     for value in ('', str(tmp_path), str(tmp_path / 'missing.pdf')):
         with pytest.raises(ValueError):
             prepare_combined_request(value, str(tmp_path / 'results'))
     with pytest.raises(ValueError):
         prepare_combined_request(str(pdf), '')
     monkeypatch.delenv('ITEM_REVIEW_NODE')
-    with pytest.raises(ValueError, match='ITEM_REVIEW_NODE'):
-        prepare_combined_request(str(pdf), str(tmp_path / 'results'))
+    monkeypatch.delenv('ITEM_REVIEW_NODE_MODULES')
+    assert prepare_combined_request(str(pdf), str(tmp_path / 'results')).node_executable is None
 
 
 def test_launcher_includes_xml_package(monkeypatch):

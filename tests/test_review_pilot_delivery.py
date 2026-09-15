@@ -1,0 +1,60 @@
+"""A pilot ZIP is portable source plus frozen data, not a developer checkout."""
+import hashlib
+import importlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+from zipfile import ZipFile
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def api():
+    assert importlib.util.find_spec('scripts.build_review_pilot'), 'Pilot release builder missing'
+    return importlib.import_module('scripts.build_review_pilot')
+
+
+def test_release_has_verified_contents_and_runs_after_relocation(tmp_path):
+    archive = tmp_path / 'pilot.zip'
+    api().build_release(ROOT, archive)
+    with ZipFile(archive) as bundle:
+        names = set(bundle.namelist())
+        assert {'setup_review.py', 'start_review.py', '사용안내.md', 'release_manifest.json'} <= names
+        assert {'src/combined_review_workbook.py', 'src/semantic_xml_reader.py',
+                'metadata/checklist_v2/item_master_drafts/20260911/master_seed.json'} <= names
+        assert not any(n.endswith(('.pdf', '.mjs', '.pyc')) or n.startswith(('outputs/', '.git/', '.venv/')) for n in names)
+        assert 'src/content_poc.py' not in names and 'src/pdf_analyzer.py' not in names
+        manifest = json.loads(bundle.read('release_manifest.json'))
+        assert set(manifest['files']) == names - {'release_manifest.json'}
+        for name, expected in manifest['files'].items():
+            assert hashlib.sha256(bundle.read(name)).hexdigest() == expected
+        destination = tmp_path / '다른 PC 검토 프로그램'
+        bundle.extractall(destination)
+    result = subprocess.run([sys.executable, 'start_review.py', '--check'], cwd=destination,
+                            capture_output=True, text=True, encoding='utf-8')
+    assert result.returncode == 0, result.stderr
+    assert 'ZC_L02 ENG' in result.stdout
+    # Direct CLI import resolves the copied src and bundled XML package, with
+    # PYTHONPATH cleared; no source checkout or Node is needed.
+    import os
+    env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'ITEM_REVIEW_NODE', 'ITEM_REVIEW_NODE_MODULES')}
+    result = subprocess.run([sys.executable, 'review_cli.py', '--help'],
+                            cwd=destination, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    before = archive.read_bytes()
+    with pytest.raises(FileExistsError):
+        api().build_release(ROOT, archive)
+    assert archive.read_bytes() == before
+    (destination / 'src/combined_review_workbook.py').write_text('changed', encoding='utf-8')
+    changed = subprocess.run([sys.executable, 'start_review.py', '--check'], cwd=destination,
+                             capture_output=True, text=True, encoding='utf-8')
+    assert changed.returncode != 0 and 'combined_review_workbook.py' in changed.stdout + changed.stderr
+
+
+def test_missing_release_input_creates_no_zip(tmp_path):
+    with pytest.raises((ValueError, FileNotFoundError)):
+        api().build_release(tmp_path / 'missing-root', tmp_path / 'missing.zip')
+    assert not (tmp_path / 'missing.zip').exists()

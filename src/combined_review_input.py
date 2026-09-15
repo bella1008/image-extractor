@@ -1,6 +1,5 @@
 """Prepare local UI input without creating or overwriting any result files."""
 from datetime import datetime
-import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,9 +25,5 @@ def prepare_combined_request(pdf_text: str, output_root: str) -> CombinedReviewR
         root = ROOT / root
     if root.exists() and not root.is_dir():
         raise ValueError('결과 저장 위치는 폴더여야 합니다.')
-    node = os.environ.get('ITEM_REVIEW_NODE', '')
-    modules = os.environ.get('ITEM_REVIEW_NODE_MODULES', '')
-    if not node or not Path(node).is_file() or not modules or not Path(modules).is_dir():
-        raise ValueError('Excel 작성 환경을 확인하세요: ITEM_REVIEW_NODE와 ITEM_REVIEW_NODE_MODULES 설정이 필요합니다.')
     folder = f'checklist_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:12]}'
-    return CombinedReviewRequest(pdf, root.resolve() / folder, Path(node), Path(modules))
+    return CombinedReviewRequest(pdf, root.resolve() / folder)

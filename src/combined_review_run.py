@@ -15,8 +15,8 @@ WORKFLOW_LOCK = 'review_workflow.lock'
 class CombinedReviewRequest:
     pdf: Path
     output_dir: Path
-    node_executable: Path
-    node_modules: Path
+    node_executable: Path | None = None
+    node_modules: Path | None = None
     bundle: Path | None = None
     mapping: Path = DEFAULT_MAPPING
     draft: Path = DEFAULT_DRAFT

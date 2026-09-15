@@ -22,13 +22,12 @@ Before/After PDF 비교, 회사 시스템 사양 검토, 다국어 참고 의견
 
 ## 실행 방법
 
-PowerShell에서 아래를 실행한다. 경로는 현재 개발 PC 기준이며 작성 도구의 다른 PC 배포는 별도 단계다.
+2026-09-15부터 통합 Excel은 Python 작성기를 기본으로 사용한다.
+개발 작업장에서는 아래 명령을 실행한다. 담당자 PC용 ZIP은 [배포 안내](2026-09-15-python-delivery_kr.md)를 따른다.
 
 ```powershell
 Set-Location C:\Users\bella\image-extractor\.worktrees\xml-review-v2
-$env:ITEM_REVIEW_NODE = 'C:/Users/bella/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe'
-$env:ITEM_REVIEW_NODE_MODULES = 'C:/Users/bella/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules'
-.venv\Scripts\python.exe -m scripts.start_item_review_ui --combined
+.venv\Scripts\python.exe -m scripts.start_item_review_ui --combined --open-browser
 ```
 
 1. 브라우저에서 `http://127.0.0.1:8501`을 연다. 포트가 사용 중이면 명령 끝에 `--port 8502`를 붙인다.

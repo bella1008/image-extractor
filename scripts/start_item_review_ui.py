@@ -22,6 +22,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Run the read-only item viewer on localhost')
     parser.add_argument('--port', type=_port, default=8501)
     parser.add_argument('--combined', action='store_true', help='Open the combined checklist/item viewer')
+    parser.add_argument('--open-browser', action='store_true', help='Open the local screen in the default browser')
     args = parser.parse_args(argv)
     env = os.environ.copy()
     package_paths = [str(ROOT)]
@@ -33,7 +34,8 @@ def main(argv=None):
     app = 'combined_review_app.py' if args.combined else 'item_review_app.py'
     command = [sys.executable, '-m', 'streamlit', 'run', str(ROOT / 'scripts' / app),
                '--server.address', '127.0.0.1', '--browser.gatherUsageStats', 'false',
-               '--server.headless', 'true', '--server.port', str(args.port)]
+               '--server.headless', 'false' if args.open_browser else 'true', '--server.port', str(args.port),
+               '--browser.serverAddress', '127.0.0.1']
     print(f'Open http://127.0.0.1:{args.port} in your browser. Stop with Ctrl+C.')
     return subprocess.run(command, cwd=ROOT, env=env).returncode
 

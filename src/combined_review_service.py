@@ -54,6 +54,12 @@ def _capture_source(folder, kind):
 
 
 def _run_builder(view_path, output, node_executable, node_modules):
+    if node_executable is None and node_modules is None:
+        from src.combined_review_workbook import write_combined_workbook
+        write_combined_workbook(view_path, output, digest(view_path.read_bytes()))
+        _write_new(output / 'authoring.log', 'Python/openpyxl writer; all saved cells validated.\n')
+        return
+    require(node_executable is not None and node_modules is not None, 'Supply both Node runtime paths or neither')
     node, modules = Path(node_executable).resolve(), Path(node_modules).resolve()
     require(node.is_file() and modules.is_dir(), 'Excel authoring runtime is not configured')
     script = Path(__file__).resolve().parents[1] / 'scripts/build_combined_review_excel.mjs'
@@ -64,7 +70,7 @@ def _run_builder(view_path, output, node_executable, node_modules):
     require(result.returncode == 0, 'Excel authoring failed; see authoring.log')
 
 
-def export_combined_review(checklist_dir, item_dir, output_dir, node_executable, node_modules):
+def export_combined_review(checklist_dir, item_dir, output_dir, node_executable=None, node_modules=None):
     """Create one fresh result folder; never overwrite inputs or an earlier run."""
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=False)

@@ -16,6 +16,11 @@
 - [첫 단계 구현 계획](docs/superpowers/plans/2026-09-10-review-document-foundation.md)
 - [현재 진행 상태](TODO.md)
 - [검토자용 통합 Excel v2 표본과 사용법](docs/migration/2026-09-14-reviewer-report-v2_kr.md)
+- [Python PC 배포 파일럿 명세와 검증](docs/migration/2026-09-15-python-delivery_kr.md)
+
+2026-09-15 최신 실행 기준: **통합 Excel 생성과 화면 실행은 Python으로 동작**한다.
+개발용 Node 환경 변수는 필요하지 않다. PC 전달용 ZIP은 설치/시작 명령과 사용 안내를 포함하며,
+현재 지원은 ZC 영어 체크리스트 근거 조사 파일럿이다. 아래 날짜별 기록의 Node 필수 설명은 당시 구현 이력이다.
 
 공통 데이터 모델과 XML adapter·품질 gate·새 추출 실행 경로를 구현했다. 아래 파일럿 기능은 제공하지만 전체 DB v2·Excel·Streamlit의 운영 전환이 완료된 것은 아니다.
 기존 Markdown은 XML POC의 writer로 계속 생성한다. 새 실행 경로는 기존 네 파일에 `review_document.json`과 완료 기록 `review_run.json`을 추가한다.

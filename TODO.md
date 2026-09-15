@@ -2,9 +2,18 @@
 
 ## Current Goal
 
+- 2026-09-15 대표 바이어 문장 소속의 잔여 8건을 수정·검증했다.
+  ZC C-FRA / AFRICA ARA 전원 연속문장, ZG 5언어 / XU ENG 비용 하위 조건.
+  ZC/CE/AFRICA/ZG 집중, XU A3 해당 구조, KR/LATIN 자동 회귀를 수행했다.
+  최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_common_20260915_verified/ownership_findings.html`.
+  31개 소속 관계 및 XML→MD 2,489개 검토 단위 PASS, 이번 범위 Hard gate 0.
+  전체 2,082 passed / 1 Windows symlink skip. CE/KR/LATIN XML·MD 바이트 동일.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-15-representative-paragraph-ownership.md`.
+  다음 신규 바이어: TK_L02 ENG/TUR → TK_ARA A3. 이번 대표 회귀와 별도 단계로 진행한다.
+
 - 2026-09-14 CE 문장 소속 수정 후 기존 바이어 5개/15언어를 재추출하여 같은 두 관계를 감사했다.
   새 미해결 구조 문제: ZC C-FRA 및 AFRICA ARA의 전원 연속문장 2곳,
-  ZG ENG/DEU/FRA/ITA/DUT 및 XU ENG 비용 하위 조건 6곳. 총 8개는 아직 수정 전이다.
+  ZG ENG/DEU/FRA/ITA/DUT 및 XU ENG 비용 하위 조건 6곳. 당시 8개는 수정 전이었으며 위 2026-09-15 작업에서 해소했다.
   기존 회귀 PASS가 해당 관계 전체의 검토 완료를 의미하지 않음을 확인했다.
   감사: `samples/tagged_pdf_xml_poc/outputs/xml_review_cross_buyer_20260914_ownership_audit/ownership_findings.html`.
   보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-cross-buyer-paragraph-ownership-audit.md`.

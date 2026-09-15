@@ -31,6 +31,7 @@ from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitle
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 from tagged_pdf_extractor.domain.africa_book import prepare_africa_book
 from tagged_pdf_extractor.domain.ce_book import prepare_ce_book
+from tagged_pdf_extractor.domain.verified_paragraph_ownership import repair_verified_paragraph_ownership
 from tagged_pdf_extractor.domain.profile_scope import parse_source_token
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
 from tagged_pdf_extractor.ports.output_writer import (
@@ -78,6 +79,10 @@ class ExtractDocument:
         if profile is not None:
             document = prepare_africa_book(document, profile)
             document = prepare_ce_book(document, profile)
+        if (profile is None and self.profile_repository is not None
+                and parse_source_token(pdf_path.name) in {"ZC_L02", "ZG XN ZT_L05", "XU_ENG"}):
+            profile = self.profile_repository.lookup(pdf_path)
+        document = repair_verified_paragraph_ownership(document, profile)
         document = promote_numbered_chapter_headings(document)
         profile_resolution = None
         if self.profile_repository is not None:

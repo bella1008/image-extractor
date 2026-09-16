@@ -2,6 +2,13 @@
 
 ## Current Goal
 
+- 2026-09-16 TK ARA 제목 대응표의 `0 1`~`0 5` 표시 오류 수정.
+  전체 MD는 원래 `01`~`05` 정상이며, 대응표가 raw 숫자 조각을 별도로 합치던 결함이었다.
+  본문 writer와 동일한 원문 번호 검증을 사용하고 ARA 표 번호는 LTR isolate 처리.
+  최신 TK 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_tk_20260916_heading_review/tk_review.html`.
+  3언어 제목 72개 본문 대조 및 숫자 5개의 브라우저 위치/간격 PASS, 집중 294 passed, compileall 성공.
+  기존 추출 XML·MD·보고서·전체 HTML 10개는 바이트 동일. 이전 출력은 보존.
+
 - 2026-09-16 TK 사용자 검토와 별도로 ZW_TPE / A3 / TPE 추출 검증 완료, 사용자 검토 대기.
   원본 `samples/SUG_RAW/2_TV_ZW/BN68-24973D-00_SUG_Y26 TV ALL_ZW_TPE_260327.0.pdf`.
   시작 HEAD `e06b998844e3b09887e612f4f22940abffeac2a4`, clean 상태.

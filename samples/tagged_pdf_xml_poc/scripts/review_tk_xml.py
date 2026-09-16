@@ -20,6 +20,13 @@ SOURCES={
 def dump(p,v):p.write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding='utf8')
 def text(n):return ''.join(t.text or '' for t in n.iter('text'))
 def norm(t):return ''.join(t.split())
+def heading_display_text(node,headings):
+    if node.tag=='heading' and node.get('numbered-label') is not None:
+        # Use the same source-label validation as the Markdown heading writer.
+        # Joining raw PDF text fragments alone would turn 01 into "0 1".
+        W._render_element(node,headings)
+        return node.get('numbered-label')+' '+W._element_text(node.find('list_body'))
+    return W._element_text(node)
 def code_hashes():
     return {str(p.relative_to(POC)):sha256(p.read_bytes()).hexdigest()
             for p in sorted((POC/'src').rglob('*.py'))}
@@ -111,7 +118,7 @@ def prepare(run,output):
         def belongs(n):return n.get('language')==lang
         nodes=[n for n in document.iter() if belongs(n)]
         hs=[n for n in nodes if n.tag=='heading' or n in headings or n.get('display-role')=='section-heading']
-        stats[lang]={'headings':len(hs),'heading_texts':[W._element_text(n) for n in hs],
+        stats[lang]={'headings':len(hs),'heading_texts':[heading_display_text(n,headings) for n in hs],
             'blocks':dict(Counter(n.tag for n in nodes if n.tag in ('paragraph','list','list_item','table','figure','heading'))),
             'review_units':sum(bool(u['pages']) and (len(run['languages'])==1
                 or all(p==run['languages'].index(lang) for p in u['pages'])) for u in units),

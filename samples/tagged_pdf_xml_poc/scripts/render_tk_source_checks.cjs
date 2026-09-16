@@ -5,7 +5,8 @@ const out=path.resolve(process.argv[2]);
 (async()=>{
  const {marked}=await import(pathToFileURL(path.join(modules,'marked/lib/marked.esm.js')).href);
  const manifest=JSON.parse(fs.readFileSync(path.join(out,'manifest.json'),'utf8'));
- let body='<h1>TK 원문 / Markdown 세부 비교</h1>';let count=0;
+ const buyers=manifest.runs.map(r=>r.buyer).join(' / ');
+ let body='<h1>'+buyers+' 원문 / Markdown 세부 비교</h1>';let count=0;
  for(const run of manifest.runs){
   const r=JSON.parse(fs.readFileSync(path.join(out,run.buyer,'review_document.json'),'utf8'));
   for(const c of r.visual_checks){

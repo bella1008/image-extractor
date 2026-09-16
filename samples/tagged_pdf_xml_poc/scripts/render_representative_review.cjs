@@ -5,6 +5,7 @@ const {chromium} = require(path.join(modules, 'playwright'));
 const output = path.resolve(process.argv[2]);
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 const dump = (p, v) => fs.writeFileSync(p, JSON.stringify(v, null, 2));
+const digest = p => require('crypto').createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const plain = s => s.replace(/\s/g, '');
 const clean = s => plain(s.replace(/^\s*(?:행|열) \d+:[ \t]*/gm, '').replaceAll('[빈 셀]', '').replaceAll('[아이콘]', '').replaceAll('[그림: 텍스트 없음]', ''));
 const css = 'body{font:18px Arial,sans-serif;line-height:1.8;margin:32px auto;max-width:1100px;padding:0 24px;color:#202428}h1{font-size:30px}h2{font-size:27px}h3{font-size:25px}h4{font-size:23px}h1,h2,h3,h4{font-weight:700;margin-top:1.5em}p,li,td{font-weight:400}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:8px;vertical-align:top}[dir=rtl]{font-family:Tahoma,Arial,sans-serif}h2[dir=rtl],h3[dir=rtl],h4[dir=rtl]{border-bottom:2px solid #bbb;padding-bottom:8px}a{overflow-wrap:anywhere}';
@@ -72,6 +73,9 @@ const wrap = body => '<!doctype html><html><head><meta charset="utf-8"><style>'+
     }
     allRows.push(...rows);
     const proof = {buyer:run.buyer,xml_markdown_full_character_sequence:fullEqual,
+      markdown_sha256:digest(path.join(folder,'semantic_document.md')),
+      semantic_xml_sha256:digest(path.join(folder,'semantic_document.xml')),
+      preview_html_sha256:digest(destination),
       source_nonspace_characters:plain(input.source_text).length,rendered_nonspace_characters:clean(sourceView).length,
       unit_count:input.units.length,unit_failures:unitFailures,md_preview_text_and_structure_equal:previewEqual,
       ownership_dom_pass:rows.every(r=>r.dom.passed),ownership:rows,isolated_models:isolatedModels,

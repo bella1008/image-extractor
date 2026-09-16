@@ -56,6 +56,11 @@ class TaggedPdfReader:
         from tagged_pdf_extractor.domain.africa_book import africa_book_scope
         from tagged_pdf_extractor.domain.ce_book import ce_book_scope
         from tagged_pdf_extractor.domain.tk_sheet import tk_l02_scope
+        from tagged_pdf_extractor.domain.zw_sheet import zw_scope
+        if zw_scope(profile):
+            from tagged_pdf_extractor.infrastructure.zw_source_evidence import add_zw_source_evidence
+            from tagged_pdf_extractor.infrastructure.zw_object_evidence import add_zw_object_evidence
+            return add_zw_source_evidence(add_zw_object_evidence(self.read(pdf_path), profile), profile)
         if tk_l02_scope(profile):
             from tagged_pdf_extractor.infrastructure.tk_source_evidence import add_tk_source_evidence
             return add_tk_source_evidence(self.read(pdf_path), profile)

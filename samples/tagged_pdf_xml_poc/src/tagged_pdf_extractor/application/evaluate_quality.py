@@ -378,14 +378,19 @@ class QualityEvaluator:
             for diagnostic in document.diagnostics
             if diagnostic.code in EXTRACTION_LOSS_DIAGNOSTIC_CODES
         )
+        from tagged_pdf_extractor.domain.zw_source_text import verified_zw_special_counts
+        verified_counts = verified_zw_special_counts(document, normalized_baseline, _SPECIAL_CHARACTERS)
         special_characters = {
             character: {
                 "tagged": normalized_tagged.count(character),
                 "baseline": normalized_baseline.count(character),
+                **({"verified_visible_source": verified_counts[character],
+                    "baseline_overprint_copies": normalized_baseline.count(character)-verified_counts[character]}
+                   if verified_counts is not None else {}),
                 "count_preserved": (
-                    normalized_baseline.count(character) == 0
+                    (verified_counts[character] if verified_counts is not None else normalized_baseline.count(character)) == 0
                     or normalized_tagged.count(character)
-                    >= normalized_baseline.count(character)
+                    >= (verified_counts[character] if verified_counts is not None else normalized_baseline.count(character))
                 ),
             }
             for character in _SPECIAL_CHARACTERS

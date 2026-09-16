@@ -2,6 +2,17 @@
 
 ## Current Goal
 
+- 2026-09-16 TK 사용자 검토와 별도로 ZW_TPE / A3 / TPE 추출 검증 완료, 사용자 검토 대기.
+  원본 `samples/SUG_RAW/2_TV_ZW/BN68-24973D-00_SUG_Y26 TV ALL_ZW_TPE_260327.0.pdf`.
+  시작 HEAD `e06b998844e3b09887e612f4f22940abffeac2a4`, clean 상태.
+  XML 경로에서 겹쳐 그린 글자, 표지 순서, 전원 문장 소속, CJK 줄 연결 및 RoHS 병합 셀 검증.
+  최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_zw_20260916_source_verified/zw_review.html`.
+  Hard gate 0; 제목 24, 검토 단위 122, 표 17, 모델·소비전력 49쌍, RoHS 36셀.
+  전체 XML 2,311 passed / 1 Windows symlink skip, 집중 432 passed, 추가 무결성 6 passed.
+  기존 7개 바이어 + TK 2종의 XML·MD 27파일 바이트 동일. 원문 표현/비텍스트 Warning 4범주.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-16-zw-xml-review.md`.
+  계획: `samples/tagged_pdf_xml_poc/docs/plans/2026-09-16-zw-extraction.md`.
+
 - 2026-09-15 사용자가 대표 바이어 결과의 추가 검토가 필요 없음을 확인하고 TK 추출을 승인했다.
   TK_L02 A2 ENG/TUR 및 TK_ARA A3의 XML 추출·원문 구조 검증 완료.
   최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_tk_20260915_source_verified/tk_review.html`.

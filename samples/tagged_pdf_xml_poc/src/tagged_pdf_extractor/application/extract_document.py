@@ -34,6 +34,9 @@ from tagged_pdf_extractor.domain.ce_book import prepare_ce_book
 from tagged_pdf_extractor.domain.tk_sheet import prepare_tk_sheet
 from tagged_pdf_extractor.domain.tk_arabic import prepare_tk_arabic
 from tagged_pdf_extractor.domain.zw_sheet import prepare_zw_sheet, zw_scope
+from tagged_pdf_extractor.domain.mena_sheet import prepare_mena_sheet
+from tagged_pdf_extractor.domain.xl_sheet import prepare_xl_sheet
+from tagged_pdf_extractor.domain.xt_sheet import prepare_xt_sheet
 from tagged_pdf_extractor.domain.zw_source_text import restore_zw_text
 from tagged_pdf_extractor.domain.zw_line_join import restore_zw_line_join
 from tagged_pdf_extractor.domain.verified_paragraph_ownership import repair_verified_paragraph_ownership
@@ -77,7 +80,7 @@ class ExtractDocument:
 
         profile = (self.profile_repository.lookup(pdf_path)
                    if self.profile_repository is not None
-                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05", "TK_L02", "TK_ARA", "ZW_TPE"} else None)
+                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05", "TK_L02", "TK_ARA", "ZW_TPE", "MENA_L02", "XL_ENG", "XT_L02"} else None)
         profile_reader = getattr(self.reader, "read_for_profile", None)
         document = (profile_reader(pdf_path, profile) if profile is not None and callable(profile_reader)
                     else self.reader.read(pdf_path))
@@ -86,6 +89,9 @@ class ExtractDocument:
             document = prepare_ce_book(document, profile)
             document = prepare_tk_sheet(document, profile)
             document = prepare_tk_arabic(document, profile)
+            document = prepare_mena_sheet(document, profile)
+            document = prepare_xl_sheet(document, profile)
+            document = prepare_xt_sheet(document, profile)
             document = prepare_zw_sheet(document, profile)
             if zw_scope(profile):
                 children, evidence = restore_zw_text(document.children, document.diagnostics)

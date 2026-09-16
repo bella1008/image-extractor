@@ -1268,6 +1268,19 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _ltr_model_event(cls, element: ET.Element) -> str:
+        attributes=element.findall('attributes/attribute')
+        if any(a.get('name')=='review-source-token' and a.get('value')=='MENA_L02' for a in attributes):
+            from tagged_pdf_extractor.domain.mena_sheet import SOURCE_SHA
+            expected={'review-inline':'ltr-model-token','review-source-token':'MENA_L02','review-source-sha256':SOURCE_SHA}
+            children=cls._structural_children(element)
+            if (element.tag!='span' or element.get('language')!='ARA' or element.get('page-index')!='1'
+                    or element.get('source-structure-path')!='0/0/10/62/0/1'
+                    or len(attributes)!=len(expected) or {a.get('name'):a.get('value') for a in attributes}!=expected
+                    or len(children)!=1 or children[0].tag!='text' or len(children[0])
+                    or (children[0].get('page-index'),children[0].get('mcid'))!=('1','1083')
+                    or decode_data_element(children[0])!='LS03H*'):
+                raise ValueError('Invalid MENA source-owned LTR model marker')
+            return _TrustedInlineHtml('<bdi dir="ltr">LS03H&#42;</bdi>')
         from tagged_pdf_extractor.domain.tk_arabic_source import VERIFIED_SOURCE_SHA256
         expected={'review-inline':'ltr-model-token','review-source-token':'TK_ARA',
                   'review-source-sha256':VERIFIED_SOURCE_SHA256}

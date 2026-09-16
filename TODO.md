@@ -2,6 +2,16 @@
 
 ## Current Goal
 
+- 2026-09-17 MENA_L02(A2 ENG/ARA) / XL_ENG(A3 ENG) / XT_L02(A2 ENG/THA) XML 추출 검증 완료.
+  최신 검토 시작: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_xl_xt_20260917_ready/review.html`.
+  각 바이어 폴더에 semantic XML/MD/전체 HTML, raw XML, report/review_run/source_audit가 있다.
+  Hard gate 0; 전체 2,391 passed / 1 Windows symlink skip, 비교 화면/제목 추가 9 passed.
+  기존 10개 프로필의 XML/MD 30파일 바이트 동일. XL은 공식 프로필 부재로 검토용 overlay만 사용했다.
+  MENA 원문 ActualText/RTL·표지·연락처, XL 사양 소수·문장 소속, XT 내장 글꼴의 태국어 매핑을 검증했다.
+  TK 비교 화면 RTL 방향만 새 폴더 `outputs/xml_review_tk_20260917_direction_review`에 갱신했으며 추출/전체 HTML 10파일은 동일.
+  사용자 컨펌은 MENA/XL/XT/TK/ZW 모두 대기 상태; 원문 표현·비텍스트 Warning은 후속 사람 검토 대상으로 유지.
+  상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-17-mena-xl-xt-xml-review.md`.
+
 - 2026-09-16 TK ARA 제목 대응표의 `0 1`~`0 5` 표시 오류 수정.
   전체 MD는 원래 `01`~`05` 정상이며, 대응표가 raw 숫자 조각을 별도로 합치던 결함이었다.
   본문 writer와 동일한 원문 번호 검증을 사용하고 ARA 표 번호는 LTR isolate 처리.

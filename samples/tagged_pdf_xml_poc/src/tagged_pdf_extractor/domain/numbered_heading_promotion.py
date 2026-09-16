@@ -192,7 +192,7 @@ def _scan_document(
             candidate = _as_candidate(
                 child, child_path, visit_index, language=language,
                 compact_numeric_label=(document.raw_children is not None
-                    and parse_source_token(document.source_path.name) in {"AFRICA_L05", "TK_ARA"}
+                    and parse_source_token(document.source_path.name) in {"AFRICA_L05", "TK_ARA", "MENA_L02"}
                     and language == "ARA"),
             )
             if candidate is not None:

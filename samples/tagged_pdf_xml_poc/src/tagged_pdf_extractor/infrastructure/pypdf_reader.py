@@ -57,6 +57,14 @@ class TaggedPdfReader:
         from tagged_pdf_extractor.domain.ce_book import ce_book_scope
         from tagged_pdf_extractor.domain.tk_sheet import tk_l02_scope
         from tagged_pdf_extractor.domain.zw_sheet import zw_scope
+        from tagged_pdf_extractor.domain.xl_sheet import xl_scope
+        from tagged_pdf_extractor.domain.xt_sheet import xt_scope
+        if xt_scope(profile):
+            from tagged_pdf_extractor.infrastructure.xt_source_evidence import add_xt_source_evidence
+            return add_xt_source_evidence(self.read(pdf_path), profile)
+        if xl_scope(profile):
+            from tagged_pdf_extractor.infrastructure.xl_source_evidence import add_xl_source_evidence
+            return add_xl_source_evidence(self.read(pdf_path), profile)
         if zw_scope(profile):
             from tagged_pdf_extractor.infrastructure.zw_source_evidence import add_zw_source_evidence
             from tagged_pdf_extractor.infrastructure.zw_object_evidence import add_zw_object_evidence
@@ -69,7 +77,8 @@ class TaggedPdfReader:
             return add_ce_source_evidence(self.read(pdf_path), profile)
         from tagged_pdf_extractor.infrastructure.africa_actual_text import ActualTextRunner
         from tagged_pdf_extractor.domain.tk_arabic import tk_ara_scope
-        if not (africa_book_scope(profile) or tk_ara_scope(profile)):
+        from tagged_pdf_extractor.domain.mena_sheet import mena_scope
+        if not (africa_book_scope(profile) or tk_ara_scope(profile) or mena_scope(profile)):
             return self.read(pdf_path)
         document = TaggedPdfReader(McidTextCollector(
             runner=ActualTextRunner(arabic_pages_only=True)

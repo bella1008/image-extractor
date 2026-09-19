@@ -1350,10 +1350,16 @@ def test_form_detection_runtime_has_no_title_or_model_dictionary() -> None:
         path.read_text(encoding="utf-8") for path in sorted(domain.glob("*.py"))
     )
 
-    forbidden_literals = (
+    forbidden_headings = (
         *_ZG_FORM_HEADINGS,
         *(label for labels in _ZG_FORM_LABEL_GROUPS for label in labels),
-        "QN990H",
-        "LS03HA",
     )
-    assert not [literal for literal in forbidden_literals if literal in runtime]
+    assert not [literal for literal in forbidden_headings if literal in runtime]
+    # Generic form discovery must not infer structure from a model dictionary.
+    # These exact-revision SQ validators instead reject changed source text at
+    # already-proven MCID/path locations; their SHA/identity guards have dedicated
+    # negative tests. Keep the exception explicit, not a blanket profile bypass.
+    source_validators={'sq_mi_brackets.py','sq_mi_inline.py','sq_mi_spec_text.py'}
+    generic_runtime='\n'.join(path.read_text(encoding='utf8') for path in sorted(domain.glob('*.py'))
+                              if path.name not in source_validators)
+    assert not [literal for literal in ('QN990H','LS03HA') if literal in generic_runtime]

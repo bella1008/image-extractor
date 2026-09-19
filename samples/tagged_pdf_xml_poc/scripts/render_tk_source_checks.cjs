@@ -14,15 +14,15 @@ const out=path.resolve(process.argv[2]);
   }
  }
  // Set prose/cell direction without reversing PDF-observed table columns or
- // English telephone strings inside an Arabic comparison section.
- const direction="document.querySelectorAll('.extracted p,.extracted li,.extracted h1,.extracted h2,.extracted h3,.extracted h4,.extracted td,.extracted th').forEach(e=>{if(/[\\u0600-\\u06ff]/.test(e.textContent))e.dir='rtl'});";
+ // English telephone strings inside an Arabic or Hebrew comparison section.
+ const direction="document.querySelectorAll('.extracted p,.extracted li,.extracted h1,.extracted h2,.extracted h3,.extracted h4,.extracted td,.extracted th').forEach(e=>{if(/[\\u0590-\\u05ff\\u0600-\\u06ff]/.test(e.textContent))e.dir='rtl'});";
  const html='<!doctype html><meta charset="utf-8"><style>body{font:18px Arial;max-width:1500px;margin:30px auto;line-height:1.8}.pair{display:grid;grid-template-columns:1fr 1fr;gap:25px}.pair>div{min-width:0;border:1px solid #bbb;padding:16px}img{max-width:100%}[dir=rtl]{font-family:Tahoma}td,th{border:1px solid #999;padding:7px}table{border-collapse:collapse;width:100%;direction:ltr}section{margin-bottom:40px}h2{font-weight:700}p,li{font-weight:400}</style><body>'+body+'<script>'+direction+'</script></body>';
  const destination=path.join(out,'source_checks.html');fs.writeFileSync(destination,html);
  const browser=await chromium.launch({headless:true,channel:'msedge'});
  const page=await browser.newPage({viewport:{width:1580,height:1000}});await page.goto(pathToFileURL(destination).href);
  const validation=await page.locator('.extracted').evaluateAll(es=>({
    source_table_column_order:es.every(e=>[...e.querySelectorAll('tr')].every(r=>[...r.cells].every((c,i,a)=>i===0||c.getBoundingClientRect().left>a[i-1].getBoundingClientRect().left))),
-   latin_table_cells_ltr:es.every(e=>[...e.querySelectorAll('td,th')].every(c=>/[\u0600-\u06ff]/.test(c.textContent)||getComputedStyle(c).direction==='ltr'))
+   latin_table_cells_ltr:es.every(e=>[...e.querySelectorAll('td,th')].every(c=>/[\u0590-\u05ff\u0600-\u06ff]/.test(c.textContent)||getComputedStyle(c).direction==='ltr'))
  }));
  validation.source_checks_sha256=require('crypto').createHash('sha256').update(fs.readFileSync(destination)).digest('hex');
  fs.writeFileSync(path.join(out,'source_comparison_validation.json'),JSON.stringify(validation,null,2));

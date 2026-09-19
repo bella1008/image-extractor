@@ -2,6 +2,14 @@
 
 ## Current Goal
 
+- 2026-09-19 PY_ENRU(A2 RUS/ENG), SQ MI_HEAR(A2 HEB/ARA) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.
+  최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_py_sq_mi_20260919_verified/review.html`.
+  언어별 본문 제목 23개(표지 포함 24), XML/MD/HTML 417단위, 원문 비교 crop 117개 검증; Hard gate 0.
+  전체 2,456 passed / 1 Windows symlink skip. 마지막 공백 writer 수정 후 관련 406 passed, public 호환 43 passed.
+  기존 13프로필 XML/MD 39파일 바이트 동일; 마지막 writer 변경 후 TK_ARA 3파일 추가 동일.
+  MENA/XL/XT/TK/ZW 기존 5바이어 승인 대기는 유지하며 PY/SQ_MI 포함 총 7바이어가 승인 대기이다.
+  원문 표현·그래픽 Warning은 유지한다. 상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-19-py-sq-mi-xml-review.md`.
+
 - 2026-09-17 MENA_L02(A2 ENG/ARA) / XL_ENG(A3 ENG) / XT_L02(A2 ENG/THA) XML 추출 검증 완료.
   최신 검토 시작: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_xl_xt_20260917_ready/review.html`.
   각 바이어 폴더에 semantic XML/MD/전체 HTML, raw XML, report/review_run/source_audit가 있다.

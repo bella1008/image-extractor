@@ -6,7 +6,7 @@ from tagged_pdf_extractor.domain.models import ContentFragment, Diagnostic
 from tagged_pdf_extractor.domain.inline_icon_policy import parse_unambiguous_bbox
 
 
-def restore_inline_order(children, diagnostics):
+def restore_inline_order(children, diagnostics, *, languages=('ARA',), rtl_classes=frozenset({'AL'}), roles=frozenset({'paragraph','span','list_body'})):
     runs = {}
     for diagnostic in diagnostics:
         if diagnostic.code == "africa_rtl_glyph_source":
@@ -52,9 +52,9 @@ def restore_inline_order(children, diagnostics):
             return node
         updated = tuple(visit(child) for child in node.children)
         node = replace(node, children=updated)
-        if node.language != "ARA" or node.semantic_role not in {"paragraph", "span", "list_body"} or len(updated) < 2:
+        if node.language not in languages or node.semantic_role not in roles or len(updated) < 2:
             return node
-        if not any(ud.bidirectional(c) == "AL" or c == "\u200f" for f in fragments(node) for c in f.text):
+        if not any(ud.bidirectional(c) in rtl_classes or c == "\u200f" for f in fragments(node) for c in f.text):
             return node
         # Never cross lists, cells, tables, paragraphs or other block boundaries.
         if any(not isinstance(c, ContentFragment) and c.semantic_role not in {"span", "figure", "link"} for c in updated):

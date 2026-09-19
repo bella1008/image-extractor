@@ -7,17 +7,17 @@ import math
 from tagged_pdf_extractor.domain.models import ContentFragment, Diagnostic
 
 
-def pure_rtl_line(line):
+def pure_rtl_line(line, *, rtl_classes=frozenset({'AL'})):
     runs = line["runs"]
     text = "".join(g for r in runs for g in r["glyphs"])
     return (bool(text) and not line["pending_mark"]
             and all(r["mcid"] is not None and not r["actual_text"] and r["axis_aligned"] for r in runs)
-            and any(ud.bidirectional(c) == "AL" for c in text)
-            and all(ud.bidirectional(c) in {"AL", "NSM", "WS"}
+            and any(ud.bidirectional(c) in rtl_classes for c in text)
+            and all(ud.bidirectional(c) in rtl_classes | {"NSM", "WS"}
                     or c.isspace() or c in ".،؛!؟:-" for c in text))
 
 
-def fragment_direction(line):
+def fragment_direction(line, *, rtl_classes=frozenset({'AL'})):
     """Additional punctuation is safe within one complete MCID, never across it."""
     runs = line["runs"]
     text = "".join(g for r in runs for g in r["glyphs"])
@@ -26,14 +26,14 @@ def fragment_direction(line):
         return None
     if text in {"http://", "https://"}:
         return "ltr"
-    if (any(ud.bidirectional(c) == "AL" for c in text)
-            and all(ud.bidirectional(c) in {"AL", "NSM", "WS"} or c.isspace()
+    if (any(ud.bidirectional(c) in rtl_classes for c in text)
+            and all(ud.bidirectional(c) in rtl_classes | {"NSM", "WS"} or c.isspace()
                     or c in '.،؛!؟:-%()"' for c in text)):
         return "rtl"
     return None
 
 
-def restore_rtl_glyph_lines(children, diagnostics):
+def restore_rtl_glyph_lines(children, diagnostics, *, rtl_classes=frozenset({'AL'}), languages=('ARA',)):
     """Keep Raw nodes intact; accept only complete MCIDs with equal character bags.
 
     Cross-MCID reordering is limited to contiguous direct fragments under one
@@ -64,7 +64,7 @@ def restore_rtl_glyph_lines(children, diagnostics):
                                  _contiguous_mcid_resets(diagnostic.context["lines"]).items()})
         eligible_lines = []
         for line in diagnostic.context["lines"]:
-            if pure_rtl_line(line):
+            if pure_rtl_line(line, rtl_classes=rtl_classes):
                 eligible_lines.append((line, "rtl"))
             else:
                 # A Latin neighbour must not prevent recovery inside a pure
@@ -77,7 +77,7 @@ def restore_rtl_glyph_lines(children, diagnostics):
                         groups.append([run])
                 for runs in groups:
                     candidate = {"runs": runs, "pending_mark": line["pending_mark"]}
-                    if direction := fragment_direction(candidate):
+                    if direction := fragment_direction(candidate, rtl_classes=rtl_classes):
                         eligible_lines.append((candidate, direction))
         for line, direction in eligible_lines:
             tokens = [(r["mcid"], g) for r in line["runs"] for g in r["glyphs"]]
@@ -138,7 +138,7 @@ def restore_rtl_glyph_lines(children, diagnostics):
                 text_styles=(next(iter(styles)),) if styles else (),
                 text_bboxes=(node.bbox,))
         updated = [visit(child) for child in node.children]
-        if node.semantic_role == "paragraph" and node.language == "ARA":
+        if node.semantic_role == "paragraph" and node.language in languages:
             indexes = {(child.page_index, child.mcid): i for i, child in enumerate(updated)
                        if isinstance(child, ContentFragment)}
             for order in line_orders:

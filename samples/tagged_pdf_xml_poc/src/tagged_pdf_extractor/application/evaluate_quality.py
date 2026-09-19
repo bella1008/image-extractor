@@ -380,12 +380,17 @@ class QualityEvaluator:
         )
         from tagged_pdf_extractor.domain.zw_source_text import verified_zw_special_counts
         verified_counts = verified_zw_special_counts(document, normalized_baseline, _SPECIAL_CHARACTERS)
+        mirrored_font_counts = False
+        if verified_counts is None:
+            from tagged_pdf_extractor.domain.sq_mi_brackets import verified_sq_special_counts
+            verified_counts = verified_sq_special_counts(document, normalized_baseline, _SPECIAL_CHARACTERS)
+            mirrored_font_counts = verified_counts is not None
         special_characters = {
             character: {
                 "tagged": normalized_tagged.count(character),
                 "baseline": normalized_baseline.count(character),
                 **({"verified_visible_source": verified_counts[character],
-                    "baseline_overprint_copies": normalized_baseline.count(character)-verified_counts[character]}
+                    ("baseline_mirrored_font_difference" if mirrored_font_counts else "baseline_overprint_copies"): normalized_baseline.count(character)-verified_counts[character]}
                    if verified_counts is not None else {}),
                 "count_preserved": (
                     (verified_counts[character] if verified_counts is not None else normalized_baseline.count(character)) == 0

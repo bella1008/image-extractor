@@ -8,8 +8,8 @@ const dump = (p, v) => fs.writeFileSync(p, JSON.stringify(v, null, 2));
 const digest = p => require('crypto').createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const plain = s => s.replace(/\s/g, '');
 const clean = s => plain(s.replace(/^\s*(?:행|열) \d+:[ \t]*/gm, '').replaceAll('[빈 셀]', '').replaceAll('[아이콘]', '').replaceAll('[그림: 텍스트 없음]', ''));
-const css = 'body{font:18px Arial,sans-serif;line-height:1.8;margin:32px auto;max-width:1100px;padding:0 24px;color:#202428}h1{font-size:30px}h2{font-size:27px}h3{font-size:25px}h4{font-size:23px}h1,h2,h3,h4{font-weight:700;margin-top:1.5em}p,li,td{font-weight:400}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:8px;vertical-align:top}[dir=rtl]{font-family:Tahoma,Arial,sans-serif}h2[dir=rtl],h3[dir=rtl],h4[dir=rtl]{border-bottom:2px solid #bbb;padding-bottom:8px}a{overflow-wrap:anywhere}';
-const direction = "document.querySelectorAll('p,li,h1,h2,h3,h4,td,th').forEach(e=>{if(/[\\u0600-\\u06ff]/.test(e.textContent))e.dir='rtl'});";
+const css = 'body{font:18px Arial,sans-serif;line-height:1.8;margin:32px auto;max-width:1100px;padding:0 24px;color:#202428}h1{font-size:30px}h2{font-size:27px}h3{font-size:25px}h4{font-size:23px}h1,h2,h3,h4{font-weight:700;margin-top:1.5em}p,li,td{font-weight:400}table{border-collapse:collapse;width:100%;direction:ltr}td,th{border:1px solid #bbb;padding:8px;vertical-align:top}[dir=rtl]{font-family:Tahoma,Arial,sans-serif}h2[dir=rtl],h3[dir=rtl],h4[dir=rtl]{border-bottom:2px solid #bbb;padding-bottom:8px}a{overflow-wrap:anywhere}';
+const direction = "document.querySelectorAll('p,li,h1,h2,h3,h4,td,th').forEach(e=>{if(/[\\u0590-\\u05ff\\u0600-\\u06ff]/.test(e.textContent))e.dir='rtl'});";
 const wrap = body => '<!doctype html><html><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+body+'<script>'+direction+'</script></body></html>';
 
 (async () => {

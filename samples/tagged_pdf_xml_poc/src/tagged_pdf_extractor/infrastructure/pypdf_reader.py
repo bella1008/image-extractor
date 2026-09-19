@@ -59,6 +59,15 @@ class TaggedPdfReader:
         from tagged_pdf_extractor.domain.zw_sheet import zw_scope
         from tagged_pdf_extractor.domain.xl_sheet import xl_scope
         from tagged_pdf_extractor.domain.xt_sheet import xt_scope
+        from tagged_pdf_extractor.domain.py_sheet import py_scope
+        if py_scope(profile):
+            from tagged_pdf_extractor.infrastructure.py_source_evidence import add_py_source_evidence
+            return add_py_source_evidence(self.read(pdf_path), profile)
+        from tagged_pdf_extractor.domain.sq_mi_sheet import sq_mi_scope
+        if sq_mi_scope(profile):
+            from tagged_pdf_extractor.infrastructure.sq_mi_source_evidence import SqMiTextRunner
+            document = TaggedPdfReader(McidTextCollector(runner=SqMiTextRunner())).read(pdf_path)
+            return replace(document, source_sha256=sha256(Path(pdf_path).read_bytes()).hexdigest())
         if xt_scope(profile):
             from tagged_pdf_extractor.infrastructure.xt_source_evidence import add_xt_source_evidence
             return add_xt_source_evidence(self.read(pdf_path), profile)

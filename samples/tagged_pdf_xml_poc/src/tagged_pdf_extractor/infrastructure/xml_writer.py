@@ -533,7 +533,11 @@ class XmlDocumentWriter:
             attributes.update(
                 self._promotion_attributes(promotion, source_role=child.source_role)
             )
-            if child.language == "ARA" and child.source_structure_path is not None:
+            from tagged_pdf_extractor.domain.sq_mi_sheet import SOURCE_SHA as SQ_MI_SHA
+            sq_hebrew_label=(child.language=='HEB'
+                and child.object_ref in {'1641 0 R','1500 0 R','1402 0 R','1310 0 R','1268 0 R'}
+                and dict(child.attributes).get('review-compact-label-sha256')==SQ_MI_SHA)
+            if (child.language == "ARA" or sq_hebrew_label) and child.source_structure_path is not None:
                 attributes["numbered-label"] = promotion.label
         if subtitle is not None:
             attributes.update(self._subtitle_attributes(subtitle))

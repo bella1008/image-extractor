@@ -70,6 +70,35 @@ def prepare(run):
             keys=[k for k in expected if k[:2]==('1',str(record['mcid']))]
             if len(keys)!=1:continue
             expected[keys[0]]=Counter(norm(''.join(''.join(r['verified_glyphs']) for r in record['runs'])))
+    if run['source_token']=='SQ MI_HEAR':
+        from tagged_pdf_extractor.domain.sq_mi_sheet import SOURCE_SHA
+        if run['sha256']!=SOURCE_SHA:raise ValueError('SQ MI source revision changed')
+        diagnostic=next(d for d in report['diagnostics'] if d['code']=='sq_mi_visible_brackets')
+        if {c['ref'] for c in diagnostic['context']['changes']}!={'1425 0 R','1166 0 R','146 0 R','381 0 R'}:
+            raise ValueError('SQ MI bracket source proof incomplete')
+        for change in diagnostic['context']['changes']:
+            for c in change['fragment_changes']:
+                keys=[k for k in expected if k[:2]==(str(change['page_index']),str(c['mcid']))]
+                if len(keys)!=1 or expected[keys[0]]!=Counter(norm(c['before'])):
+                    raise ValueError('SQ MI bracket original owner does not match')
+                expected[keys[0]]=Counter(norm(c['after']))
+            source_transfers.append(change)
+        sound=next(d for d in report['diagnostics'] if d['code']=='sq_mi_sound_source_order')
+        if sound['context']['sha256']!=SOURCE_SHA or len(sound['context']['changes'])!=14:
+            raise ValueError('SQ MI sound source coverage incomplete')
+        import unicodedata
+        for change in sound['context']['changes']:
+            if change['visible_character_counter_before']!=change['visible_character_counter_after']:
+                raise ValueError('SQ MI sound text inventory changed')
+            removals=Counter()
+            for c in change['fragment_changes']:
+                keys=[k for k in expected if k[:2]==(str(change['page_index']),str(c['mcid']))]
+                if len(keys)!=1 or expected[keys[0]]!=Counter(norm(c['before'])):
+                    raise ValueError('SQ MI sound original owner does not match')
+                removals.update('U+%04X'%ord(x) for x in c['before'] if unicodedata.category(x)=='Cf')
+                expected[keys[0]]=Counter(norm(c['after']))
+            if dict(removals)!=change['control_removals']:raise ValueError('SQ MI direction control audit mismatch')
+            source_transfers.append(change)
     differences=[{'identity':k,'missing':dict(v-sem_map.get(k,Counter())),
         'added':dict(sem_map.get(k,Counter())-v)} for k,v in expected.items() if v!=sem_map.get(k)]
     gates={**report['hard_gates'],'source_review_complete':False,
@@ -92,7 +121,9 @@ def prepare(run):
         regions+=list(document.iter('table'))
         parents={c:n for n in document.iter() for c in n}
         important={'MENA_L02':{'174 0 R','517 0 R','553 0 R','1175 0 R','390 0 R'},
-                   'XL_ENG':{'549 0 R'},'XT_L02':{'1123 0 R','336 0 R'}}[run['buyer']]
+                   'XL_ENG':{'549 0 R'},'XT_L02':{'1123 0 R','336 0 R'},
+                   'PY_ENRU':{'1280 0 R','712 0 R'},
+                   'SQ_MI_HEAR':{'1121 0 R','348 0 R','1425 0 R','146 0 R','1166 0 R','381 0 R','1324 0 R','276 0 R','1261 0 R','334 0 R','1207 0 R','598 0 R'}}[run['buyer']]
         for n in document.iter():
             if n.get('object-ref') not in important:continue
             target=parents[n] if parents.get(n) is not None and parents[n].tag=='list_body' else n
@@ -123,7 +154,7 @@ def prepare(run):
                     source_header=[W._element_text(c) for c in header if c.tag in ('table_cell','table_header')],
                     data_rows=[[W._element_text(c) for c in r if c.tag in ('table_cell','table_header')] for r in rows[1:]],
                     header_only_crop=crop(pdf,header,folder/f'header_{ref}.png',header_only=True)))
-    ltr_models=[W._element_text(n) for n in document.iter('span') if any(a.get('name')=='review-inline' and a.get('value')=='ltr-model-token' for a in n.findall('attributes/attribute'))]
+    ltr_models=[text(n) for n in document.iter('span') if any(a.get('name')=='review-inline' and a.get('value')=='ltr-model-token' for a in n.findall('attributes/attribute'))]
     dump(folder/'render_input.json',dict(source_text=source_text(document),units=units,ownership=[],expected_ltr_models=ltr_models))
     review=dict(source=run,hard_gates=gates,language_stats=stats,source_crops=evidence,visual_checks=checks,
         contact_tables=contacts,source_owner_transfers=source_transfers,source_fidelity_mismatches=differences,status='pending_source_and_html_review')

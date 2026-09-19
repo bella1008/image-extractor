@@ -1242,6 +1242,10 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _source_space_text(cls, element: ET.Element) -> str:
+        if any(a.get('name')=='review-whitespace-source-token' and a.get('value')=='SQ MI_HEAR'
+               for a in element.findall('attributes/attribute')):
+            from tagged_pdf_extractor.domain.sq_mi_inline import validate_sq_source_space
+            return validate_sq_source_space(element)
         from tagged_pdf_extractor.domain.tk_arabic_source import VERIFIED_SOURCE_SHA256, VERIFIED_SPACE_BOUNDARIES
         expected = {'review-whitespace': 'source-boundary', 'review-whitespace-source-token': 'TK_ARA',
                     'review-whitespace-source-sha256': VERIFIED_SOURCE_SHA256}
@@ -1269,6 +1273,10 @@ class MarkdownDocumentWriter:
     @classmethod
     def _ltr_model_event(cls, element: ET.Element) -> str:
         attributes=element.findall('attributes/attribute')
+        if any(a.get('name')=='review-source-token' and a.get('value')=='SQ MI_HEAR' for a in attributes):
+            from tagged_pdf_extractor.domain.sq_mi_inline import validate_sq_inline
+            value=validate_sq_inline(element)
+            return _TrustedInlineHtml('<bdi dir="ltr">'+html.escape(value).replace('*','&#42;')+'</bdi>')
         if any(a.get('name')=='review-source-token' and a.get('value')=='MENA_L02' for a in attributes):
             from tagged_pdf_extractor.domain.mena_sheet import SOURCE_SHA
             expected={'review-inline':'ltr-model-token','review-source-token':'MENA_L02','review-source-sha256':SOURCE_SHA}

@@ -5,11 +5,17 @@ from pathlib import Path, PurePosixPath
 import sys
 
 ROOT = Path(__file__).resolve().parent
+SUPPORTED_PYTHON_MIN = (3, 12)
+SUPPORTED_PYTHON_MAX_EXCLUSIVE = (3, 14)
+
+
+def is_supported_python(version):
+    return SUPPORTED_PYTHON_MIN <= tuple(version[:2]) < SUPPORTED_PYTHON_MAX_EXCLUSIVE
 
 
 def verify_release():
-    if sys.version_info[:2] != (3, 12):
-        raise ValueError('Python 3.12 is required. Run with: py -3.12')
+    if not is_supported_python(sys.version_info):
+        raise ValueError('Python 3.12 or 3.13 is required.')
     manifest = json.loads((ROOT / 'release_manifest.json').read_text(encoding='utf-8'))
     if manifest.get('schema_version') != 'review-pilot-release/1' or not isinstance(manifest.get('files'), dict):
         raise ValueError('Invalid release manifest')

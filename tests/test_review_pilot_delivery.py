@@ -1,6 +1,8 @@
 """A pilot ZIP is portable source plus frozen data, not a developer checkout."""
 import hashlib
+from io import BytesIO
 import importlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -27,10 +29,25 @@ def test_release_has_verified_contents_and_runs_after_relocation(tmp_path):
                 'metadata/checklist_v2/item_master_drafts/20260911/master_seed.json'} <= names
         assert not any(n.endswith(('.pdf', '.mjs', '.pyc')) or n.startswith(('outputs/', '.git/', '.venv/')) for n in names)
         assert 'src/content_poc.py' not in names and 'src/pdf_analyzer.py' not in names
+        for name in names:
+            data = bundle.read(name)
+            blobs = [data]
+            if name.endswith('.xlsx'):
+                with ZipFile(BytesIO(data)) as workbook:
+                    blobs = [workbook.read(part) for part in workbook.namelist()
+                             if part.endswith(('.xml', '.rels'))]
+            if name.endswith(('.py', '.json', '.md', '.txt', '.cmd', '.xlsx')):
+                assert not any(b'C:\\Users\\' in blob or b'C:\\\\Users\\\\' in blob
+                               for blob in blobs), name
         manifest = json.loads(bundle.read('release_manifest.json'))
         assert set(manifest['files']) == names - {'release_manifest.json'}
         for name, expected in manifest['files'].items():
             assert hashlib.sha256(bundle.read(name)).hexdigest() == expected
+        draft_json = json.loads(bundle.read('metadata/checklist_v2/drafts/20260911/checklist_v2_draft.json'))
+        draft_xlsx = bundle.read('metadata/checklist_v2/drafts/20260911/checklist_v2_draft.xlsx')
+        assert draft_json['master_sha256'] == hashlib.sha256(draft_xlsx).hexdigest()
+        review_service = bundle.read('src/review_service.py').decode('utf-8')
+        assert f"FROZEN_DRAFT_JSON_SHA256 = '{hashlib.sha256(bundle.read('metadata/checklist_v2/drafts/20260911/checklist_v2_draft.json')).hexdigest()}'" in review_service
         destination = tmp_path / '다른 PC 검토 프로그램'
         bundle.extractall(destination)
     result = subprocess.run([sys.executable, 'start_review.py', '--check'], cwd=destination,
@@ -58,3 +75,22 @@ def test_missing_release_input_creates_no_zip(tmp_path):
     with pytest.raises((ValueError, FileNotFoundError)):
         api().build_release(tmp_path / 'missing-root', tmp_path / 'missing.zip')
     assert not (tmp_path / 'missing.zip').exists()
+
+
+def test_pilot_supports_python_312_and_313_only():
+    spec = importlib.util.spec_from_file_location(
+        'pilot_support_policy', ROOT / 'deployment/review-pilot/pilot_support.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.is_supported_python((3, 12))
+    assert module.is_supported_python((3, 13))
+    assert not module.is_supported_python((3, 11))
+    assert not module.is_supported_python((3, 14))
+
+
+def test_setup_cmd_tries_python_313_before_falling_back_to_312_and_python():
+    setup = (ROOT / 'deployment/review-pilot/setup.cmd').read_text(encoding='utf-8')
+    first_313 = setup.index('py -3.13')
+    fallback_312 = setup.index('py -3.12')
+    fallback_python = setup.index('python setup_review.py')
+    assert first_313 < fallback_312 < fallback_python

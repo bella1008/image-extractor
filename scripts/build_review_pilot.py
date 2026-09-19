@@ -3,6 +3,7 @@ import argparse
 import ast
 from datetime import datetime, timezone
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,78 @@ DATA_FILES = ('requirements-review-v2.txt', 'requirements-review-ui.txt',
               'metadata/checklist_v2/item_master_drafts/20260911/master_seed.json')
 LAUNCH_FILES = ('setup_review.py', 'start_review.py', 'review_cli.py', 'pilot_support.py',
                 'setup.cmd', 'start.cmd', '사용안내.md')
+
+
+def _sanitize_text(data, root):
+    """Remove developer-local absolute paths from distributable metadata."""
+    root_text = str(root)
+    replacements = {
+        root_text: 'release://sanitized/worktree',
+        root_text.replace('\\', '\\\\'): 'release://sanitized/worktree',
+    }
+    text = data.decode('utf-8')
+    for needle, replacement in replacements.items():
+        text = text.replace(needle, replacement)
+    return text.encode('utf-8')
+
+
+def _sanitize_xlsx(data, root):
+    source = BytesIO(data)
+    target = BytesIO()
+    with ZipFile(source) as workbook, ZipFile(target, 'w', compression=ZIP_DEFLATED) as clean:
+        for info in workbook.infolist():
+            payload = workbook.read(info.filename)
+            if info.filename.endswith(('.xml', '.rels')):
+                payload = _sanitize_text(payload, root)
+            clean.writestr(info, payload)
+    return target.getvalue()
+
+
+def _sanitize_release_entry(name, data, root):
+    suffix = Path(name).suffix.lower()
+    if suffix in ('.json', '.md', '.txt', '.cmd', '.py'):
+        return _sanitize_text(data, root)
+    if suffix == '.xlsx':
+        return _sanitize_xlsx(data, root)
+    return data
+
+
+def _align_sanitized_item_master(snapshots):
+    seed_name = 'metadata/checklist_v2/item_master_drafts/20260911/master_seed.json'
+    excel_name = 'metadata/checklist_v2/item_master_drafts/20260911/checklist_item_master.xlsx'
+    json_name = 'metadata/checklist_v2/item_master_drafts/20260911/checklist_item_master.json'
+    service_name = 'src/item_review_service.py'
+    seed_digest = hashlib.sha256(snapshots[seed_name]).hexdigest()
+    excel_digest = hashlib.sha256(snapshots[excel_name]).hexdigest()
+    payload = json.loads(snapshots[json_name])
+    payload['provenance']['seed_sha256'] = seed_digest
+    payload['provenance']['excel_sha256'] = excel_digest
+    snapshots[json_name] = (json.dumps(payload, ensure_ascii=True, indent=2) + '\n').encode('utf-8')
+    service = snapshots[service_name].decode('utf-8')
+    marker = "EXPECTED_SEED_SHA256 = '"
+    start = service.index(marker) + len(marker)
+    end = service.index("'", start)
+    snapshots[service_name] = (service[:start] + seed_digest + service[end:]).encode('utf-8')
+
+
+def _replace_single_quoted_constant(source, name, value):
+    marker = f"{name} = '"
+    start = source.index(marker) + len(marker)
+    end = source.index("'", start)
+    return source[:start] + value + source[end:]
+
+
+def _align_sanitized_checklist_draft(snapshots):
+    excel_name = 'metadata/checklist_v2/drafts/20260911/checklist_v2_draft.xlsx'
+    json_name = 'metadata/checklist_v2/drafts/20260911/checklist_v2_draft.json'
+    service_name = 'src/review_service.py'
+    excel_digest = hashlib.sha256(snapshots[excel_name]).hexdigest()
+    payload = json.loads(snapshots[json_name])
+    payload['master_sha256'] = excel_digest
+    snapshots[json_name] = (json.dumps(payload, ensure_ascii=True, indent=2) + '\n').encode('utf-8')
+    json_digest = hashlib.sha256(snapshots[json_name]).hexdigest()
+    service = snapshots[service_name].decode('utf-8')
+    snapshots[service_name] = _replace_single_quoted_constant(service, 'FROZEN_DRAFT_JSON_SHA256', json_digest).encode('utf-8')
 
 
 def _python_dependencies(root):
@@ -65,7 +138,10 @@ def build_release(root, output):
     for path in paths.values():
         if not path.resolve().is_relative_to(root):
             raise ValueError('Release input resolves outside the worktree')
-    snapshots = {name: path.read_bytes() for name, path in sorted(paths.items())}
+    snapshots = {name: _sanitize_release_entry(name, path.read_bytes(), root)
+                 for name, path in sorted(paths.items())}
+    _align_sanitized_checklist_draft(snapshots)
+    _align_sanitized_item_master(snapshots)
     def git(*args):
         result = subprocess.run(['git', *args], cwd=root, capture_output=True, text=True)
         if result.returncode:
@@ -86,7 +162,11 @@ def build_release(root, output):
                 for name, data in snapshots.items():
                     archive.writestr(name, data)
                 archive.writestr('release_manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
-        if any(path.read_bytes() != snapshots[name] for name, path in paths.items()):
+        current = {name: _sanitize_release_entry(name, path.read_bytes(), root)
+                   for name, path in sorted(paths.items())}
+        _align_sanitized_checklist_draft(current)
+        _align_sanitized_item_master(current)
+        if current != snapshots:
             raise ValueError('Release source changed during build')
         with ZipFile(pending) as archive:
             if archive.testzip() is not None:

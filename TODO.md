@@ -2,6 +2,15 @@
 
 ## Current Goal
 
+- 2026-09-19 UA_ENG(A3 ENG), XD_INS(A3 INS) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.
+  최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_ua_xd_20260919_ready/review.html`.
+  UA 제목 24/표 19/검토 단위 109, XD 제목 30/표 43/검토 단위 138; XML/MD/HTML 247단위, 비교 crop 86개 확인. Hard gate 0.
+  UA 전원·비용 하위 조건·표지·소수, XD 모델80개 표·보증/주소표 병합·전원·주소 줄바꿈·URL/소수 수정.
+  전체 2,499 passed / 1 Windows symlink skip; UA 집중 27, XD 집중 16, root public 호환 43 passed.
+  기존 15프로필 재추출 XML/MD 45파일 바이트 동일. 원문 표현·그래픽 Warning 유지.
+  기존 MENA/XL/XT/TK/ZW/PY/SQ_MI 7바이어 승인 대기는 유지하며 UA/XD 포함 총 9바이어가 승인 대기이다.
+  상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-19-ua-xd-xml-review.md`.
+
 - 2026-09-19 PY_ENRU(A2 RUS/ENG), SQ MI_HEAR(A2 HEB/ARA) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.
   최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_py_sq_mi_20260919_verified/review.html`.
   언어별 본문 제목 23개(표지 포함 24), XML/MD/HTML 417단위, 원문 비교 crop 117개 검증; Hard gate 0.

@@ -39,6 +39,8 @@ from tagged_pdf_extractor.domain.xl_sheet import prepare_xl_sheet
 from tagged_pdf_extractor.domain.xt_sheet import prepare_xt_sheet
 from tagged_pdf_extractor.domain.py_sheet import prepare_py_sheet
 from tagged_pdf_extractor.domain.sq_mi_sheet import prepare_sq_mi_sheet
+from tagged_pdf_extractor.domain.ua_sheet import prepare_ua_sheet
+from tagged_pdf_extractor.domain.xd_sheet import prepare_xd_sheet
 from tagged_pdf_extractor.domain.zw_source_text import restore_zw_text
 from tagged_pdf_extractor.domain.zw_line_join import restore_zw_line_join
 from tagged_pdf_extractor.domain.verified_paragraph_ownership import repair_verified_paragraph_ownership
@@ -82,7 +84,7 @@ class ExtractDocument:
 
         profile = (self.profile_repository.lookup(pdf_path)
                    if self.profile_repository is not None
-                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05", "TK_L02", "TK_ARA", "ZW_TPE", "MENA_L02", "XL_ENG", "XT_L02", "PY_ENRU", "SQ MI_HEAR"} else None)
+                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05", "TK_L02", "TK_ARA", "ZW_TPE", "MENA_L02", "XL_ENG", "XT_L02", "PY_ENRU", "SQ MI_HEAR", "UA_ENG", "XD_INS"} else None)
         profile_reader = getattr(self.reader, "read_for_profile", None)
         document = (profile_reader(pdf_path, profile) if profile is not None and callable(profile_reader)
                     else self.reader.read(pdf_path))
@@ -96,6 +98,8 @@ class ExtractDocument:
             document = prepare_xt_sheet(document, profile)
             document = prepare_py_sheet(document, profile)
             document = prepare_sq_mi_sheet(document, profile)
+            document = prepare_ua_sheet(document, profile)
+            document = prepare_xd_sheet(document, profile)
             document = prepare_zw_sheet(document, profile)
             if zw_scope(profile):
                 children, evidence = restore_zw_text(document.children, document.diagnostics)

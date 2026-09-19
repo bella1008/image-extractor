@@ -123,6 +123,8 @@ def prepare(run):
         important={'MENA_L02':{'174 0 R','517 0 R','553 0 R','1175 0 R','390 0 R'},
                    'XL_ENG':{'549 0 R'},'XT_L02':{'1123 0 R','336 0 R'},
                    'PY_ENRU':{'1280 0 R','712 0 R'},
+                   'UA_ENG':{'522 0 R','390 0 R','391 0 R','387 0 R'},
+                   'XD_INS':{'1506 0 R','328 0 R','798 0 R'},
                    'SQ_MI_HEAR':{'1121 0 R','348 0 R','1425 0 R','146 0 R','1166 0 R','381 0 R','1324 0 R','276 0 R','1261 0 R','334 0 R','1207 0 R','598 0 R'}}[run['buyer']]
         for n in document.iter():
             if n.get('object-ref') not in important:continue
@@ -132,6 +134,22 @@ def prepare(run):
         for n in regions:
             ref=n.get('object-ref','unknown').split()[0]
             p=crop(pdf,n,folder/f'source_{ref}.png')
+            node_attrs={a.get('name'):a.get('value') for a in n.findall('attributes/attribute')}
+            if run['buyer']=='XD_INS' and (n.get('object-ref')=='495 0 R'
+                    or node_attrs.get('review-table-kind')=='xd-cover-models'):
+                ids={int(t.get('mcid')) for t in n.iter('text')}
+                source_runs=[r for d in report['diagnostics'] if d['code']=='xd_source_operations'
+                             for r in d['context']['runs'] if r['page_index']==0 and r['mcid'] in ids]
+                if len(ids)!=80 or {r['mcid'] for r in source_runs}!=ids:
+                    raise ValueError('XD model crop source coverage needs review')
+                boxes=[b for r in source_runs for b in r['glyph_boxes']]
+                page=pdf[0]
+                rect=fitz.Rect(min(b[0] for b in boxes)-8,page.rect.height-max(b[3] for b in boxes)-10,
+                    max(b[2] for b in boxes)+8,page.rect.height-min(b[1] for b in boxes)+12)&page.rect
+                path=folder/f'source_{ref}.png'
+                page.get_pixmap(matrix=fitz.Matrix(2,2),clip=rect).save(path)
+                p=dict(page=1,rect=list(rect),crop=str(path.resolve()),source_ref=n.get('object-ref'),
+                       source_path=n.get('source-structure-path'),bounds_basis='original_pdf_model_glyph_operations')
             if run['buyer']=='MENA_L02' and n.get('language')=='ARA' and n.tag in {'paragraph','list_item'}:
                 ids={int(t.get('mcid')) for t in n.iter('text') if t.get('mcid')}
                 boxes=[b for d in report['diagnostics'] if d['code']=='africa_rtl_glyph_source' and d['context']['page_index']==1
@@ -148,7 +166,9 @@ def prepare(run):
                 checks.append(dict(label=f"{run['buyer']} {n.get('language')} {n.tag}",source_ref=n.get('object-ref'),
                     language=n.get('language'),crop=Path(p['crop']).name,markdown=rendered,source_text=text(n)))
             attrs={a.get('name'):a.get('value') for a in n.findall('attributes/attribute')}
-            if n.tag=='table' and attrs.get('review-table')=='source-spans':
+            if n.tag=='table' and (attrs.get('review-table')=='source-spans' and run['buyer']!='XD_INS'
+                    or run['buyer']=='UA_ENG' and n.get('object-ref')=='416 0 R'
+                    or run['buyer']=='XD_INS' and n.get('object-ref') in {'803 0 R','512 0 R'}):
                 rows=n.findall('table_row');header=rows[0]
                 contacts.append(dict(ref=n.get('object-ref'),language=n.get('language'),
                     source_header=[W._element_text(c) for c in header if c.tag in ('table_cell','table_header')],

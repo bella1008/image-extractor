@@ -490,7 +490,9 @@ def _eligible_flows(
     inline_icon_paths: frozenset[tuple[int, ...]] = frozenset(),
 ) -> tuple[tuple[_FragmentText, ...], ...]:
     from tagged_pdf_extractor.domain.africa_safety_label_readability import safety_label_paths
+    from tagged_pdf_extractor.domain.xd_sheet import sentence_preservation_paths
     kept_labels = safety_label_paths(document)
+    kept_source_paths = sentence_preservation_paths(document)
     flows: list[tuple[_FragmentText, ...]] = []
     heading_paths = {
         path
@@ -532,6 +534,7 @@ def _eligible_flows(
             )
             if (
                 child.semantic_role == "list_body"
+                and child_path not in kept_source_paths
                 and not heading_conflict
                 and sentence_break_heading_conflict(
                     semantic_role=child.semantic_role,
@@ -549,7 +552,7 @@ def _eligible_flows(
                 )
             paragraph_flows = (_leaf_paragraph_flows(
                 child, child_path, line_break_paths, inline_icon_paths,
-            ) if child.semantic_role == "paragraph" and child_path not in kept_labels else ())
+            ) if child.semantic_role == "paragraph" and child_path not in kept_labels | kept_source_paths else ())
             if is_sentence_break_eligible_paragraph(
                 semantic_role=child.semantic_role,
                 source_role=child.source_role,

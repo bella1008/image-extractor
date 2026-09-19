@@ -60,6 +60,14 @@ class TaggedPdfReader:
         from tagged_pdf_extractor.domain.xl_sheet import xl_scope
         from tagged_pdf_extractor.domain.xt_sheet import xt_scope
         from tagged_pdf_extractor.domain.py_sheet import py_scope
+        from tagged_pdf_extractor.domain.ua_sheet import ua_scope
+        from tagged_pdf_extractor.domain.xd_sheet import xd_scope
+        if xd_scope(profile):
+            from tagged_pdf_extractor.infrastructure.xd_source_evidence import add_xd_source_evidence
+            return add_xd_source_evidence(self.read(pdf_path), profile)
+        if ua_scope(profile):
+            from tagged_pdf_extractor.infrastructure.ua_source_evidence import add_ua_source_evidence
+            return add_ua_source_evidence(self.read(pdf_path), profile)
         if py_scope(profile):
             from tagged_pdf_extractor.infrastructure.py_source_evidence import add_py_source_evidence
             return add_py_source_evidence(self.read(pdf_path), profile)

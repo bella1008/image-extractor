@@ -2,6 +2,13 @@
 
 ## Current Goal
 
+- 2026-09-20 XL 추가 검토: Dimensions/Weight 6개 행, 9개 모델 열 묶음의 조건별 값 36개를
+  실제 PDF 문구·좌표와 대조했다. `None` 10개는 원문 표기이며 `[내용 없음]`을 삽입하지 않는다.
+  근거: `samples/tagged_pdf_xml_poc/outputs/xml_review_xl_20260920_spec_associations/review.html`.
+  기존 XML은 셀/문단 순서를 보존하지만 항목-조건-값 연결을 명시하지 않는다. 자동 사양 비교용
+  구조 연결은 후속 구현 대상이며, 이전 Hard gate 0을 이 신규 요건의 통과로 해석하지 않는다.
+  이번 작업은 읽기 전용 대응 검토이며 XL 사용자 승인 및 XT 추가 검토는 미완료다.
+
 - 2026-09-20 사용자가 MENA ENG/ARA 검토 완료를 확정했다. 최종 MENA 결과는
   `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_bidi_spec_final/review.html`이다.
   Arabic 안전 문장 `وجِّه دائمًا...`의 동일 MCID 내부 run 순서를 원문 glyph/결합부호 근거로 복원하고,

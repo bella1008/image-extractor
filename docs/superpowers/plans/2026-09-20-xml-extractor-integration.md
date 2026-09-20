@@ -16,7 +16,7 @@
 - [x] Re-extract representative PDFs covering ZC, XU, ZG, AFRICA, CE, TK ARA, MENA, SQ MI, XT, ZW, and XL. Record technical adapter pass/block status per language. Compare raw/semantic/MD to the same incoming extractor; compare changed ZC checklist results to pre-integration output. Preserve existing human approval boundaries. 14 PDF/32 combinations pass; XL blocked on absent canonical metadata (not inferred).
 - [x] Validate ZC checklist 59 parent / 14 child scope, observations, JSON/Excel consistency, and no automatic business decisions. Do not rewrite DB wording to make tests pass.
 - [x] Run root suite and XML suite separately, `compileall src tests scripts` (and apps if present), and dependency checks. Rebuild pilot ZIP and run extracted ZIP self-check and ZC CLI in a different folder. Root616/4skip; XML2524/1skip; candidate pilot133files passed.
-- [ ] Record exact checks, changed outputs, limitations and any required human review in a dated migration report, validation ledger, README and TODO. Save scoped integration commit after review; preserve prior results and branches.
+- [x] Record exact checks, changed outputs, limitations and any required human review in a dated migration report, validation ledger, README and TODO. Save scoped integration commit after review; preserve prior results and branches. Merge52ca5d7; final clean-source ZIP133files, relocated self-check and fresh ZC CLI passed. No push/deletion.
 
 ## Relevant implementation files
 

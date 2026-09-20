@@ -75,6 +75,16 @@
 
 배포 확인용 ZIP(`outputs/review_pilot_20260920_integration_check`)은 133개 파일의 해시를 검증하고, 한글·공백 경로에서 `start_review.py --check`와 새 PDF 입력→ZC Excel/JSON 전체 실행을 통과했다. 최종 커밋 기준 ZIP은 후속 배포 확인 기록을 따른다. 이번 실행은 현재 PC의 다른 경로 테스트이며 다른 물리 PC에서의 재설치를 했다는 뜻은 아니다.
 
+### 최종 커밋·배포 확인
+
+- 병합 커밋: `52ca5d79985ac485e9e232ddbe8c28f91f65eef9`. 부모는 기존 v2 `e5076d5`와 최신 XML `8134892`다.
+- 최종 ZIP: `outputs/review_pilot_20260920_integrated/review-pilot.zip`.
+- ZIP SHA-256: `d4c27dcf554b4f2bf7654a0479d3820013e64b7ae64dd1752e6019651df3f09a`.
+- manifest source_revision은 위 병합 커밋이며 working_tree_changed=false, 배포 파일 133개다.
+- 압축 해제 위치 `outputs/review_pilot_20260920_integrated/최종 실행 검증`에서 PYTHONPATH를 비우고 self-check 및 새 PDF→ZC Excel/JSON CLI 전체 실행을 다시 통과했다. 실행 결과 `outputs/zc_fresh`의 완료 기록과 표시 JSON도 확인했다. 기존과 체크59/구성품14 및 표시 내용 동일.
+- 코드 수정은 이 병합 커밋에 모두 포함된다. 이후 배포 확인 기록을 저장하는 문서 전용 커밋은 ZIP의 프로그램 코드와 다르지 않다.
+- GitHub push, `main` 전환, 기존 worktree 삭제는 하지 않았다.
+
 ## 다른 PC로 옮길 때 발견한 사항
 
 - 배포 builder가 현재 경로만 지워서 과거 작성자의 경로가 동결 원장 출처에 남던 문제를 재현했다. 배포 snapshot에서만 과거 worktree 경로를 정리하고 Excel/JSON/seed 해시를 다시 맞춘다. 원본 DB 바이트는 그대로다.

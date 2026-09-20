@@ -7,6 +7,7 @@
 - [x] 2026-09-20 최신 XML `8134892`를 v2에 통합. 복구 `e5076d5`/`codex/pre-xml-integration-20260920` 보존. 원본 추출기 소스 동일, adapter의 source replay/과거 receipt 호환, BOOK 다중언어 상위 묶음 처리. [통합 기록](docs/migration/2026-09-20-xml-integration_kr.md).
 - [x] 최신 XML 전체 2524 passed/Windows symlink 1 skip. 실제 14 PDF/32언어 조합 ReviewDocument 기술 보존 통과, 언어별 대장 갱신. 사람 승인으로 승격하지 않음. ZC 통합 Excel 1232셀/스타일/행열 크기/표시 JSON 기존과 동일, 체크59/구성품14 유지.
 - [x] 통합 최종 v2 전체 616 passed/선택적 Node 작성 4 skip, compileall/pip check/diff check 통과. 배포 확인용 ZIP 133파일·한글 경로 무결성 검사·새 PDF→ZC Excel/JSON 전체 실행 통과.
+- [x] 통합 커밋 `52ca5d7` 및 clean-source 최종 ZIP `outputs/review_pilot_20260920_integrated/review-pilot.zip` 생성. 최종 ZIP도 한글 경로 self-check·새 ZC CLI·기존 표시 JSON 일치 확인. 원격 push/옛 worktree 삭제는 하지 않음.
 - [x] 다른 checkout에서 배포 생성 시 동결 원장에 남는 과거 개발 경로 제거/해시 재정렬. 원본 DB 바이트 미변경. 테스트 옛 PC 경로 제거 및 기존에 Git에서 빠져 있던 XL PDF 표본 보존.
 - [ ] XL_ENG canonical profile 확인·등록. POC 시험용 프로필과 공식 운영 메타데이터를 구분한다. 현재 ReviewDocument 연결은 명시적으로 차단되며 통합 실패로 숨기지 않는다.
 - [ ] source replay 성능 최적화: 전체 실행에서 반복 검증 5회. 모든 입력/산출물 해시 및 최종 재검증을 유지하는 실행 단위 근거 재사용을 별도 설계한다.

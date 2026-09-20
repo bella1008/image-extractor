@@ -1,6 +1,6 @@
 # PDF부터 검토 결과까지: ReviewDocument를 두는 이유
 
-작성: 2026-09-13. 비개발자용 설명이며 현재 구현과 향후 계획을 구분합니다.
+작성: 2026-09-13. 업데이트: 2026-09-20. 비개발자용 설명이며 현재 구현과 향후 계획을 구분합니다.
 
 ## 전체 흐름
 
@@ -18,6 +18,90 @@ ReviewDocument: 여러 검토 기능이 함께 읽는 표준 문서 데이터
 ```
 
 현재 MD는 기존 XML 추출기의 writer가 만듭니다. MD를 다시 읽어 체크리스트 검토나 Excel을 만드는 구조는 아닙니다. 나중에 ReviewDocument를 이용하는 MD 보기를 만들 수도 있지만, 현재 MD 생성 경로를 교체했다는 뜻은 아닙니다.
+
+## 현재 두 브랜치가 나뉜 이유와 역할
+
+현재 Git 저장소에서 주로 보는 브랜치는 두 개다. 폴더 이름이 비슷하지만 맡은 일이 다르다.
+
+| 브랜치·작업 폴더 | 현재 책임 | 현재 상태 |
+|---|---|---|
+| `feature/xml-markdown-review` / `xml-markdown-review` | PDF에서 Semantic XML과 사람 검수용 Markdown을 만드는 최신 추출기 | 여러 바이어·언어, RTL, BOOK, 문단 소속과 원문 복구 수정이 계속 반영된 최신 추출 소스 |
+| `codex/xml-review-v2` / `xml-review-v2` | XML adapter, ReviewDocument, 체크리스트 근거 조사, JSON·Excel, 화면·배포 | 분기 당시 XML 추출기 기준본을 포함하지만 이후 최신 추출기 변경은 아직 미통합 |
+
+2026-09-10에 `xml-review-v2`는 XML 추출기 커밋 `840512002a80a12b19c712116530ab69b1459c3a`에서 분리됐다. 이후 한쪽에서는 여러 PDF의 XML/MD 품질을 계속 개선하고, 다른 쪽에서는 당시 고정한 추출 결과를 기준으로 ReviewDocument와 체크리스트 연결을 개발했다. RTL만을 위해 분리한 것은 아니다. 추출기가 계속 바뀌는 동안 adapter·DB·Excel·배포까지 동시에 흔들리지 않게 한 작업 분리였다.
+
+현재 관계는 다음과 같다.
+
+```text
+feature/xml-markdown-review
+  └─ 최신 PDF → XML + 사람 검수용 MD
+
+codex/xml-review-v2
+  ├─ 분기 당시의 PDF → XML/MD 추출기
+  ├─ XML adapter + 품질 gate
+  ├─ ReviewDocument
+  ├─ 체크리스트 근거 조사
+  └─ JSON / Excel / 화면 / PC 배포 파일럿
+```
+
+다음 통합에서는 최신 추출기 변경을 `xml-review-v2`에 병합한다. 같은 추출기의 구·신 버전을 두 벌로 계속 운영하지 않는다. 병합으로 기존 추출기 경로를 최신 코드로 갱신하고, 의존성 검사를 통과한 뒤 사용하지 않는 과거 GridCell 실행 경로를 별도 정리한다. 병합과 과거 코드 삭제는 한 번에 처리하지 않는다.
+
+## Adapter와 검토 Agent는 이미 코드상 분리돼 있나요?
+
+책임은 이미 여러 모듈로 나뉘어 있지만 각각이 별도 저장소·worktree·프로그램으로 실행되는 것은 아니다. 한 `xml-review-v2` 저장소 안에서 `ReviewService`와 통합 실행 코드가 순서대로 호출한다.
+
+| 단계 | 대표 코드 | 책임 |
+|---|---|---|
+| XML adapter와 표준화 | `review_document.py`, `semantic_xml_reader.py`, `xml_review_gate.py`, `xml_review_run.py` | XML을 검증하고 원문·구조·근거를 ReviewDocument로 보존 |
+| 체크리스트 검토 | `checklist_observation.py`, `item_review_service.py`, `review_service.py` | DB 기준과 ReviewDocument를 대조하고 근거·미지원 사유를 기록 |
+| 결과 통합 | `combined_review_run.py`, `combined_review_service.py`, `combined_review_model.py` | 일반 체크와 항목별 결과를 한 실행 결과로 묶고 완료·실패 상태를 관리 |
+| 결과 표시 | `combined_review_view.py`, `combined_review_workbook.py` | 결과 데이터를 사용자용 Excel 표시값으로 변환 |
+
+따라서 adapter는 체크리스트 Agent 내부에 섞인 것이 아니라 앞단의 공통 변환 계층이다. 현재 구현된 검토 기능이 체크리스트 경로 하나뿐이라 전체가 하나의 큰 Agent처럼 보일 수 있다. 앞으로 추가하는 검토 기능도 별도 worktree로 만들기보다 같은 저장소에서 독립 모듈로 두고 ReviewDocument를 공통 입력으로 사용한다.
+
+구조상 `Agent`는 반드시 LLM이나 독립 실행 프로그램을 뜻하지 않는다. 여기서는 하나의 검토 목적과 기준 데이터를 가진 독립적인 검토 기능을 뜻한다. XML adapter는 검토 Agent가 아니라 모든 Agent가 함께 사용하는 표준화 단계이고, ReviewService는 Agent들을 순서대로 실행하고 결과를 취합하는 조정자다.
+
+## 통합 후 목표 구조와 현재 구현 상태
+
+```text
+PDF
+  ↓ 최신 XML 추출기
+Semantic XML ──→ 사람 검수용 Markdown
+  ↓ XML adapter + 품질 gate
+ReviewDocument
+  ├─ 체크리스트 DB 검토 Agent                 [현재 파일럿 연결]
+  ├─ Before/After PDF 비교 Agent              [향후]
+  ├─ 회사 시스템 모델·사양 비교 Agent          [향후]
+  └─ 다국어 의미·맞춤법 QA Agent              [향후, 참고 의견 전용]
+  ↓ 공통 결과 취합
+JSON + 사용자용 Excel
+```
+
+각 검토 Agent는 PDF나 XML을 제각각 다시 파싱하지 않는다. `ReviewDocument + 해당 Agent의 기준 데이터`를 입력받고, 공통 결과 형식으로 근거·차이·미확정 사유를 반환한다. Excel writer는 검토 규칙을 가지지 않고 이 결과를 표시한다.
+
+현재 체크리스트 연결은 ZC ENG 파일럿 범위의 근거 조사다. 문구를 찾았다는 이유만으로 업무 Pass/Fail을 확정하지 않으며, 아직 Before/After·회사 사양·다국어 QA 결과를 함께 생성하지 않는다.
+
+## 다음 개발 순서와 체크리스트 DB 재정립 원칙
+
+권장 순서는 다음과 같다.
+
+1. `feature/xml-markdown-review`의 최신 추출기를 `codex/xml-review-v2`에 병합한다.
+2. 이식성 경로를 정리하고 XML 추출기 전체 테스트를 통과시킨다.
+3. XML → ReviewDocument 원문·구조·근거 보존 회귀 테스트를 수행한다.
+4. 기존 checklist master를 별도 보존하고 v2 작성용 master를 재정립한다.
+5. 체크리스트 검토 결과의 공통 데이터 계약을 안정화한다.
+6. 안정된 결과 데이터를 이용해 사용자용 Excel/JSON을 고도화한다.
+7. 대표 PDF로 사람 검토를 받고 지원 바이어·언어를 단계적으로 확대한다.
+
+DB를 “현재 추출된 텍스트를 그대로 모아 새 DB로 자동 생성”하지 않는다. 기존 master에는 사람이 정한 업무 요구사항과 출처가 있고, 추출 텍스트에는 특정 PDF에서 관찰한 실제 문구와 구조가 있다. 둘을 대조하여 각 행을 다음처럼 분류하고 사람 검토 후 v2 master에 반영한다.
+
+- 그대로 유지할 공통 업무 기준
+- 현재 원문 단위에 맞춰 여러 item으로 나눌 기준
+- 바이어·언어별 문구 변형
+- 모델/회사 시스템 값 비교 Agent로 이동할 항목
+- 더 이상 사용하지 않거나 근거 확인이 필요한 항목
+
+기존 master는 덮어쓰지 않고 복구 기준으로 보존한다. v2 master의 안정된 ID는 업무 기준을 가리키며 XML node ID를 사용하지 않는다. 새 PDF 근거는 PDF 파일명·페이지·XML 위치와 함께 실행 결과에 연결한다. Excel은 DB나 판정의 원본이 아니라, 검토자가 결과를 확인하기 위한 화면 계약으로 유지한다.
 
 ## 중간 단계는 정확히 무엇인가요?
 

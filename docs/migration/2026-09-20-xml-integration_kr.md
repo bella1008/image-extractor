@@ -90,13 +90,13 @@
 - 배포 builder가 현재 경로만 지워서 과거 작성자의 경로가 동결 원장 출처에 남던 문제를 재현했다. 배포 snapshot에서만 과거 worktree 경로를 정리하고 Excel/JSON/seed 해시를 다시 맞춘다. 원본 DB 바이트는 그대로다.
 - 일부 XML 테스트가 옛 PC의 `2_TV_*` 절대 경로나 worktree 밖 표본을 참조했다. 이 작업장의 `samples/SUG_RAW/TV_*`로 수정했다. runtime 추출 소스 해시는 변하지 않는다.
 - XL PDF는 기존 최상위 폴더에만 있고 Git에는 없었다. 같은 파일을 `samples/SUG_RAW/TV_XL`에 보존했다. SHA-256: `dce6f5417123809235904c6ce3e7a1ff32aadc57df0a28e2a74d2c676b15a849`.
-- **XL의 공식 `pdf_profile_mapping` 등록은 아직 없다.** XML POC의 XL 테스트는 시험용 프로필을 사용한다. 이 상태를 v2 운영 지원으로 선언하지 않고, 공식 프로필 확인·등록을 후속으로 남긴다.
+- XL은 사용자 확인값 `region=INDIA`, `buyer_codes=XL`과 기존 source-verified `A3/ENG/1`을 합쳐 canonical `XL_ENG`로 등록했다. 시험용 overlay는 제거했다. 실제 PDF를 다시 추출해 XML→MD→ReviewDocument 보존 검사를 통과했으며, 별도 근거는 [XL canonical 실행 기록](evidence/20260920-xl-canonical-integration.json)에 보존한다. 이 기술 확인은 XL 체크리스트 지원이나 사람 원문·업무 승인을 뜻하지 않는다.
 - 표지 제목 bold 요청 HR-20260914-002: 새 ZC MD ENG 제목은 bold, C-FRA 제목은 아직 일반 텍스트다. 전체 해결로 표시하지 않는다.
 
 ## 다음 단계
 
 1. 이 통합의 기술 검사 결과와 기존 바이어별 사람 확인 기록을 구분하여 유지한다.
-2. XL 프로필 정보 확인 및 승인된 매핑 등록. 미등록 값을 임의 추정하지 않는다.
+2. XL 공식 매핑 등록과 기술 연결 검사는 완료했다. 사람 확인 상태와 XL 체크리스트 적용 범위는 별도로 관리한다.
 3. 기존 master 내용을 기준으로 v2 체크리스트의 항목 단위·적용 범위를 정립하고 결과 레포트를 고도화한다.
 4. 통합본을 충분히 사용한 뒤 옛 폴더의 유지/보관/삭제를 별도 결정한다. Git worktree 폴더를 탐색기에서 먼저 삭제하지 않는다.
 

@@ -1,0 +1,29 @@
+{
+  "contract": "tagged-pdf-xml/8134892",
+  "extractor_sha256": "f46c72b75627f030ec7ec78c5cd34e3eede2b2e50edaf3a53407f8db97991477",
+  "mapping_sha256": "17c3fdd5c41949f465971be1af2a174222c5673edcf19e34bed39666934cbb2a",
+  "human_approval": "not_granted",
+  "profiles": [
+    {
+      "source_token": "XL_ENG",
+      "region": "INDIA",
+      "buyer_codes": [
+        "XL"
+      ],
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25031J-00_SUG_Y26 TV ALL_XL_ENG_260306.0.pdf",
+      "pdf_sha256": "dce6f5417123809235904c6ce3e7a1ff32aadc57df0a28e2a74d2c676b15a849",
+      "languages": [
+        "ENG"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 1097
+      },
+      "review_node_count": 2294,
+      "semantic_document_sha256": "6851f859174f851e425da68d314992d7e0239c04b790e3a9afa51791133f1754",
+      "markdown_sha256": "08bfada5cbaf9f7434096c0609a3ca415440a344785a44c3a7e5265215bd2e19",
+      "review_document_sha256": "c9d4f894578007df42ff0bb9425e5b89d989fc44bf3d958bebf0e64e05bc072f",
+      "receipt_sha256": "a5222e56126f261360175db2d68bd11492efe5be24b4a647cdfde40c0c040164"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.semantic_xml_reader import read_review_bundle
+from src.profile_repository import PdfProfileRepository
 from src.xml_review_gate import BundleValidationError, CONTRACT, EXTRACTOR_SHA256, sha256
 from src.xml_review_run import extract_review_document, extractor_digest
 
@@ -15,6 +16,35 @@ MAPPING = ROOT / 'metadata/pdf_profile_mapping/pdf_profile_mapping.json'
 def test_current_producer_is_pinned():
     assert CONTRACT == 'tagged-pdf-xml/8134892'
     assert extractor_digest() == EXTRACTOR_SHA256
+
+
+def test_xl_has_confirmed_canonical_profile():
+    profile = PdfProfileRepository(MAPPING).get('XL_ENG')
+
+    assert profile.region == 'INDIA'
+    assert profile.buyer_codes == ('XL',)
+    assert profile.languages == ('ENG',)
+    assert profile.doc_type == 'A3'
+    assert profile.language_count == 1
+
+
+def test_xl_real_pdf_reaches_review_document_without_semantic_loss(tmp_path):
+    pdf, = (ROOT / 'samples/SUG_RAW').rglob('BN68-25031J-00*_XL_ENG_*.pdf')
+    folder = tmp_path / 'xl-bundle'
+
+    document = extract_review_document(pdf, folder, MAPPING)
+
+    assert document.context.source_token == 'XL_ENG'
+    assert document.context.region == 'INDIA'
+    assert document.context.buyer_codes == ('XL',)
+    assert document.context.doc_type == 'A3'
+    assert document.context.expected_languages == ('ENG',)
+    from scripts.audit_xml_integration import assert_semantic_preservation
+    counts = assert_semantic_preservation(folder, document)
+    assert counts['ENG'] > 0
+    assert (folder / 'semantic_document.md').is_file()
+    assert (folder / 'review_document.json').is_file()
+    assert (folder / 'review_run.json').is_file()
 
 
 @pytest.fixture(scope='module')

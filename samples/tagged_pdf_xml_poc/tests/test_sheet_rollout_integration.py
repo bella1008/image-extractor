@@ -16,7 +16,6 @@ def test_actual_xml_dispatch_complete_buyer_source(tmp_path,buyer,folder,filenam
     assert source.is_file(), f'Required reviewed source sample unavailable: {source}'
     canonical=POC.parents[1]/'metadata/pdf_profile_mapping/pdf_profile_mapping.json'
     rows=json.loads(canonical.read_text(encoding='utf8'))
-    if buyer=='XL_ENG':rows.append(dict(source_token=buyer,doc_type='A3',languages='ENG',language_count=1))
     mapping=tmp_path/'profiles.json';mapping.write_text(json.dumps(rows),encoding='utf8')
     document,report,artifacts=_build_use_case(profile_mapping_path=mapping).run(source,tmp_path/buyer)
     assert report.status=='pass'

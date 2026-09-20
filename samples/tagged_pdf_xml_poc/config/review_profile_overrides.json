@@ -1,6 +1,4 @@
 {
   "description": "Source-verified extraction-only profiles absent from canonical metadata. Does not infer region or buyer_codes.",
-  "profiles": [
-    {"source_token": "XL_ENG", "doc_type": "A3", "languages": ["ENG"], "language_count": 1}
-  ]
+  "profiles": []
 }

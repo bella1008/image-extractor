@@ -9,7 +9,7 @@
 - [x] 통합 최종 v2 전체 616 passed/선택적 Node 작성 4 skip, compileall/pip check/diff check 통과. 배포 확인용 ZIP 133파일·한글 경로 무결성 검사·새 PDF→ZC Excel/JSON 전체 실행 통과.
 - [x] 통합 커밋 `52ca5d7` 및 clean-source 최종 ZIP `outputs/review_pilot_20260920_integrated/review-pilot.zip` 생성. 최종 ZIP도 한글 경로 self-check·새 ZC CLI·기존 표시 JSON 일치 확인. 원격 push/옛 worktree 삭제는 하지 않음.
 - [x] 다른 checkout에서 배포 생성 시 동결 원장에 남는 과거 개발 경로 제거/해시 재정렬. 원본 DB 바이트 미변경. 테스트 옛 PC 경로 제거 및 기존에 Git에서 빠져 있던 XL PDF 표본 보존.
-- [ ] XL_ENG canonical profile 확인·등록. POC 시험용 프로필과 공식 운영 메타데이터를 구분한다. 현재 ReviewDocument 연결은 명시적으로 차단되며 통합 실패로 숨기지 않는다.
+- [x] XL_ENG canonical profile 등록: `region=INDIA`, `buyer_codes=XL`, `A3/ENG/1`. 시험용 overlay를 제거하고 실제 XL PDF로 XML→MD→ReviewDocument를 재실행해 ENG 텍스트 조각 1,097개/ReviewDocument 2,294노드 보존 통과. 사람 원문·업무 승인 및 XL 체크리스트 지원으로 승격하지 않음. 근거 `RUN-20260920-XL-CANONICAL`.
 - [ ] source replay 성능 최적화: 전체 실행에서 반복 검증 5회. 모든 입력/산출물 해시 및 최종 재검증을 유지하는 실행 단위 근거 재사용을 별도 설계한다.
 
 - [x] 2026-09-15 통합 Excel Python 작성기 연결. 기본 UI/CLI의 Node 환경 의존성 제거, 명시적 Node 호출 호환 유지. 실제 ZC 기존 Excel 1,232셀·열/행 크기·고정창·표 스타일 동일, report/view JSON 바이트 동일. 관련97개 통과/개발용 Artifact 작성2개 skip, 새 Python 실물 작성은 테스트와 실물 양쪽에서 검증. 4시트7영역 렌더 및 독립 코드 검토 완료. 표본 `outputs/checklist_reviewer_zc_20260915_python/`.

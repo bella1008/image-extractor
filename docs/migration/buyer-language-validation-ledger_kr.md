@@ -1,10 +1,10 @@
 # 바이어·언어별 XML / ReviewDocument 검증 대장
 
-갱신: 2026-09-20. XML `8134892` 통합의 기술 검사 14 PDF/32개 언어 조합을 추가했습니다. 사람 확인 상태는 자동 승격하지 않았습니다.
+갱신: 2026-09-20. XML `8134892` 통합의 기술 검사 14 PDF/32개 언어 조합과 XL canonical 등록 후 1 PDF/1개 언어 조합을 추가했습니다. 사람 확인 상태는 자동 승격하지 않았습니다.
 
 ## 기록 범위와 해석
 
-- 목록 기준: `metadata/pdf_profile_mapping/pdf_profile_mapping.json`의 23개 프로필, 73개 프로필·언어 조합. 프로필 하나에 여러 buyer_codes가 포함될 수 있으므로 바이어 수와 동일하지 않습니다.
+- 목록 기준: `metadata/pdf_profile_mapping/pdf_profile_mapping.json`의 24개 프로필, 74개 프로필·언어 조합. 프로필 하나에 여러 buyer_codes가 포함될 수 있으므로 바이어 수와 동일하지 않습니다.
 - 각 언어를 별도 행으로 관리합니다. 매핑 추가 시 빠진 행을 먼저 등록합니다. 매핑 밖 신규 파일도 발견 즉시 미등록 대상으로 추가합니다.
 - 아래는 프로필별 현황표이며 승인 범위는 반드시 별도 PDF/실행 기록에 묶습니다. 같은 바이어·언어라도 연도·모델·파일 해시가 다르면 추가 기록입니다.
 - `미조사`는 결과가 없다는 단정이 아닙니다. 다른 터미널의 결과와 승인 기록을 확인하기 전 상태입니다. 기존 GridCell 검수 완료를 XML 검수 완료로 옮기지 않습니다.
@@ -20,7 +20,7 @@
 - 최신 추출기의 XML/MD와 ReviewDocument 사이의 노드 순서·텍스트·속성·근거 보존 검사다. 번역 의미/맞춤법 검사나 PDF 전체 사람 승인이 아니다.
 - ZC, XU, ZG, AFRICA, CE, TK(ENG/TUR 및 ARA), MENA, SQ MI, XT, ZW, PY, UA, XD의 해당 PDF가 기술 검사 통과했다. 아래 표에서 기존 사람 확인 상태와 요청 상태는 유지했다.
 - AFRICA/CE/ZG의 공통 영역 텍스트 75/50/9개는 언어 미배정으로 보존했다. 언어가 없다는 이유로 삭제하거나 임의 언어에 편입하지 않았다.
-- **추가 미등록 대상 XL_ENG**: `BN68-25031J-00...260306.0.pdf`, ENG. 추출기 자체 테스트는 통과하지만 canonical profile 부재로 ReviewDocument 연결은 차단. 공식 buyer/region/profile 확인이 필요하며 위 32조합에는 포함하지 않는다.
+- XL_ENG는 `INDIA / buyer XL / A3 / ENG / 1`로 canonical 등록했다. `RUN-20260920-XL-CANONICAL`에서 실제 PDF의 XML→MD→ReviewDocument 보존 검사를 통과했으며, 기존 32조합과 구분한 추가 1조합이다.
 - 이번 adapter 통합만으로 새 PDF 원문 대조를 요청할 근거는 발견되지 않았다. 기존 미확인 언어 및 기존 요청은 그대로 남는다. HR-20260914-002의 ZC C-FRA 연락처 제목 bold는 미해결이며 ENG만 반영됐다.
 
 아래 표의 `기술 확인`은 반드시 실행 근거의 PDF 버전 범위로 읽는다.
@@ -85,6 +85,7 @@
 | XH_L16 | XH | BOOK | LAT | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XH_L16 | XH | BOOK | LTU | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XH_L16 | XH | BOOK | EST | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XL_ENG | XL | A3 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-XL-CANONICAL |
 | XT_L02 | XT | A2 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | XT_L02 | XT | A2 | THA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | XU_ENG | XU | A3 | ENG | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-2; RUN-20260920-INTEGRATION |
@@ -104,6 +105,19 @@
 ZG/XN/ZT 공통 표지의 언어 미배정 텍스트 조각 9개는 위 5언어 확인에 포함시키지 않습니다. 별도 확인 대상이며, 표지/그림 등 언어 미배정 요소가 언어별 집계 밖에서 빠지지 않도록 관리합니다.
 
 ## 실물 실행 근거
+
+### RUN-20260920-XL-CANONICAL
+
+- PDF: `BN68-25031J-00_SUG_Y26 TV ALL_XL_ENG_260306.0.pdf`
+- 공식 프로필: `source_token=XL_ENG`, `region=INDIA`, `buyer_codes=XL`, `doc_type=A3`, `languages=ENG`, `language_count=1`.
+- 추출/변환 폴더: `outputs/xml_review_xl_20260920_canonical_integration/XL_ENG/`.
+- PDF SHA-256: `dce6f5417123809235904c6ce3e7a1ff32aadc57df0a28e2a74d2c676b15a849`.
+- Semantic XML SHA-256: `6851f859174f851e425da68d314992d7e0239c04b790e3a9afa51791133f1754`.
+- MD SHA-256: `08bfada5cbaf9f7434096c0609a3ca415440a344785a44c3a7e5265215bd2e19`.
+- ReviewDocument SHA-256: `c9d4f894578007df42ff0bb9425e5b89d989fc44bf3d958bebf0e64e05bc072f`.
+- 추출 완료 기록 SHA-256: `a5222e56126f261360175db2d68bd11492efe5be24b4a647cdfde40c0c040164`.
+- 기술 검사: ENG 텍스트 조각 1,097개, ReviewDocument 노드 2,294개. XML 노드 순서·텍스트·속성·근거 보존 통과.
+- 사람 전체 확인자/확인일/확인 범위/승인 근거: 미확정. 이 기록은 XL 체크리스트 실행 지원을 뜻하지 않음.
 
 아래 해시는 2026-09-13에 원본 PDF와 완료 기록 및 산출물을 대조했습니다. 기존 변환 검증 기록: [XML adapter 실물 검증](2026-09-10-xml-adapter-validation_kr.md).
 

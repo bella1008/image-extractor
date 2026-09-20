@@ -49,6 +49,89 @@ def _render(
     return output.read_text(encoding="utf-8")
 
 
+def test_cover_contact_table_preserves_source_paragraph_boundaries(tmp_path: Path) -> None:
+    body = """
+    <table>
+      <attributes>
+        <attribute name="review-table" value="source-spans" />
+        <attribute name="review-table-kind" value="cover-contact" />
+      </attributes>
+      <table_row>
+        <table_cell><paragraph><text>Country</text></paragraph></table_cell>
+        <table_cell><paragraph><text>Centre</text></paragraph></table_cell>
+      </table_row>
+      <table_row>
+        <table_cell><paragraph><text>Syria</text></paragraph></table_cell>
+        <table_cell>
+          <paragraph><text>Phone: 123</text></paragraph>
+          <paragraph><text>WhatsApp: 456</text></paragraph>
+        </table_cell>
+      </table_row>
+    </table>
+    """
+
+    markdown = _render(tmp_path, body)
+
+    assert "<td>Phone: 123<br>WhatsApp: 456</td>" in markdown
+
+
+def test_non_contact_source_spans_table_keeps_legacy_flat_cell_text(tmp_path: Path) -> None:
+    body = """
+    <table>
+      <attributes><attribute name="review-table" value="source-spans" /></attributes>
+      <table_row><table_cell>
+        <paragraph><text>First</text></paragraph>
+        <paragraph><text>Second</text></paragraph>
+      </table_cell></table_row>
+    </table>
+    """
+
+    markdown = _render(tmp_path, body)
+
+    assert "<td>First Second</td>" in markdown
+    assert "First<br>Second" not in markdown
+
+
+def test_model_code_row_metadata_renders_review_line_breaks(tmp_path: Path) -> None:
+    body = """
+    <table><table_row><table_cell>
+      <paragraph>
+        <attributes>
+          <attribute name="review-line-layout" value="model-code-rows" />
+          <attribute name="review-line-break-before-child-indexes" value="1,2" />
+        </attributes>
+        <text>QA100QN80HU QA85QN990HU</text>
+        <text>QA55QN1EHAU QA65QN1EHAU</text>
+        <text>QA75QN1EHAU QA83S85HAE</text>
+      </paragraph>
+    </table_cell></table_row></table>
+    """
+
+    markdown = _render(tmp_path, body)
+
+    compact = re.sub(r"\s+", "", markdown)
+    assert (
+        "QA100QN80HUQA85QN990HU<br>"
+        "QA55QN1EHAUQA65QN1EHAU<br>"
+        "QA75QN1EHAUQA83S85HAE"
+    ) in compact
+
+
+def test_model_code_row_metadata_rejects_invalid_child_indexes(tmp_path: Path) -> None:
+    body = """
+    <paragraph>
+      <attributes>
+        <attribute name="review-line-layout" value="model-code-rows" />
+        <attribute name="review-line-break-before-child-indexes" value="2" />
+      </attributes>
+      <text>QA100QN80HU</text><text>QA85QN990HU</text>
+    </paragraph>
+    """
+
+    with pytest.raises(ValueError, match="model-code row indexes"):
+        _render(tmp_path, body)
+
+
 def _continuation_paragraph(
     content: str = "<text>Continuation text</text>",
     *,

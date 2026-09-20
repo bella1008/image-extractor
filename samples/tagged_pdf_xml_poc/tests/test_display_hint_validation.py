@@ -1014,8 +1014,21 @@ def test_text_display_typography_must_be_strictly_stronger_than_body(
     hint = replace(_text_hint(), **{field: value})
     document = _text_document(hints=(hint,))
 
-    with pytest.raises(ValueError, match=r"strictly stronger.*\(0,"):
+    with pytest.raises(ValueError, match=r"stronger.*\(0,"):
         validate_review_formatting_hints(document)
+
+
+def test_strong_label_accepts_greater_weight_at_the_same_font_size() -> None:
+    hint = replace(
+        _text_hint(display_role="strong_label"),
+        font_size=6.5,
+        comparison_body_font_size=6.5,
+    )
+    document = _text_document(hints=(hint,))
+
+    validated = validate_review_formatting_hints(document)
+
+    assert validated.text_display_by_path[(0,)] == hint
 
 
 def test_rejects_overlapping_text_display_paths() -> None:

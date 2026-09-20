@@ -383,12 +383,17 @@ def validate_review_formatting_hints(
             )
         if not _valid_typography(hint):
             raise ValueError(f"invalid text display typography at {path}")
+        size_is_stronger = (
+            hint.font_size >= hint.comparison_body_font_size
+            if hint.display_role == "strong_label"
+            else hint.font_size > hint.comparison_body_font_size
+        )
         if not (
             hint.font_weight > hint.comparison_body_font_weight
-            and hint.font_size > hint.comparison_body_font_size
+            and size_is_stronger
         ):
             raise ValueError(
-                "text display typography must be strictly stronger than body "
+                "text display typography must be stronger than body "
                 f"typography at {path}"
             )
         _reject_path_conflict(path, promotion_paths, "heading promotion")

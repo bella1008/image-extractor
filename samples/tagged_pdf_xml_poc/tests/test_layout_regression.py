@@ -468,10 +468,20 @@ def _assert_separate_markdown_lines(
 
 def _assert_no_zg_profile_display_evidence(document, semantic_xml: Path) -> None:
     assert document.line_break_hints == ()
-    assert document.text_display_hints == ()
+    assert all(
+        hint.display_role == "strong_label"
+        and hint.reason == "cover_contact_title_stronger_than_explanation"
+        for hint in document.text_display_hints
+    )
     root = ET.parse(semantic_xml).getroot()
-    for role in ("section-heading", "strong-label", "preserved-line-break"):
+    for role in ("section-heading", "preserved-line-break"):
         assert root.find(f".//*[@display-role='{role}']") is None
+    strong_labels = root.findall(".//*[@display-role='strong-label']")
+    assert all(
+        node.get("display-reason")
+        == "cover_contact_title_stronger_than_explanation"
+        for node in strong_labels
+    )
 
 
 def _assert_zg_sentence_readability(
@@ -1102,7 +1112,7 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
     assert len(document.line_break_hints) == 90
     assert Counter(
         hint.display_role for hint in document.text_display_hints
-    ) == {"section_heading": 10, "strong_label": 70}
+    ) == {"section_heading": 10, "strong_label": 71}
     subtitle_body_paths = verified_subtitle_linked_body_paths(document)
     assert set(subtitle_body_paths) == _ZG_SUBTITLE_LINKED_BODY_PATHS
     subtitle_body_hints = {
@@ -1124,7 +1134,13 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         semantic_root.findall(".//*[@display-role='preserved-line-break']")
     ) == 90
     assert len(semantic_root.findall(".//*[@display-role='section-heading']")) == 10
-    assert len(semantic_root.findall(".//*[@display-role='strong-label']")) == 70
+    assert len(semantic_root.findall(".//*[@display-role='strong-label']")) == 71
+    contact_title = semantic_root.find(".//paragraph[@object-ref='578 0 R']")
+    assert contact_title is not None
+    assert contact_title.get("display-role") == "strong-label"
+    assert contact_title.get("display-reason") == (
+        "cover_contact_title_stronger_than_explanation"
+    )
 
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")
     _assert_raw_has_no_readability_display_attributes(artifacts.raw_xml)
@@ -1168,6 +1184,7 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         for label in labels
         for _ in range(2)
     )
+    expected_form_labels["Contact Samsung world wide"] += 1
     semantic_form_labels = Counter(
         _element_text(element)
         for element in semantic_root.findall(".//*[@display-role='strong-label']")

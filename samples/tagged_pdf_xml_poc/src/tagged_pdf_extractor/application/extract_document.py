@@ -27,6 +27,8 @@ from tagged_pdf_extractor.domain.review_formatting import (
 from tagged_pdf_extractor.domain.readability_formatting import (
     apply_readability_formatting,
 )
+from tagged_pdf_extractor.domain.cover_contact import apply_cover_contact_formatting
+from tagged_pdf_extractor.domain.model_code_lines import annotate_model_code_lines
 from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitles
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
 from tagged_pdf_extractor.domain.africa_book import prepare_africa_book
@@ -119,6 +121,8 @@ class ExtractDocument:
             profile_resolution = (profile, resolution)
         document = detect_table_subtitles(document)
         document = apply_profile_review_formatting(document)
+        document = apply_cover_contact_formatting(document)
+        document = annotate_model_code_lines(document)
         if profile_resolution is not None:
             profile, resolution = profile_resolution
             if resolution.diagnostic is None:

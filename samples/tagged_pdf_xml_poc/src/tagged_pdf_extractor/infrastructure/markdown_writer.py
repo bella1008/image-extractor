@@ -745,11 +745,30 @@ class MarkdownDocumentWriter:
                         value=a.get('value','')
                         if not value.isdigit() or not 1<=int(value)<=1000:raise ValueError('invalid source table span')
                         attrs.append(f' {name}="{int(value)}"')
-                value=html.escape(cls._element_text(cell)).replace(_SENTENCE_BREAK,'<br>')
+                contact_table = any(
+                    attribute.get("name") == "review-table-kind"
+                    and attribute.get("value") == "cover-contact"
+                    for attribute in table.findall("attributes/attribute")
+                )
+                value = (
+                    cls._render_cover_contact_cell(cell)
+                    if contact_table
+                    else html.escape(cls._element_text(cell)).replace(_SENTENCE_BREAK, '<br>')
+                )
                 tag='th' if cell.tag=='table_header' else 'td'
                 lines.append(f'<{tag}{"".join(attrs)}>{value}</{tag}>')
             lines.append('</tr>')
         return '\n'.join((*lines,'</table>'))
+
+    @classmethod
+    def _render_cover_contact_cell(cls, cell: ET.Element) -> str:
+        children = cls._structural_children(cell)
+        if not children or any(child.tag != "paragraph" for child in children):
+            raise ValueError("cover-contact cell requires paragraph children")
+        return "<br>".join(
+            html.escape(cls._element_text(child)).replace(_SENTENCE_BREAK, "<br>")
+            for child in children
+        )
 
     @classmethod
     def _render_complex_table(
@@ -1068,6 +1087,13 @@ class MarkdownDocumentWriter:
 
     @classmethod
     def _element_text_parts(cls, element: ET.Element) -> Iterable[str]:
+        model_line_starts = cls._model_code_line_starts(element)
+        if model_line_starts is not None:
+            for index, child in enumerate(cls._structural_children(element)):
+                if index in model_line_starts:
+                    yield _SENTENCE_BREAK
+                yield from cls._element_text_parts(child)
+            return
         if cls._has_source_space_marker(element):
             yield cls._source_space_text(element)
             return
@@ -1111,6 +1137,36 @@ class MarkdownDocumentWriter:
             if child in excluded:
                 continue
             yield from cls._element_text_parts(child)
+
+    @classmethod
+    def _model_code_line_starts(cls, element: ET.Element) -> frozenset[int] | None:
+        attributes = {
+            attribute.get("name"): attribute.get("value")
+            for attribute in element.findall("attributes/attribute")
+        }
+        layout = attributes.get("review-line-layout")
+        indexes = attributes.get("review-line-break-before-child-indexes")
+        if layout is None and indexes is None:
+            return None
+        children = cls._structural_children(element)
+        if (
+            element.tag != "paragraph"
+            or layout != "model-code-rows"
+            or indexes is None
+            or not indexes
+            or any(child.tag != "text" for child in children)
+        ):
+            raise ValueError("invalid model-code row metadata")
+        parts = indexes.split(",")
+        if any(re.fullmatch(r"[1-9][0-9]*", part) is None for part in parts):
+            raise ValueError("invalid model-code row indexes")
+        values = tuple(int(part) for part in parts)
+        if (
+            tuple(sorted(set(values))) != values
+            or any(value >= len(children) for value in values)
+        ):
+            raise ValueError("invalid model-code row indexes")
+        return frozenset(values)
 
     @classmethod
     def _join_text_parts(cls, parts: Iterable[str]) -> str:

@@ -78,6 +78,10 @@ _THEMATIC_BREAK = re.compile(r"^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$")
 _RAW_HTML_PREFIX = re.compile(
     r"^<(?:!--|[!?]|/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]))"
 )
+_GENERATED_TABLE_TAG = re.compile(
+    r"</?(?:table|tr|td|th)(?:\s+[^>]*)?>",
+    re.IGNORECASE,
+)
 
 
 def _visible_source_text(value: str) -> str:
@@ -151,6 +155,7 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
         if value.startswith("|") and value.endswith("|"):
             value = re.sub(r"(?<!\\)\|", " ", value[1:-1])
         value = value.replace(r"\|", "|").strip()
+        value = _GENERATED_TABLE_TAG.sub(" ", value)
         value = (
             value.replace("<br>", " ")
             .replace(r"\[아이콘]", " ")
@@ -159,6 +164,8 @@ def _markdown_text_tokens(markdown: str) -> list[str]:
         if value.startswith("- "):
             value = value[2:]
         value = _HEADING_PREFIX.sub("", value)
+        if value.startswith("**") and value.endswith("**") and len(value) > 4:
+            value = value[2:-2]
         value = _undo_writer_prefix_escape(value)
         value = value.replace(r"\*", "*")  # CommonMark literal asterisk escape.
         source_lines.append(value)
@@ -473,7 +480,11 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
 
     validation = OutputBundleWriter().validate(document)
     assert document.line_break_hints == ()
-    assert document.text_display_hints == ()
+    assert len(document.text_display_hints) == 1
+    assert document.text_display_hints[0].display_role == "strong_label"
+    assert document.text_display_hints[0].reason == (
+        "cover_contact_title_stronger_than_explanation"
+    )
     assert report.metrics["numbered_heading_promotion_count"] == 8
     assert [item["labels"] for item in report.metrics["numbered_heading_series"]] == [
         ["01", "02", "03", "04"],
@@ -488,14 +499,23 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
 
     raw_root = ET.parse(artifacts.raw_xml).getroot()
     semantic_root = ET.parse(artifacts.semantic_xml).getroot()
-    for display_role in (
-        "section-heading",
-        "strong-label",
-        "preserved-line-break",
-    ):
+    for display_role in ("section-heading", "preserved-line-break"):
         assert semantic_root.find(
             f".//*[@display-role='{display_role}']"
         ) is None
+    contact_title = semantic_root.find(".//paragraph[@object-ref='1019 0 R']")
+    assert contact_title is not None
+    assert contact_title.get("display-role") == "strong-label"
+    assert contact_title.get("display-reason") == (
+        "cover_contact_title_stronger_than_explanation"
+    )
+    contact_table = semantic_root.find(".//table[@object-ref='1022 0 R']")
+    assert contact_table is not None
+    contact_attributes = {
+        attribute.get("name"): attribute.get("value")
+        for attribute in contact_table.findall("attributes/attribute")
+    }
+    assert contact_attributes["review-table-kind"] == "cover-contact"
     report_data = json.loads(artifacts.report_json.read_text(encoding="utf-8"))
     assert artifacts.semantic_markdown.is_file()
     markdown = artifacts.semantic_markdown.read_text(encoding="utf-8")

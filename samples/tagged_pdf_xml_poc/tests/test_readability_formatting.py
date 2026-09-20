@@ -88,12 +88,15 @@ def test_africa_book_sentences_survive_verified_inline_icons(language):
     ('AFRICA_L05','A2',('ENG','FRA','SPA','POR','ARA')),
     ('AFRICA_L05','BOOK',('ENG','FRA','SPA','POR')),
 ])
-def test_inline_sentence_opt_in_does_not_extend_to_other_profiles(token,kind,languages):
+def test_validated_inline_icons_enable_sentence_breaks_for_every_profile(token,kind,languages):
     source = _document(_element('paragraph',
         _styled_fragment('First sentence. Second sentence (',mcid=201),
         _figure(), _styled_fragment(' > Settings > Support).',mcid=202)))
     result = apply_readability_formatting(source,PdfProfile(token,kind,languages,len(languages)))
-    assert result.sentence_break_hints==()
+    assert len(result.inline_icon_hints) == 1
+    assert [(hint.child_path, hint.offsets) for hint in result.sentence_break_hints] == [
+        ((0, 0), (16,))
+    ]
 
 
 def test_africa_unknown_figure_still_blocks_paragraph_sentence_hints():

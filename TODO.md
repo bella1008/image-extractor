@@ -2,6 +2,19 @@
 
 ## Current Goal
 
+- 2026-09-20 MENA 사용자 검토에서 발견된 표시 결함 4건을 공용 근거 규칙으로 수정했다.
+  표지 연락처 섹션의 구조와 URL·전화 데이터가 모두 확인된 표에만 `cover-contact`를 부여하고,
+  서로 다른 원문 문단만 셀 내부 `<br>`로 보존한다. 연락처 제목은 실제 600/400 글꼴 근거가 있을 때만 굵게 표시한다.
+  검증된 inline navigation icon은 전 프로필 문장 분리에 사용할 수 있게 했고, 사양표 모델 전용 다중행은
+  bbox baseline과 대문자·숫자 model token을 모두 만족할 때만 줄바꿈한다.
+  MENA ENG/ARA의 원문 문자·구조·표 관계는 2026-09-17 승인 근거와 동일하며 Hard gate 0이다.
+  최신 MENA 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_readability_review/review.html`.
+  승인 대기 9바이어 통합 수치 화면: `samples/tagged_pdf_xml_poc/outputs/xml_review_pending_20260920_counts/review.html`.
+  ASIA 18개 표 중 1개, ZG 146개 중 1개, XH 466개 중 1개, SQ MI 37개 중 2개만 연락처 표로 분류됐다.
+  전체 2,514 passed / 1 Windows symlink skip, 집중 741 passed, public import 호환 43 passed, compileall 성공.
+  사용자 최종 컨펌은 MENA/XL/XT/TK/ZW/PY/SQ_MI/UA/XD 9바이어 모두 대기 상태이다.
+  상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-20-mena-contact-readability.md`.
+
 - 2026-09-19 UA_ENG(A3 ENG), XD_INS(A3 INS) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.
   최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_ua_xd_20260919_ready/review.html`.
   UA 제목 24/표 19/검토 단위 109, XD 제목 30/표 43/검토 단위 138; XML/MD/HTML 247단위, 비교 crop 86개 확인. Hard gate 0.

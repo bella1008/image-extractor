@@ -6,8 +6,8 @@
 - profile: `MENA_L02 / A2 / ENG, ARA`
 - branch: `feature/xml-markdown-review`
 - starting HEAD: `1ef64066a3ddf90dd77495ad2400ffa779f6b508`
-- final review bundle: `outputs/xml_review_mena_20260920_readability_review`
-- consolidated pending-review index: `outputs/xml_review_pending_20260920_counts/review.html`
+- final review bundle: `outputs/xml_review_mena_20260920_bidi_spec_final`
+- consolidated remaining-review index: `outputs/xml_review_pending_20260920_counts_v3/review.html`
 
 No checklist database, item-review path, legacy GridCell extractor, or other worktree was changed.
 
@@ -17,6 +17,9 @@ No checklist database, item-review path, legacy GridCell extractor, or other wor
 2. Separate source paragraphs in contact cells, including Syria phone and WhatsApp lines, were flattened into one line.
 3. The Eco Sensor and following Brightness Optimisation sentences under `The screen dims.` were joined because validated navigation icons were only enabled for a buyer allowlist.
 4. Model-only rows in the specification table were flattened although the PDF stores them on distinct baselines.
+5. One Arabic safety sentence had same-MCID source runs in physical order, which placed `وجِّه دائمًا` after the following words in Markdown.
+6. The RTL `The Frame` note displayed the marker in the wrong logical order; source glyph positions prove `*: The Frame فقط`.
+7. Source-bold specification item labels were not represented as strong labels.
 
 ## Rule boundaries
 
@@ -55,12 +58,13 @@ The ENG-only QR, barcode, and document-code cover area explains the table and fi
 - Markdown and preview HTML text/DOM structure match.
 - The final review bundle contains raw XML, semantic XML, Markdown, extraction report, review document, review run, preview HTML, and a targeted source audit.
 
-Hard gate failures: 0. Remaining warnings are the existing non-text icon, safety-symbol, QR, barcode, and editorial/translation review items. These are source-review concerns and were not converted to OCR claims or automatic corrections. User final approval remains pending.
+Hard gate failures: 0. Remaining warnings are the existing non-text icon, safety-symbol, QR, barcode, and editorial/translation review items. These are source-review concerns and were not converted to OCR claims or automatic corrections. The user subsequently completed and approved the MENA ENG/ARA review.
+
+The follow-up Arabic review preserved the exact character inventory while correcting the two proven logical-order cases. ENG and ARA each expose seven specification strong labels. The user subsequently confirmed the complete MENA ENG/ARA review, so MENA is no longer in the pending-review index.
 
 ## Verification
 
-- focused affected tests: `741 passed`
-- complete POC suite: `2514 passed, 1 skipped` (`symlinks unavailable` on Windows)
+- final complete POC suite after the MENA and XL/XT follow-ups: `2524 passed, 1 skipped` (`symlinks unavailable` on Windows)
 - root public-import compatibility: `43 passed`
 - POC compileall: `src tests scripts`
 - root compileall: `src tests` (root `scripts` and `apps` directories do not exist)

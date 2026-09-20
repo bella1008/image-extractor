@@ -104,9 +104,16 @@ def apply_cover_contact_formatting(document: TaggedDocument) -> TaggedDocument:
 def _contact_parts(
     section: StructureElement,
 ) -> tuple[StructureElement, StructureElement, StructureElement, StructureElement] | None:
-    if section.semantic_role != "section" or len(section.children) != 3:
+    if section.semantic_role != "section":
         return None
-    title, explanation, wrapper = section.children
+    meaningful_children = tuple(
+        child
+        for child in section.children
+        if not _is_empty_source_paragraph(child)
+    )
+    if len(meaningful_children) != 3:
+        return None
+    title, explanation, wrapper = meaningful_children
     if not all(isinstance(value, StructureElement) for value in (title, explanation, wrapper)):
         return None
     assert isinstance(title, StructureElement)
@@ -126,6 +133,16 @@ def _contact_parts(
     if not _is_contact_table(table):
         return None
     return title, explanation, wrapper, table
+
+
+def _is_empty_source_paragraph(
+    node: StructureElement | ContentFragment,
+) -> bool:
+    return (
+        isinstance(node, StructureElement)
+        and node.semantic_role == "paragraph"
+        and not node.children
+    )
 
 
 def _is_contact_table(table: StructureElement) -> bool:

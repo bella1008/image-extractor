@@ -32,7 +32,7 @@ def prepare_mena_sheet(document,profile):
         children,proof=repair(children,document.diagnostics);proofs.append(proof)
     from tagged_pdf_extractor.domain.mena_source_text import repair_mena_source
     children,proof=repair_mena_source(children,document.diagnostics);proofs.append(proof)
-    if {c['kind'] for c in proof.context['changes']}!={'model_suffix_source_ownership','sound_model_boundary_slash','wifi_source_bracket_order','copyright_source_glyph_order'}:
+    if {c['kind'] for c in proof.context['changes']}!={'model_suffix_source_ownership','sound_model_boundary_slash','wifi_source_bracket_order','copyright_source_glyph_order','the_frame_note_punctuation_order'}:
         raise ValueError('MENA source punctuation evidence incomplete')
     changes=[]
     def ownership(n):

@@ -19,6 +19,9 @@ from tagged_pdf_extractor.domain.typography import (
     TypographyEvidence,
     typography_evidence,
 )
+from tagged_pdf_extractor.domain.table_strong_labels import (
+    detect_table_strong_label_hints,
+)
 
 
 _INLINE_ROLES = frozenset({"span", "link"})
@@ -36,15 +39,42 @@ class _ParagraphRecord:
 
 def apply_profile_review_formatting(document: TaggedDocument) -> TaggedDocument:
     line_break_hints = detect_rf_line_break_hints(document.children)
+    table_hints = detect_table_strong_label_hints(document)
     if not review_formatting_scope(document.source_path).enabled:
-        if line_break_hints == document.line_break_hints:
+        text_display_hints = _merge_text_display_hints(
+            document.text_display_hints,
+            table_hints,
+        )
+        if (
+            line_break_hints == document.line_break_hints
+            and text_display_hints == document.text_display_hints
+        ):
             return document
-        return replace(document, line_break_hints=line_break_hints)
+        return replace(
+            document,
+            line_break_hints=line_break_hints,
+            text_display_hints=text_display_hints,
+        )
+    form_hints = detect_form_cluster_hints(document)
     return replace(
         document,
         line_break_hints=line_break_hints,
-        text_display_hints=detect_form_cluster_hints(document),
+        text_display_hints=_merge_text_display_hints(form_hints, table_hints),
     )
+
+
+def _merge_text_display_hints(
+    primary: tuple[TextDisplayHint, ...],
+    additions: tuple[TextDisplayHint, ...],
+) -> tuple[TextDisplayHint, ...]:
+    result = list(primary)
+    occupied = [hint.child_path for hint in primary]
+    for hint in additions:
+        if any(_paths_overlap(hint.child_path, path) for path in occupied):
+            continue
+        result.append(hint)
+        occupied.append(hint.child_path)
+    return tuple(sorted(result, key=lambda hint: hint.child_path))
 
 
 def detect_form_cluster_hints(

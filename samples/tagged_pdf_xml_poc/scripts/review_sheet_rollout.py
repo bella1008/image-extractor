@@ -120,7 +120,8 @@ def prepare(run):
         regions=[n for n in article if n.tag!='attributes' and len(text(n))<8000]
         regions+=list(document.iter('table'))
         parents={c:n for n in document.iter() for c in n}
-        important={'MENA_L02':{'174 0 R','517 0 R','553 0 R','1175 0 R','390 0 R'},
+        important={'MENA_L02':{'174 0 R','517 0 R','553 0 R','1175 0 R','390 0 R',
+                               '344 0 R','159 0 R','704 0 R'},
                    'XL_ENG':{'549 0 R'},'XT_L02':{'1123 0 R','336 0 R'},
                    'PY_ENRU':{'1280 0 R','712 0 R'},
                    'UA_ENG':{'522 0 R','390 0 R','391 0 R','387 0 R'},

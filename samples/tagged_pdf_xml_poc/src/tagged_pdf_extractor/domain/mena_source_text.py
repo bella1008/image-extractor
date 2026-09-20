@@ -74,7 +74,7 @@ def repair_mena_source(children, diagnostics):
         if isinstance(node, ContentFragment):
             return node
         node = replace(node, children=tuple(visit(c) for c in node.children))
-        if node.language != 'ARA' or node.object_ref not in {'174 0 R', '517 0 R', '553 0 R', '119 0 R'}:
+        if node.language != 'ARA' or node.object_ref not in {'174 0 R', '517 0 R', '553 0 R', '119 0 R', '159 0 R'}:
             return node
         fs = [c for c in node.children if isinstance(c, ContentFragment) and c.page_index == 1]
         by_id = {f.mcid: f for f in fs}
@@ -104,6 +104,31 @@ def repair_mena_source(children, diagnostics):
                         'source_whitespace_restored': sum(c.isspace() for c in value)-sum(c.isspace() for c in fragment.text),
                         'fragment_changes': [{'mcid': 943, 'before': fragment.text, 'after': value}]})
                     return replace(node, children=tuple(candidate if c is fragment else c for c in node.children))
+        if node.object_ref == '159 0 R' and {1045, 1046, 1047} <= by_id.keys():
+            arabic, latin, marker = (by_id[k] for k in (1045, 1046, 1047))
+            a, b, c = (source(k) for k in (1045, 1046, 1047))
+            if (a and b and c
+                    and visible(arabic.text) == 'فقط'
+                    and visible(latin.text) == 'TheFrame'
+                    and visible(marker.text) == ':*'
+                    and ''.join(g['glyph'] for g in a) == 'طقف '
+                    and ''.join(g['glyph'] for g in b) == 'The Frame'
+                    and ''.join(g['glyph'] for g in c) == ' :*'
+                    and same_line(a, b, c)
+                    and all(left['box'][0] < right['box'][0]
+                            for group in (a, b, c)
+                            for left, right in zip(group, group[1:]))
+                    and max(g['box'][2] for g in a) <= min(g['box'][0] for g in b) + .2
+                    and max(g['box'][2] for g in b) <= min(g['box'][0] for g in c) + .2):
+                candidate = update(marker, '*: ', c)
+                if candidate is not None and Counter(marker.text) == Counter(candidate.text):
+                    changes.append({'kind': 'the_frame_note_punctuation_order', 'page_index': 1,
+                        'object_ref': node.object_ref, 'source_structure_path': node.source_structure_path,
+                        'source_glyphs': {'1045': a, '1046': b, '1047': c},
+                        'logical_marker': candidate.text,
+                        'fragment_changes': [{'mcid': 1047, 'before': marker.text, 'after': candidate.text}]})
+                    return replace(node, children=tuple(candidate if child is marker else child
+                                                       for child in node.children))
         if node.object_ref == '174 0 R' and {1083, 1084, 1085} <= by_id.keys():
             model, separator, previous = (by_id[k] for k in (1083, 1084, 1085))
             a, b, c = (source(k) for k in (1083, 1084, 1085))

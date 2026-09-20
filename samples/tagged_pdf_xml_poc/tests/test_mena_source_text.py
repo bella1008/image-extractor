@@ -135,6 +135,19 @@ def test_copyright_uses_source_glyph_positions_around_copyright_symbol():
     assert twice == repaired and not second_audit.context['changes']
 
 
+def test_the_frame_note_uses_pdf_observed_star_colon_order():
+    original = node('159 0 R', frag(1045, ' فقط'), frag(1046, 'The Frame'), frag(1047, ' :*'))
+    ev = evidence((1045, 'طقف ', 100), (1046, 'The Frame', 105), (1047, ' :*', 114))
+
+    repaired, audit = run((original,), ev)
+
+    assert ''.join(f.text for f in leaves(repaired[0])) == ' فقطThe Frame*: '
+    assert Counter(''.join(f.text for f in leaves(repaired[0]))) == Counter(
+        ''.join(f.text for f in leaves(original))
+    )
+    assert audit.context['changes'][0]['kind'] == 'the_frame_note_punctuation_order'
+
+
 @pytest.mark.parametrize('mutation', ['geometry', 'glyph', 'actual_text', 'source_text'])
 def test_copyright_repair_requires_complete_source_proof(mutation):
     original = node('119 0 R', frag(943, ' عام© حقوق النشر'))
@@ -161,7 +174,7 @@ def test_real_source_operations_authorize_all_three_repairs():
     from tagged_pdf_extractor.domain.mena_sheet import prepare_mena_sheet
     prepared = prepare_mena_sheet(document, PdfProfile('MENA_L02', 'A2', ('ENG', 'ARA'), 2))
     integrated = next(d for d in prepared.diagnostics if d.code == 'mena_source_text')
-    assert len(integrated.context['changes']) == 4
+    assert len(integrated.context['changes']) == 5
     copyright = next(f for c in prepared.children for f in leaves(c) if f.page_index == 1 and f.mcid == 943)
     assert copyright.text == 'حقوق النشر © عام '
     original = (

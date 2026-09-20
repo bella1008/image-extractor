@@ -115,6 +115,13 @@ def test_final_markdown_exposes_shared_contact_cell_and_intact_decimals(raw, tmp
     assert '<td rowspan="2">www.samsung.com/th/support</td>' in md
     assert '7.3 kg' in md and '7. 3' not in md
     assert '7.125' in md and '7 .' not in md
+    assert '**Contact Samsung world wide**' in md
+    assert '<td>1800-88-9999<br>+603-7713 7420 (Overseas contact)</td>' in md
+    assert '<td>Mobile to Landline:<br>02 8422-2111<br>Landline to Landline:<br>8422-2111</td>' in md
+    assert 'The Eco Sensor automatically adjusts the screen brightness based on the ambient light intensity.<br>\nIf the screen is too dark' in md
+    assert md.count('**Display Resolution**') == 3
+    assert md.count('**Without Stand**') == 6
+    assert md.count('**With Stand**') == 6
 
 def test_missing_operation_proof_fails_closed(raw):
     from tagged_pdf_extractor.domain.xl_sheet import SOURCE_SHA, prepare_xl_sheet

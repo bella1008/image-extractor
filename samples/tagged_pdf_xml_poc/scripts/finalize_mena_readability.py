@@ -1,6 +1,7 @@
 """Seal the MENA readability rerun against the accepted source-reviewed bundle."""
 
 import argparse
+from collections import Counter
 from hashlib import sha256
 from html import escape
 import json
@@ -37,7 +38,7 @@ def source_attributes(node: E.Element) -> dict[str, str]:
     }
 
 
-def source_signature(root: E.Element) -> tuple:
+def source_structure_signature(root: E.Element) -> tuple:
     return tuple(
         (
             node.tag,
@@ -45,10 +46,20 @@ def source_signature(root: E.Element) -> tuple:
             node.get("page-index"),
             node.get("language"),
             node.get("mcid"),
-            node.text if node.tag == "text" else None,
         )
         for node in root.iter()
         if node.tag not in {"attributes", "attribute"}
+    )
+
+
+def source_text_inventory(root: E.Element) -> tuple:
+    return tuple(
+        (
+            node.get("page-index"),
+            node.get("mcid"),
+            tuple(sorted(Counter(node.text or "").items())),
+        )
+        for node in root.iter("text")
     )
 
 
@@ -93,8 +104,10 @@ def main() -> None:
 
     before = E.parse(baseline / "semantic_document.xml").getroot()
     after = E.parse(folder / "semantic_document.xml").getroot()
-    if source_signature(before) != source_signature(after):
-        raise ValueError("semantic source text or structure changed")
+    if source_structure_signature(before) != source_structure_signature(after):
+        raise ValueError("semantic source structure changed")
+    if source_text_inventory(before) != source_text_inventory(after):
+        raise ValueError("semantic source character inventory changed")
     if table_signature(before) != table_signature(after):
         raise ValueError("semantic table relationships changed")
 
@@ -134,6 +147,15 @@ def main() -> None:
     )
     if not any(text.get("sentence-break-offsets") for text in dims.iter("text")):
         raise ValueError("The screen dims paragraph sentence boundary is missing")
+    spec_labels = [
+        paragraph
+        for paragraph in after.iter("paragraph")
+        if paragraph.get("display-reason") == "repeated_table_label_value_typography"
+    ]
+    if Counter(paragraph.get("language") for paragraph in spec_labels) != Counter(
+        {"ENG": 7, "ARA": 7}
+    ):
+        raise ValueError("MENA specification label coverage changed")
 
     markdown = (folder / "semantic_document.md").read_text(encoding="utf-8")
     required_markdown = (
@@ -141,6 +163,12 @@ def main() -> None:
         "Phone: 4873<br>WhatsApp +962-79-777-7421",
         "The Eco Sensor automatically adjusts the screen brightness based on the ambient light intensity.<br>",
         "QA100QN80HU QA85QN990HU QA55QN1EHAU<br>",
+        "وجِّه دائمًا الأسلاك والكابلات المتصلة بالتلفزيون",
+        "*: The Frame فقط",
+        "**Display Resolution**",
+        "**Model Name**",
+        "**دقة العرض**",
+        "**اسم الطراز**",
     )
     if any(value not in markdown for value in required_markdown):
         raise ValueError("required MENA Markdown readability output is missing")
@@ -155,12 +183,16 @@ def main() -> None:
         "source_sha256": review["source"]["sha256"],
         "baseline_source_audit": str((baseline / "source_audit.json").resolve()),
         "baseline_source_review_complete": True,
-        "semantic_source_signature_equal": True,
+        "semantic_source_structure_equal": True,
+        "semantic_source_character_inventory_equal": True,
         "table_relationships_equal": True,
         "contact_tables": CONTACT_TABLES,
         "contact_titles": CONTACT_TITLES,
         "model_rows": {key: {"language": value[0], "line_starts": value[1]} for key, value in MODEL_ROWS.items()},
         "screen_dims_sentence_break": True,
+        "arabic_safety_sentence_order": True,
+        "arabic_the_frame_marker_order": True,
+        "specification_strong_labels": {"ENG": 7, "ARA": 7},
         "xml_markdown_character_sequence": True,
         "markdown_html_structure_equal": True,
         "final_semantic_sha256": digest(folder / "semantic_document.xml"),
@@ -214,7 +246,10 @@ def main() -> None:
         + "</table><p>표시 제목은 표지 포함 검토 제목 수입니다. 그림은 semantic XML figure 노드 수입니다.</p>"
         "<h2>수정 확인</h2><ul><li>표지 Contact Samsung world wide 굵기</li>"
         "<li>연락처 표 셀의 원문 문단 줄바꿈</li><li>The screen dims. 하단 문장 줄바꿈</li>"
-        "<li>사양표 모델 전용 물리행 줄바꿈</li></ul>"
+        "<li>사양표 모델 전용 물리행 줄바꿈</li>"
+        "<li>Arabic 안전 문장의 동일 MCID 결합부호·단어 순서</li>"
+        "<li>Arabic The Frame 각주의 원문 *: 순서</li>"
+        "<li>Specifications 굵은 항목명 소제목 표시</li></ul>"
         '<p><a href="MENA_L02/source_audit.json">수정 근거</a> · '
         '<a href="ownership_findings.html">PDF/문장 연결 검토 자료</a></p></body></html>'
     )

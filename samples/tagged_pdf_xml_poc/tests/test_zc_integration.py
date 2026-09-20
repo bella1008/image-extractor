@@ -480,11 +480,13 @@ def test_zc_pdf_has_recoverable_tagged_hierarchy_and_auditable_outputs(
 
     validation = OutputBundleWriter().validate(document)
     assert document.line_break_hints == ()
-    assert len(document.text_display_hints) == 1
-    assert document.text_display_hints[0].display_role == "strong_label"
-    assert document.text_display_hints[0].reason == (
-        "cover_contact_title_stronger_than_explanation"
-    )
+    assert Counter(hint.display_role for hint in document.text_display_hints) == {
+        "strong_label": 13
+    }
+    assert Counter(hint.reason for hint in document.text_display_hints) == {
+        "cover_contact_title_stronger_than_explanation": 1,
+        "repeated_table_label_value_typography": 12,
+    }
     assert report.metrics["numbered_heading_promotion_count"] == 8
     assert [item["labels"] for item in report.metrics["numbered_heading_series"]] == [
         ["01", "02", "03", "04"],

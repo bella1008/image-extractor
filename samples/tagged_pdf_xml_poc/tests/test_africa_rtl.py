@@ -87,6 +87,25 @@ def test_contiguous_reset_keeps_an_actual_text_combining_glyph_atomic(missing_ma
     assert restore([fragment],[first,mark,last]).children[0].text=='وجِّه'
 
 
+def test_same_line_split_runs_keep_actual_text_combining_glyphs_atomic():
+    fragment = ContentFragment(30, 1, ('ه ِّوج',))
+    first = geometry_line(['ه'], 0, 100)
+    shadda_kasra = geometry_line(['ِّ'], 3.2, 99)
+    shadda_kasra['runs'][0]['actual_text'] = True
+    shadda_kasra['runs'][0]['glyph_boxes'] = [[3.2, 99, 3.2, 105.5]]
+    last = geometry_line(['ج', 'و'], 3, 100)
+    source_line = {
+        'pending_mark': False,
+        'runs': [
+            first['runs'][0],
+            shadda_kasra['runs'][0],
+            last['runs'][0],
+        ],
+    }
+
+    assert restore([fragment], [source_line]).children[0].text == 'وجِّه'
+
+
 def test_contiguous_reset_still_rejects_actual_text_letters():
     fragment=ContentFragment(30,1,('ه وج',))
     first=geometry_line(['ه'],0,100);last=geometry_line(['ج','و'],3,100.0065)

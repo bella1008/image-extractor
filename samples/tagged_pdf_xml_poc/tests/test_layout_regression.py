@@ -189,6 +189,48 @@ _ZG_FORM_LABEL_GROUPS = (
         "Ondertekend voor en namens: Samsung",
     ),
 )
+_ZG_SPEC_LABEL_GROUPS = (
+    (
+        "Display Resolution",
+        "Sound (Output)",
+        "Operating Temperature",
+        "Operating Humidity",
+        "Storage Temperature",
+        "Storage Humidity",
+    ),
+    (
+        "Anzeigeauflösung",
+        "Ton (Ausgang)",
+        "Temperatur (im Betrieb)",
+        "Luftfeuchtigkeit (im Betrieb)",
+        "Temperatur (bei Lagerung)",
+        "Luftfeuchtigkeit (bei Lagerung)",
+    ),
+    (
+        "Résolution de l'affichage",
+        "Son (Sortie)",
+        "Température de fonctionnement",
+        "Humidité de fonctionnement",
+        "Température de stockage",
+        "Humidité de stockage",
+    ),
+    (
+        "Risoluzione del display",
+        "Audio (Uscita)",
+        "Temperatura di esercizio",
+        "Umidità di esercizio",
+        "Temperatura di stoccaggio",
+        "Umidità di stoccaggio",
+    ),
+    (
+        "Beeldresolutie",
+        "Geluidsuitgang",
+        "Bedrijfstemperatuur",
+        "Luchtvochtigheid bij gebruik",
+        "Opslagtemperatuur",
+        "Luchtvochtigheid bij opslag",
+    ),
+)
 _ZG_SUBTITLE_COUNTS = Counter(
     {
         "Correct Disposal of This Product "
@@ -470,7 +512,10 @@ def _assert_no_zg_profile_display_evidence(document, semantic_xml: Path) -> None
     assert document.line_break_hints == ()
     assert all(
         hint.display_role == "strong_label"
-        and hint.reason == "cover_contact_title_stronger_than_explanation"
+        and hint.reason in {
+            "cover_contact_title_stronger_than_explanation",
+            "repeated_table_label_value_typography",
+        }
         for hint in document.text_display_hints
     )
     root = ET.parse(semantic_xml).getroot()
@@ -479,7 +524,10 @@ def _assert_no_zg_profile_display_evidence(document, semantic_xml: Path) -> None
     strong_labels = root.findall(".//*[@display-role='strong-label']")
     assert all(
         node.get("display-reason")
-        == "cover_contact_title_stronger_than_explanation"
+        in {
+            "cover_contact_title_stronger_than_explanation",
+            "repeated_table_label_value_typography",
+        }
         for node in strong_labels
     )
 
@@ -837,6 +885,8 @@ def _assert_form_labels_and_details_remain_separate(
     element_index = {element: index for index, element in enumerate(elements)}
     pairs: list[tuple[str, str]] = []
     for label in root.findall(".//*[@display-role='strong-label']"):
+        if label.get("display-reason") == "repeated_table_label_value_typography":
+            continue
         following_paragraph = next(
             (
                 candidate
@@ -1112,7 +1162,13 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
     assert len(document.line_break_hints) == 90
     assert Counter(
         hint.display_role for hint in document.text_display_hints
-    ) == {"section_heading": 10, "strong_label": 71}
+    ) == {"section_heading": 10, "strong_label": 101}
+    assert Counter(hint.reason for hint in document.text_display_hints) == {
+        "form_cluster_unique_strongest_title": 10,
+        "form_cluster_middle_tier_with_weaker_detail": 70,
+        "cover_contact_title_stronger_than_explanation": 1,
+        "repeated_table_label_value_typography": 30,
+    }
     subtitle_body_paths = verified_subtitle_linked_body_paths(document)
     assert set(subtitle_body_paths) == _ZG_SUBTITLE_LINKED_BODY_PATHS
     subtitle_body_hints = {
@@ -1134,7 +1190,7 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         semantic_root.findall(".//*[@display-role='preserved-line-break']")
     ) == 90
     assert len(semantic_root.findall(".//*[@display-role='section-heading']")) == 10
-    assert len(semantic_root.findall(".//*[@display-role='strong-label']")) == 71
+    assert len(semantic_root.findall(".//*[@display-role='strong-label']")) == 101
     contact_title = semantic_root.find(".//paragraph[@object-ref='578 0 R']")
     assert contact_title is not None
     assert contact_title.get("display-role") == "strong-label"
@@ -1185,6 +1241,9 @@ def test_zg_retains_all_pages_without_false_image_xobject_loss(zg_bundle) -> Non
         for _ in range(2)
     )
     expected_form_labels["Contact Samsung world wide"] += 1
+    expected_form_labels.update(
+        label for labels in _ZG_SPEC_LABEL_GROUPS for label in labels
+    )
     semantic_form_labels = Counter(
         _element_text(element)
         for element in semantic_root.findall(".//*[@display-role='strong-label']")

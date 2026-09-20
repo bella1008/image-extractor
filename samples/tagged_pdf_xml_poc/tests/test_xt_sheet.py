@@ -109,3 +109,20 @@ def test_contact_table_preserves_source_header_and_data_rows(evidence, reference
     assert '1282' not in text(table.children[0])
     assert '1282' in text(table.children[1])
     assert 'Samsung' in text(table.children[0])
+
+
+def test_common_review_formatting_covers_both_spec_languages_and_eng_contact(evidence):
+    from tagged_pdf_extractor.domain.cover_contact import apply_cover_contact_formatting
+    from tagged_pdf_extractor.domain.review_formatting import apply_profile_review_formatting
+
+    result = apply_cover_contact_formatting(
+        apply_profile_review_formatting(prepare(evidence))
+    )
+    assert Counter(hint.reason for hint in result.text_display_hints) == {
+        'repeated_table_label_value_typography': 14,
+        'cover_contact_title_stronger_than_explanation': 1,
+    }
+    english_table = next(
+        n for n in walk(result) if getattr(n, 'object_ref', None) == '1093 0 R'
+    )
+    assert dict(english_table.attributes)['review-table-kind'] == 'cover-contact'

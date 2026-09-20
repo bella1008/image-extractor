@@ -174,7 +174,11 @@ def _contiguous_mcid_resets(lines):
         groups[run['mcid']].append((index, line_id, line, run))
     result = {}
     for mcid, items in groups.items():
-        if mcid is None or len({i[1] for i in items}) < 2:
+        # One MCID can be split either by a text-position reset or by an
+        # author-supplied ActualText combining-mark run on the same baseline.
+        # Both cases need at least two contiguous source runs; the geometry and
+        # exact character-inventory checks below remain the authority.
+        if mcid is None or len(items) < 2:
             continue
         if [i[0] for i in items] != list(range(items[0][0], items[-1][0]+1)):
             continue

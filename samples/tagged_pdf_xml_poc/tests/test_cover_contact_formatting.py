@@ -93,6 +93,30 @@ def test_contact_table_classification_does_not_require_a_bold_title() -> None:
     assert result.text_display_hints == ()
 
 
+def test_ignores_a_trailing_empty_source_paragraph_in_contact_section() -> None:
+    section = contact_section()
+    source = document(
+        StructureElement(
+            section.source_role,
+            section.semantic_role,
+            children=(*section.children, element("paragraph")),
+        )
+    )
+
+    result = apply_cover_contact_formatting(source)
+    result_section = result.children[0]
+    assert isinstance(result_section, StructureElement)
+    wrapper = result_section.children[2]
+    assert isinstance(wrapper, StructureElement)
+    table = wrapper.children[0]
+    assert isinstance(table, StructureElement)
+
+    assert dict(table.attributes)["review-table-kind"] == "cover-contact"
+    assert [(hint.child_path, hint.display_role) for hint in result.text_display_hints] == [
+        ((0, 0), "strong_label")
+    ]
+
+
 def test_rejects_nearby_non_contact_topology() -> None:
     source = document(contact_section(extra_child=True))
 

@@ -2,17 +2,36 @@
 
 ## Current Goal
 
+- 2026-09-20 사용자가 MENA ENG/ARA 검토 완료를 확정했다. 최종 MENA 결과는
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_bidi_spec_final/review.html`이다.
+  Arabic 안전 문장 `وجِّه دائمًا...`의 동일 MCID 내부 run 순서를 원문 glyph/결합부호 근거로 복원하고,
+  `*: The Frame فقط` 각주의 RTL 표시 순서를 실제 PDF crop과 일치시켰다. ENG/ARA 사양표 굵은 항목은 7개씩 표시한다.
+  MENA Hard gate 0, XML/MD/HTML 185개 검토 단위의 문자 순서 일치이며 사용자 승인을 완료했다.
+
+- 2026-09-20 XL/XT 사용자 검토 후 현재 공용 규칙으로 새로 추출하고 추가 결함을 수정했다.
+  최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_xl_xt_20260920_readability_final/review.html`.
+  XL은 연락처 제목, 말레이시아·필리핀 연락처 원문 문단 줄바꿈, The screen dims 문장 경계,
+  4열 사양표 첫 열의 굵은 항목 33개를 보존한다. XT는 끝의 빈 태그 문단을 허용하는 엄격한 연락처 구조 판별로
+  ENG 제목과 `1282` 다음 줄바꿈을 복원하고, 사양 항목을 ENG 7개·THA 7개 표시한다.
+  XL은 인도향이며 실제 원문의 `For India only` 구간을 유지한다. 두 PDF의 원문 텍스트·노드·표 관계는
+  2026-09-17 승인 근거와 동일하고 XML/MD/HTML 290개 검토 단위 실패 0, Hard gate 0이다.
+  MENA를 제외한 승인 대기 8바이어 통합 화면은
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_pending_20260920_counts_v3/review.html`이다.
+  최종 전체 2,524 passed / 1 Windows symlink skip, XL/XT 집중 113 passed,
+  public import 호환 43 passed, POC/root compileall 성공. 상세:
+  `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-20-xl-xt-readability-followup.md`.
+
 - 2026-09-20 MENA 사용자 검토에서 발견된 표시 결함 4건을 공용 근거 규칙으로 수정했다.
   표지 연락처 섹션의 구조와 URL·전화 데이터가 모두 확인된 표에만 `cover-contact`를 부여하고,
   서로 다른 원문 문단만 셀 내부 `<br>`로 보존한다. 연락처 제목은 실제 600/400 글꼴 근거가 있을 때만 굵게 표시한다.
   검증된 inline navigation icon은 전 프로필 문장 분리에 사용할 수 있게 했고, 사양표 모델 전용 다중행은
   bbox baseline과 대문자·숫자 model token을 모두 만족할 때만 줄바꿈한다.
   MENA ENG/ARA의 원문 문자·구조·표 관계는 2026-09-17 승인 근거와 동일하며 Hard gate 0이다.
-  최신 MENA 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_readability_review/review.html`.
-  승인 대기 9바이어 통합 수치 화면: `samples/tagged_pdf_xml_poc/outputs/xml_review_pending_20260920_counts/review.html`.
+  당시 MENA 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_readability_review/review.html`.
+  당시 승인 대기 9바이어 통합 수치 화면: `samples/tagged_pdf_xml_poc/outputs/xml_review_pending_20260920_counts/review.html`.
   ASIA 18개 표 중 1개, ZG 146개 중 1개, XH 466개 중 1개, SQ MI 37개 중 2개만 연락처 표로 분류됐다.
   전체 2,514 passed / 1 Windows symlink skip, 집중 741 passed, public import 호환 43 passed, compileall 성공.
-  사용자 최종 컨펌은 MENA/XL/XT/TK/ZW/PY/SQ_MI/UA/XD 9바이어 모두 대기 상태이다.
+  이 시점에는 MENA/XL/XT/TK/ZW/PY/SQ_MI/UA/XD 9바이어 모두 사용자 컨펌 대기였다.
   상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-20-mena-contact-readability.md`.
 
 - 2026-09-19 UA_ENG(A3 ENG), XD_INS(A3 INS) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.

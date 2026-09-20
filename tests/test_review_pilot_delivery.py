@@ -77,6 +77,38 @@ def test_missing_release_input_creates_no_zip(tmp_path):
     assert not (tmp_path / 'missing.zip').exists()
 
 
+def test_release_built_from_relocated_checkout_removes_historic_paths(tmp_path):
+    """The old author's paths can differ from this machine's checkout root."""
+    import shutil
+    builder = api()
+    clone = tmp_path / 'new-machine-checkout'
+    names = {*builder.DATA_FILES, *builder._python_dependencies(ROOT)}
+    names.update(p.relative_to(ROOT).as_posix() for p in
+                 (ROOT / 'samples/tagged_pdf_xml_poc/src/tagged_pdf_extractor').rglob('*.py'))
+    names.update('deployment/review-pilot/' + n for n in builder.LAUNCH_FILES)
+    for name in names:
+        target = clone / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, target)
+    before = {n: (clone / n).read_bytes() for n in builder.DATA_FILES}
+    subprocess.run(['git', 'init', '-q', str(clone)], check=True)
+    subprocess.run(['git', '-c', 'user.name=Release Test', '-c', 'user.email=test@example.invalid',
+                    'commit', '--allow-empty', '-qm', 'test checkout'], cwd=clone, check=True)
+    archive = tmp_path / 'relocated.zip'
+    builder.build_release(clone, archive)
+    with ZipFile(archive) as bundle:
+        for name in bundle.namelist():
+            if name.endswith(('.json', '.py', '.md')):
+                data = bundle.read(name)
+                assert b'C:\\\\Users\\\\' not in data and b'C:\\Users\\' not in data, name
+        destination = tmp_path / 'released'
+        bundle.extractall(destination)
+    result = subprocess.run([sys.executable, 'start_review.py', '--check'], cwd=destination,
+                            capture_output=True, text=True, encoding='utf-8')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all((clone / n).read_bytes() == data for n, data in before.items())
+
+
 def test_pilot_supports_python_312_and_313_only():
     spec = importlib.util.spec_from_file_location(
         'pilot_support_policy', ROOT / 'deployment/review-pilot/pilot_support.py')

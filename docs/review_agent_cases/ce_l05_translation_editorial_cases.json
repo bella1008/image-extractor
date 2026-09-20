@@ -1,0 +1,900 @@
+{
+  "schema_version": 1,
+  "purpose": "미래 편집/번역 검토 에이전트의 회귀 평가 사례. 에이전트/런타임 규칙/체크리스트 DB가 아니다.",
+  "source_pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_CE\\BN68-26318A-00_SUG_Y26 TV ALL_CE_L05_260422.0.pdf",
+  "source_sha256": "0a0ff58debef3c386332b9708b13d38ffb12cb4b0cfacc3400ab4f93070a7640",
+  "source_token": "CE_L05",
+  "doc_type": "BOOK",
+  "extraction_commit": "41be8e0d2ed4611674b9e578a199963488364be9",
+  "policy": {
+    "case_id_is_stable": true,
+    "xml_ids_are_only_source_locators": true,
+    "pdf_fidelity_does_not_imply_translation_correctness": true,
+    "no_runtime_translation_aliases": true,
+    "no_external_semantic_api": true,
+    "all_six_source_fidelity_findings_user_passed": true
+  },
+  "cases": [
+    {
+      "case_id": "CE-SOURCE-01",
+      "category": "safety_condition_replaced",
+      "source_summary": "MON replaces the bracket-height safety condition with a screw-specification reference.",
+      "evidence": [
+        {
+          "language": "ENG",
+          "unit": 76,
+          "page": [
+            12
+          ],
+          "object_ref": "4159 0 R",
+          "text": "Connect the string so that the brackets fixed to the wall are at the same height as or lower than the brackets fixed to the TV.",
+          "crop": "page-12.png",
+          "source_structure_path_at_capture": "0/0/9/30/2/2/1/1",
+          "mcids": [
+            "1501",
+            "1502",
+            "1503"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-12.png"
+        },
+        {
+          "language": "MON",
+          "unit": 76,
+          "page": [
+            28
+          ],
+          "object_ref": "2201 0 R",
+          "text": "Шургийн тодорхойлолтыг \"ТВ-г хананд тогтоох нь” хүснэгтийн шургийн хэсгээс лавлана уу.",
+          "crop": "page-28.png",
+          "source_structure_path_at_capture": "0/0/19/30/2/2/1/1",
+          "mcids": [
+            "3697",
+            "3698"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-28.png"
+        }
+      ],
+      "extraction_decision": "pass_user_accepted_pdf_fidelity",
+      "editorial_decision": "retain_as_future_review_example",
+      "expected_agent_result": {
+        "should_report": true,
+        "report_category": "safety_condition_replaced",
+        "instruction_ko": "ENG의 벽 고리 높이 조건이 MON 대응 단위에서 나사 규격 안내로 대체된 점을 보고한다. 번역사 제공 문구가 그대로 반영됐다는 사용자 의견도 표시한다. 추출 누락으로 판정하지 않는다.",
+        "must_show": [
+          "ENG and localized source text",
+          "PDF pages and source locators",
+          "source fidelity pass",
+          "semantic/terminology rationale",
+          "evidence authority and uncertainty",
+          "human decision separately"
+        ],
+        "auto_correct_source": false
+      },
+      "user_feedback": {
+        "date": "2026-09-14",
+        "accepted_scope": "PDF 원장과 같은 추출임을 인정; 향후 편집/번역 검토 사례로 보존",
+        "translation_vendor_text_preserved": "user_reported"
+      },
+      "terminology_provenance": null
+    },
+    {
+      "case_id": "CE-SOURCE-02",
+      "category": "safety_terminology_review",
+      "source_summary": "MON electrical earth/ground terminology is rendered as surface/placement; mains-lead condition is not explicit.",
+      "evidence": [
+        {
+          "language": "ENG",
+          "unit": 11,
+          "page": [
+            10
+          ],
+          "object_ref": "4453 0 R",
+          "text": "Class II product: This symbol indicates that a safety connection to electrical earth (ground) is not required. If this symbol is not present on a product with a mains lead, the product MUST have a reliable connection to protective earth (ground).",
+          "crop": "page-10.png",
+          "source_structure_path_at_capture": "0/0/9/5/0/5/1/0",
+          "mcids": [
+            "1197",
+            "1198",
+            "1199",
+            "1200",
+            "1201",
+            "1202"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-10.png"
+        },
+        {
+          "language": "MON",
+          "unit": 11,
+          "page": [
+            26
+          ],
+          "object_ref": "2495 0 R",
+          "text": "2-р ангиллын бүтээгдэхүүн: Энэхүү тэмдэг нь цахилгаан гадаргуу дээрх аюулгүй холболт шаардлагагүйг харуулж байна. Энэ тэмдэг бүтээгдэхүүний орой дээр байхгүй тохиолдолд бүтээгдэхүүн хамгаалалтын гадаргуу дээр найдвартай холболттой байх ЁСТОЙ.",
+          "crop": "page-26.png",
+          "source_structure_path_at_capture": "0/0/19/5/0/5/1/0",
+          "mcids": [
+            "3376",
+            "3377",
+            "3378",
+            "3379",
+            "3380",
+            "3381",
+            "3382"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-26.png"
+        },
+        {
+          "language": "ENG",
+          "unit": 25,
+          "page": [
+            10
+          ],
+          "object_ref": "4382 0 R",
+          "text": "Use only a properly grounded plug and wall outlet.",
+          "crop": "page-10.png",
+          "source_structure_path_at_capture": "0/0/9/9/6/1",
+          "mcids": [
+            "1267"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-10.png"
+        },
+        {
+          "language": "MON",
+          "unit": 25,
+          "page": [
+            26
+          ],
+          "object_ref": "2424 0 R",
+          "text": "Зөвхөн зохих ёсоор байршуулсан утас болон ханын залгуур ашиглана уу.",
+          "crop": "page-26.png",
+          "source_structure_path_at_capture": "0/0/19/9/6/1",
+          "mcids": [
+            "3452",
+            "3453"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-26.png"
+        },
+        {
+          "language": "ENG",
+          "unit": 26,
+          "page": [
+            10
+          ],
+          "object_ref": "4386 0 R",
+          "text": "An improper ground may cause electric shock or equipment damage. (Class l Equipment only.)",
+          "crop": "page-10.png",
+          "source_structure_path_at_capture": "0/0/9/9/6/2/0/1",
+          "mcids": [
+            "1270",
+            "1271"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-10.png"
+        },
+        {
+          "language": "MON",
+          "unit": 26,
+          "page": [
+            26
+          ],
+          "object_ref": "2428 0 R",
+          "text": "Зохисгүй байршуулалт нь цахилгаанд цохиулах эрсдэл эсвэл төхөөрөмжийн гэмтэл учруулж болзошгүй. (Зөвхөн 1-р ангиллын төхөөрөмж.)",
+          "crop": "page-26.png",
+          "source_structure_path_at_capture": "0/0/19/9/6/2/0/1",
+          "mcids": [
+            "3456",
+            "3457",
+            "3458"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-26.png"
+        }
+      ],
+      "extraction_decision": "pass_user_accepted_pdf_fidelity",
+      "editorial_decision": "retain_as_future_review_example",
+      "expected_agent_result": {
+        "should_report": true,
+        "report_category": "safety_terminology_review",
+        "instruction_ko": "ground/protective earth 및 mains-lead 조건의 의미 대응을 번역 추가 확인 대상으로 보고한다. II→2/I→1 표기 차이만으로 오류를 만들지 않는다.",
+        "must_show": [
+          "ENG and localized source text",
+          "PDF pages and source locators",
+          "source fidelity pass",
+          "semantic/terminology rationale",
+          "evidence authority and uncertainty",
+          "human decision separately"
+        ],
+        "auto_correct_source": false
+      },
+      "user_feedback": {
+        "date": "2026-09-14",
+        "accepted_scope": "PDF 원장과 같은 추출임을 인정; 향후 편집/번역 검토 사례로 보존",
+        "translation_vendor_text_preserved": null
+      },
+      "terminology_provenance": null
+    },
+    {
+      "case_id": "CE-SOURCE-03",
+      "category": "installation_context_mismatch",
+      "source_summary": "MON stand precaution heading and body refer to wall mounting.",
+      "evidence": [
+        {
+          "language": "ENG",
+          "unit": 77,
+          "page": [
+            12
+          ],
+          "object_ref": "3542 0 R",
+          "text": "Precautions when installing the TV with a stand",
+          "crop": "page-12.png",
+          "source_structure_path_at_capture": "0/0/9/31",
+          "mcids": [
+            "1504"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-12.png"
+        },
+        {
+          "language": "MON",
+          "unit": 77,
+          "page": [
+            28
+          ],
+          "object_ref": "1584 0 R",
+          "text": "ТВ-г хананд тогтоогчид суулгахдаа болгоомжтой байна уу",
+          "crop": "page-28.png",
+          "source_structure_path_at_capture": "0/0/19/31",
+          "mcids": [
+            "3699",
+            "3700"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-28.png"
+        },
+        {
+          "language": "ENG",
+          "unit": 79,
+          "page": [
+            12
+          ],
+          "object_ref": "3544 0 R",
+          "text": "When you install the TV with a stand, avoid placing the stand on the back part of the table surface. Failure to do so may cause the motion sensor at the bottom of the TV not to work properly.",
+          "crop": "page-12.png",
+          "source_structure_path_at_capture": "0/0/9/33",
+          "mcids": [
+            "1508",
+            "1509",
+            "1510",
+            "1511"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-12.png"
+        },
+        {
+          "language": "MON",
+          "unit": 79,
+          "page": [
+            28
+          ],
+          "object_ref": "1586 0 R",
+          "text": "Та зурагтыг хананд дээр тогтоогчтой суурилуулах үедээ тогтоогчийг ширээний арын хэсэгт байрлуулахаас сэргийлнэ үү. Ингэж хийгээгүйн улмаас ТВ-н доод хэсгийн хөдөлгөөн мэдрэгч хэвийн ажиллахад саад учирч болзошгүй.",
+          "crop": "page-28.png",
+          "source_structure_path_at_capture": "0/0/19/33",
+          "mcids": [
+            "3704",
+            "3705",
+            "3706",
+            "3707"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-28.png"
+        }
+      ],
+      "extraction_decision": "pass_user_accepted_pdf_fidelity",
+      "editorial_decision": "retain_as_future_review_example",
+      "expected_agent_result": {
+        "should_report": true,
+        "report_category": "installation_context_mismatch",
+        "instruction_ko": "ENG stand와 MON wall 문맥의 차이 및 탁상형 그림과의 관계를 보고한다.",
+        "must_show": [
+          "ENG and localized source text",
+          "PDF pages and source locators",
+          "source fidelity pass",
+          "semantic/terminology rationale",
+          "evidence authority and uncertainty",
+          "human decision separately"
+        ],
+        "auto_correct_source": false
+      },
+      "user_feedback": {
+        "date": "2026-09-14",
+        "accepted_scope": "PDF 원장과 같은 추출임을 인정; 향후 편집/번역 검토 사례로 보존",
+        "translation_vendor_text_preserved": null
+      },
+      "terminology_provenance": null
+    },
+    {
+      "case_id": "CE-SOURCE-04",
+      "category": "action_meaning_difference",
+      "source_summary": "RUS relocation instruction says avoid overturning the stand instead of not pulling out the stand.",
+      "evidence": [
+        {
+          "language": "ENG",
+          "unit": 67,
+          "page": [
+            12
+          ],
+          "object_ref": "4194 0 R",
+          "text": "When you have to relocate or lift the TV for replacement or cleaning, be sure not to pull out the stand.",
+          "crop": "page-12.png",
+          "source_structure_path_at_capture": "0/0/9/26/0/1",
+          "mcids": [
+            "1467",
+            "1468"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-12.png"
+        },
+        {
+          "language": "RUS",
+          "unit": 67,
+          "page": [
+            4
+          ],
+          "object_ref": "5183 0 R",
+          "text": "При перемещении телевизора для замены деталей или уборки сохраняйте осторожность, чтобы не опрокинуть подставку.",
+          "crop": "page-04.png",
+          "source_structure_path_at_capture": "0/0/4/26/0/1",
+          "mcids": [
+            "353",
+            "354",
+            "355"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-04.png"
+        }
+      ],
+      "extraction_decision": "pass_user_accepted_pdf_fidelity",
+      "editorial_decision": "retain_as_future_review_example",
+      "expected_agent_result": {
+        "should_report": true,
+        "report_category": "action_meaning_difference",
+        "instruction_ko": "ENG pull out the stand와 RUS overturn the stand의 금지 행동 차이를 보고한다.",
+        "must_show": [
+          "ENG and localized source text",
+          "PDF pages and source locators",
+          "source fidelity pass",
+          "semantic/terminology rationale",
+          "evidence authority and uncertainty",
+          "human decision separately"
+        ],
+        "auto_correct_source": false
+      },
+      "user_feedback": {
+        "date": "2026-09-14",
+        "accepted_scope": "PDF 원장과 같은 추출임을 인정; 향후 편집/번역 검토 사례로 보존",
+        "translation_vendor_text_preserved": null
+      },
+      "terminology_provenance": null
+    },
+    {
+      "case_id": "CE-SOURCE-05",
+      "category": "standard_name_typo",
+      "source_summary": "MON screw safety instruction spells VESA as VERSA.",
+      "evidence": [
+        {
+          "language": "ENG",
+          "unit": 45,
+          "page": [
+            11
+          ],
+          "object_ref": "4286 0 R",
+          "text": "Do not use screws that are longer than the standard dimension or do not comply with the VESA standard screw specifications. Screws that are too long may cause damage to the inside of the TV set.",
+          "crop": "page-11.png",
+          "source_structure_path_at_capture": "0/0/9/16/0/1",
+          "mcids": [
+            "1358",
+            "1359",
+            "1360",
+            "1361"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-11.png"
+        },
+        {
+          "language": "MON",
+          "unit": 45,
+          "page": [
+            27
+          ],
+          "object_ref": "2328 0 R",
+          "text": "Стандарт хэмжээснээс урт эсвэл VERSA стандартын шургийн тодорхойлолттой таарахгүй шураг ашиглаж болохгүй. Хэт урт шураг нь ТВ бүрдлийн дотор талд гэмтэл учруулж болзошгүй.",
+          "crop": "page-27.png",
+          "source_structure_path_at_capture": "0/0/19/16/0/1",
+          "mcids": [
+            "3551",
+            "3552",
+            "3553",
+            "3554"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-27.png"
+        }
+      ],
+      "extraction_decision": "pass_user_accepted_pdf_fidelity",
+      "editorial_decision": "retain_as_future_review_example",
+      "expected_agent_result": {
+        "should_report": true,
+        "report_category": "standard_name_typo",
+        "instruction_ko": "같은 규격 명칭 VESA가 MON 한 문장에 VERSA로 적힌 것을 오타로 보고한다. 공식 Samsung 몽골어 VESA 표기와 같은 PDF의 인접 VESA 표기를 근거로 제시한다.",
+        "must_show": [
+          "ENG and localized source text",
+          "PDF pages and source locators",
+          "source fidelity pass",
+          "semantic/terminology rationale",
+          "evidence authority and uncertainty",
+          "human decision separately"
+        ],
+        "auto_correct_source": false
+      },
+      "user_feedback": {
+        "date": "2026-09-14",
+        "accepted_scope": "PDF 원장과 같은 추출임을 인정; 향후 편집/번역 검토 사례로 보존",
+        "translation_vendor_text_preserved": null
+      },
+      "terminology_provenance": null
+    },
+    {
+      "case_id": "CE-SOURCE-06",
+      "category": "approved_ui_term_lookup",
+      "source_summary": "KYR User Guide route retains the English label Tips and User Guides.",
+      "evidence": [
+        {
+          "language": "KYR",
+          "unit": 3,
+          "page": [
+            34
+          ],
+          "object_ref": "586 0 R",
+          "text": "( > сол жактагы багыттоо баскычы > Орнотуулар > Колдоо > Tips and User Guides > Колдонуучунун жетектемесин ачуу)",
+          "crop": "page-34.png",
+          "source_structure_path_at_capture": "0/0/24/2",
+          "mcids": [
+            "4424",
+            "4425",
+            "4426",
+            "4427",
+            "4428",
+            "4429",
+            "4430",
+            "4431",
+            "4432",
+            "4433",
+            "4434",
+            "4435",
+            "4436",
+            "4437"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-34.png"
+        },
+        {
+          "language": "KYR",
+          "unit": 169,
+          "page": [
+            39
+          ],
+          "object_ref": "659 0 R",
+          "text": "( > сол жактагы багыттоо баскычы > Орнотуулар > Колдоо > Tips and User Guides > Колдонуучунун жетектемесин ачуу > Бузулууларды аныктап оңдоо)",
+          "crop": "page-39.png",
+          "source_structure_path_at_capture": "0/0/24/75",
+          "mcids": [
+            "5173",
+            "5174",
+            "5175",
+            "5176",
+            "5177",
+            "5178",
+            "5179",
+            "5180",
+            "5181",
+            "5182",
+            "5183",
+            "5184",
+            "5185",
+            "5186",
+            "5187",
+            "5188"
+          ],
+          "evidence_crop_at_capture": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_ce_20260914_evidence\\page-39.png"
+        }
+      ],
+      "extraction_decision": "pass_user_accepted_pdf_fidelity",
+      "editorial_decision": "retain_as_future_review_example",
+      "expected_agent_result": {
+        "should_report": true,
+        "report_category": "approved_ui_term_lookup",
+        "instruction_ko": "KYR 문장 내 Tips and User Guides를 사내 TRAMS 용어집 조회 대상으로 보고한다. 사용자는 KYR 번역 용어가 등록돼 있다고 밝혔다. 실제 용어집을 읽기 전 번역문을 생성하거나 확정하지 않는다.",
+        "must_show": [
+          "ENG and localized source text",
+          "PDF pages and source locators",
+          "source fidelity pass",
+          "semantic/terminology rationale",
+          "evidence authority and uncertainty",
+          "human decision separately"
+        ],
+        "auto_correct_source": false
+      },
+      "user_feedback": {
+        "date": "2026-09-14",
+        "accepted_scope": "PDF 원장과 같은 추출임을 인정; 향후 편집/번역 검토 사례로 보존",
+        "translation_vendor_text_preserved": null
+      },
+      "terminology_provenance": {
+        "system": "TRAMS",
+        "status": "user_reported_KYR_term_exists_not_independently_accessed",
+        "approved_target_text": null,
+        "required_next_step": "향후 접근 가능한 승인 용어집에서 실제 KYR 용어·버전·적용범위를 조회"
+      }
+    }
+  ],
+  "negative_controls": [
+    {
+      "id": "CE-NUMERAL-01",
+      "context": "MON Class II → 2-р ангиллын; Class I → 1-р ангиллын. Source tokens must remain exact, including any I/l ambiguity.",
+      "expected": "Do not flag merely because Roman and Arabic notation differ; verify the same class value and applicable terminology/style authority. Grounding wording remains a separate review issue.",
+      "unknown": "Why this translator chose Arabic notation; no evidence proves a cultural prohibition or lack of Roman-numeral understanding."
+    }
+  ],
+  "research": [
+    {
+      "topic": "Roman numeral usage",
+      "url": "https://toli.gov.mn/r",
+      "section": "§64",
+      "finding": "공식 몽골어 맞춤법 자료는 로마 숫자의 순서 표시 사용을 규정한다. 비사용 문화라는 가설은 지지되지 않는다. 이 매뉴얼의 표기 선택 이유는 확인되지 않았다."
+    },
+    {
+      "topic": "VESA Mongolian notation",
+      "url": "https://www.samsung.com/mn/business/smart-signage/video-wall/vmt-lh46vmtubgbxci/",
+      "finding": "Samsung 몽골어 공식 제품 사양에서도 VESA бэхэлгээ로 표기한다. 같은 CE PDF MON 다음 문장도 VESA다. 이 문맥의 VERSA는 오타로 판단한다."
+    }
+  ],
+  "heading_comparison": {
+    "ZG": [
+      {
+        "text": "Before Reading This Simple User Guide",
+        "pages": [
+          2
+        ],
+        "source_role": "NoTOC-Heading1"
+      },
+      {
+        "text": "Warning! Important Safety Instructions",
+        "pages": [
+          2
+        ],
+        "source_role": "NoTOC-Heading1"
+      },
+      {
+        "text": "Power",
+        "pages": [
+          2
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "Installation",
+        "pages": [
+          2
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "Mounting the TV on a wall",
+        "pages": [
+          3
+        ],
+        "source_role": "NoTOC-Heading3"
+      },
+      {
+        "text": "Providing proper ventilation for your TV",
+        "pages": [
+          3
+        ],
+        "source_role": "NoTOC-Heading3"
+      },
+      {
+        "text": "Safety Precaution",
+        "pages": [
+          3
+        ],
+        "source_role": "NoTOC-Heading3"
+      },
+      {
+        "text": "Preventing the TV from falling",
+        "pages": [
+          4
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "Precautions when installing the TV with a stand",
+        "pages": [
+          4
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "Operation",
+        "pages": [
+          4
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "Caring for the TV",
+        "pages": [
+          5
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "01 What's in the Box?",
+        "pages": [
+          5
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "02 Connecting the TV to the One Connect Box",
+        "pages": [
+          5
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Using the One Connect cable holder",
+        "pages": [
+          6
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "03 Initial Setup",
+        "pages": [
+          6
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Using the TV Controller",
+        "pages": [
+          6
+        ],
+        "source_role": "Heading2"
+      },
+      {
+        "text": "How to turn on and off the Microphone",
+        "pages": [
+          6
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "04 Troubleshooting and Maintenance",
+        "pages": [
+          7
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Troubleshooting",
+        "pages": [
+          7
+        ],
+        "source_role": "Heading2_0_2"
+      },
+      {
+        "text": "The TV won’t turn on.",
+        "pages": [
+          7
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "The screen dims.",
+        "pages": [
+          7
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "Changing the TV’s password",
+        "pages": [
+          7
+        ],
+        "source_role": "Heading2"
+      },
+      {
+        "text": "05 Specifications and Other Information",
+        "pages": [
+          7
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Specifications",
+        "pages": [
+          7
+        ],
+        "source_role": "Heading2_0_2"
+      },
+      {
+        "text": "Declaration of Conformity",
+        "pages": [
+          9
+        ],
+        "source_role": "paragraph"
+      },
+      {
+        "text": "Declaration of Conformity",
+        "pages": [
+          10
+        ],
+        "source_role": "paragraph"
+      }
+    ],
+    "CE": [
+      {
+        "text": "Before Reading This Simple User Guide",
+        "pages": [
+          10
+        ],
+        "source_role": "NoTOC-Heading1"
+      },
+      {
+        "text": "Warning! Important Safety Instructions",
+        "pages": [
+          10
+        ],
+        "source_role": "NoTOC-Heading1"
+      },
+      {
+        "text": "Power",
+        "pages": [
+          10
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "Installation",
+        "pages": [
+          10
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "Mounting the TV on a wall",
+        "pages": [
+          11
+        ],
+        "source_role": "NoTOC-Heading3"
+      },
+      {
+        "text": "Providing proper ventilation for your TV",
+        "pages": [
+          11
+        ],
+        "source_role": "NoTOC-Heading3"
+      },
+      {
+        "text": "Safety Precaution",
+        "pages": [
+          11
+        ],
+        "source_role": "NoTOC-Heading3"
+      },
+      {
+        "text": "Preventing the TV from falling",
+        "pages": [
+          12
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "Precautions when installing the TV with a stand",
+        "pages": [
+          12
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "Operation",
+        "pages": [
+          12
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "Caring for the TV",
+        "pages": [
+          13
+        ],
+        "source_role": "NoTOC-Heading2"
+      },
+      {
+        "text": "01 What's in the Box?",
+        "pages": [
+          13
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "02 Connecting the TV to the One Connect Box",
+        "pages": [
+          13
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Using the One Connect cable holder",
+        "pages": [
+          14
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "03 Initial Setup",
+        "pages": [
+          14
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Using the TV Controller",
+        "pages": [
+          14
+        ],
+        "source_role": "Heading2"
+      },
+      {
+        "text": "How to turn on and off the Microphone",
+        "pages": [
+          14
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "04 Troubleshooting and Maintenance",
+        "pages": [
+          15
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Troubleshooting",
+        "pages": [
+          15
+        ],
+        "source_role": "Heading2_0_2"
+      },
+      {
+        "text": "The TV won’t turn on.",
+        "pages": [
+          15
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "The screen dims.",
+        "pages": [
+          15
+        ],
+        "source_role": "Heading3"
+      },
+      {
+        "text": "05 Specifications and Other Information",
+        "pages": [
+          15
+        ],
+        "source_role": "heading"
+      },
+      {
+        "text": "Specifications",
+        "pages": [
+          15
+        ],
+        "source_role": "Heading2_0_2"
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 # 바이어·언어별 XML / ReviewDocument 검증 대장
 
-갱신: 2026-09-15. 이 작업장의 기록을 기준으로 시작한 대장입니다. 다른 작업장의 진행 상태를 모두 조사한 것은 아닙니다.
+갱신: 2026-09-20. XML `8134892` 통합의 기술 검사 14 PDF/32개 언어 조합을 추가했습니다. 사람 확인 상태는 자동 승격하지 않았습니다.
 
 ## 기록 범위와 해석
 
@@ -14,6 +14,17 @@
 
 ## 전체 대상 목록
 
+### RUN-20260920-INTEGRATION
+
+- 정확한 PDF 파일명·해시·언어별 텍스트 조각 수·완료 receipt 해시는 [실행 근거](evidence/20260920-xml-integration.json)에 보존한다.
+- 최신 추출기의 XML/MD와 ReviewDocument 사이의 노드 순서·텍스트·속성·근거 보존 검사다. 번역 의미/맞춤법 검사나 PDF 전체 사람 승인이 아니다.
+- ZC, XU, ZG, AFRICA, CE, TK(ENG/TUR 및 ARA), MENA, SQ MI, XT, ZW, PY, UA, XD의 해당 PDF가 기술 검사 통과했다. 아래 표에서 기존 사람 확인 상태와 요청 상태는 유지했다.
+- AFRICA/CE/ZG의 공통 영역 텍스트 75/50/9개는 언어 미배정으로 보존했다. 언어가 없다는 이유로 삭제하거나 임의 언어에 편입하지 않았다.
+- **추가 미등록 대상 XL_ENG**: `BN68-25031J-00...260306.0.pdf`, ENG. 추출기 자체 테스트는 통과하지만 canonical profile 부재로 ReviewDocument 연결은 차단. 공식 buyer/region/profile 확인이 필요하며 위 32조합에는 포함하지 않는다.
+- 이번 adapter 통합만으로 새 PDF 원문 대조를 요청할 근거는 발견되지 않았다. 기존 미확인 언어 및 기존 요청은 그대로 남는다. HR-20260914-002의 ZC C-FRA 연락처 제목 bold는 미해결이며 ENG만 반영됐다.
+
+아래 표의 `기술 확인`은 반드시 실행 근거의 PDF 버전 범위로 읽는다.
+
 | source_token | buyer_codes | 유형 | 언어 | XML 자동 검사 | ReviewDocument 보존 검사 | PDF 전체 사람 확인 | 요청 상태 | 근거 |
 |---|---|---|---|---|---|---|---|---|
 | AFRICA MENA_L05 | AFRICA;MENA | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
@@ -21,30 +32,30 @@
 | AFRICA MENA_L05 | AFRICA;MENA | BOOK | SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | AFRICA MENA_L05 | AFRICA;MENA | BOOK | POR | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | AFRICA MENA_L05 | AFRICA;MENA | BOOK | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| AFRICA_L05 | AFRICA | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| AFRICA_L05 | AFRICA | BOOK | FRA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| AFRICA_L05 | AFRICA | BOOK | SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| AFRICA_L05 | AFRICA | BOOK | POR | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| AFRICA_L05 | AFRICA | BOOK | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| AFRICA_L05 | AFRICA | BOOK | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| AFRICA_L05 | AFRICA | BOOK | FRA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| AFRICA_L05 | AFRICA | BOOK | SPA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| AFRICA_L05 | AFRICA | BOOK | POR | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| AFRICA_L05 | AFRICA | BOOK | ARA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | ASIA_ENG | ASIA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| CE_L05 | CE | BOOK | RUS | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| CE_L05 | CE | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| CE_L05 | CE | BOOK | KAZ | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| CE_L05 | CE | BOOK | MON | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| CE_L05 | CE | BOOK | KYR | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| CE_L05 | CE | BOOK | RUS | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| CE_L05 | CE | BOOK | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| CE_L05 | CE | BOOK | KAZ | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| CE_L05 | CE | BOOK | MON | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| CE_L05 | CE | BOOK | KYR | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | KR_KOR | KR | A3 | KOR | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | LATIN_L02 | LATIN | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | LATIN_L02 | LATIN | A2 | M-SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| MENA_L02 | MENA | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| MENA_L02 | MENA | A2 | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| PY_ENRU | PY | A2 | RUS | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| PY_ENRU | PY | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| SQ MI_HEAR | SQ;MI | A2 | HEB | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| SQ MI_HEAR | SQ;MI | A2 | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| TK_ARA | TK | A3 | ARA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| TK_L02 | TK | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| TK_L02 | TK | A2 | TUR | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| UA_ENG | UA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| MENA_L02 | MENA | A2 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| MENA_L02 | MENA | A2 | ARA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| PY_ENRU | PY | A2 | RUS | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| PY_ENRU | PY | A2 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| SQ MI_HEAR | SQ;MI | A2 | HEB | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| SQ MI_HEAR | SQ;MI | A2 | ARA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| TK_ARA | TK | A3 | ARA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| TK_L02 | TK | A2 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| TK_L02 | TK | A2 | TUR | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| UA_ENG | UA | A3 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | XC_L12 | XC | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XC_L12 | XC | BOOK | FRA | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XC_L12 | XC | BOOK | SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
@@ -57,7 +68,7 @@
 | XC_L12 | XC | BOOK | CAT | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XC_L12 | XC | BOOK | GLG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XC_L12 | XC | BOOK | EUS | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| XD_INS | XD | A3 | INS | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| XD_INS | XD | A3 | INS | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | XH_L16 | XH | BOOK | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XH_L16 | XH | BOOK | HUN | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XH_L16 | XH | BOOK | POL | 미조사 | 미조사 | 미조사 | 미요청 | — |
@@ -74,19 +85,19 @@
 | XH_L16 | XH | BOOK | LAT | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XH_L16 | XH | BOOK | LTU | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | XH_L16 | XH | BOOK | EST | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| XT_L02 | XT | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| XT_L02 | XT | A2 | THA | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| XU_ENG | XU | A3 | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-2 |
+| XT_L02 | XT | A2 | ENG | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| XT_L02 | XT | A2 | THA | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
+| XU_ENG | XU | A3 | ENG | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-2; RUN-20260920-INTEGRATION |
 | XY_ENG | XY | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | ZA_ENG | ZA | A3 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
-| ZC_L02 | ZC | A2 | ENG | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002, RUN-20260915-PILOT-ZC |
-| ZC_L02 | ZC | A2 | C-FRA | 통과 기록 있음 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002, RUN-20260915-PILOT-ZC |
-| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ENG | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
-| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DEU | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
-| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | FRA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
-| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ITA | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
-| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DUT | 통과 기록 있음 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3 |
-| ZW_TPE | ZW | A3 | TPE | 미조사 | 미조사 | 미조사 | 미요청 | — |
+| ZC_L02 | ZC | A2 | ENG | 기술 확인 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002, RUN-20260915-PILOT-ZC; RUN-20260920-INTEGRATION |
+| ZC_L02 | ZC | A2 | C-FRA | 기술 확인 | 기술 확인 | 부분 확인 | 텍스트 확인 완료 2026-09-14 / 표지 bold 표시 후속 | BASE-1, HR-20260914-002, RUN-20260915-PILOT-ZC; RUN-20260920-INTEGRATION |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ENG | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3; RUN-20260920-INTEGRATION |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DEU | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3; RUN-20260920-INTEGRATION |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | FRA | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3; RUN-20260920-INTEGRATION |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | ITA | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3; RUN-20260920-INTEGRATION |
+| ZG XN ZT_L05 | ZG;XN;ZT | BOOK | DUT | 기술 확인 | 기술 확인 | 완료 근거 미확정 | 미요청 | BASE-3; RUN-20260920-INTEGRATION |
+| ZW_TPE | ZW | A3 | TPE | 기술 확인 | 기술 확인 | 미조사 | 미요청 | RUN-20260920-INTEGRATION |
 | ZX_L02 | ZX | A2 | ENG | 미조사 | 미조사 | 미조사 | 미요청 | — |
 | ZX_L02 | ZX | A2 | M-SPA | 미조사 | 미조사 | 미조사 | 미요청 | — |
 

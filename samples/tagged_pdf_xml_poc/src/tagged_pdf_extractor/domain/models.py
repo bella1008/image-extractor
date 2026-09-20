@@ -60,6 +60,7 @@ class ContentFragment:
     object_ref: str | None = None
     text_styles: tuple[TextStyle, ...] = ()
     text_bboxes: tuple[BBox | None, ...] = ()
+    join_previous: bool = False
 
     def __post_init__(self) -> None:
         if self.text_styles and len(self.text_parts) != len(self.text_styles):
@@ -107,6 +108,8 @@ class StructureElement:
     actual_text: str | None = None
     attributes: tuple[tuple[str, str], ...] = ()
     children: tuple[StructureElement | ContentFragment, ...] = ()
+    source_structure_path: tuple[int, ...] | None = None
+    display_direction: Literal["rtl"] | None = None
 
 
 @dataclass(frozen=True)
@@ -254,6 +257,30 @@ class HeadingMismatchPosition:
 
 
 @dataclass(frozen=True)
+class HeadingCountSourceException:
+    code: str
+    source_sha256: str
+    # Observed source headings, not runtime translations or stable checklist keys.
+    source_headings: tuple[tuple[str, tuple[int, ...], str], ...]
+    covered_mismatches: tuple[HeadingMismatchPosition, ...]
+
+    def __post_init__(self) -> None:
+        if not self.code or len(self.source_sha256) != 64 or any(c not in "0123456789abcdef" for c in self.source_sha256):
+            raise ValueError("source count exception requires a code and SHA-256")
+        if not isinstance(self.source_headings, tuple) or not self.source_headings:
+            raise ValueError("source count exception requires observed headings")
+        for language, path, text in self.source_headings:
+            _validate_language_code(language)
+            _validate_child_path(path, "source heading path")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("source heading text must be observed")
+        if (not isinstance(self.covered_mismatches, tuple) or not self.covered_mismatches
+                or any(not isinstance(m, HeadingMismatchPosition) or m.component != "count"
+                       for m in self.covered_mismatches)):
+            raise ValueError("source exception may cover count mismatches only")
+
+
+@dataclass(frozen=True)
 class MultilingualHeadingAudit:
     applicable: bool
     passed: bool
@@ -267,6 +294,7 @@ class MultilingualHeadingAudit:
     signatures: tuple[LanguageHeadingSignature, ...] = ()
     mismatch_positions: tuple[HeadingMismatchPosition, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
+    source_count_exception: HeadingCountSourceException | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.applicable, bool) or not isinstance(self.passed, bool):
@@ -303,7 +331,7 @@ class MultilingualHeadingAudit:
                 state is not None for state in component_states
             ):
                 raise ValueError("a not-applicable audit cannot have component results")
-            if self.signatures or self.mismatch_positions or self.diagnostics:
+            if self.signatures or self.mismatch_positions or self.diagnostics or self.source_count_exception:
                 raise ValueError("a not-applicable audit cannot have evidence")
             return
 
@@ -320,7 +348,7 @@ class MultilingualHeadingAudit:
         if not all_pending and not all_evaluated:
             raise ValueError("signature component states must be all pending or evaluated")
         if all_pending:
-            if self.passed or self.signatures or self.mismatch_positions:
+            if self.passed or self.signatures or self.mismatch_positions or self.source_count_exception:
                 raise ValueError("a pending applicable audit must fail closed")
             if not self.diagnostics:
                 raise ValueError("a pending applicable audit requires a diagnostic")
@@ -332,7 +360,14 @@ class MultilingualHeadingAudit:
             raise ValueError("signature count must match observed interval count")
         if self.diagnostics:
             raise ValueError("an evaluated audit cannot contain failure diagnostics")
-        expected_passed = all(component_states)
+        exception = self.source_count_exception
+        if exception is not None:
+            if not isinstance(exception, HeadingCountSourceException):
+                raise ValueError("invalid source count exception")
+            if (self.total_heading_count_matches or not all(component_states[1:])
+                    or exception.covered_mismatches != self.mismatch_positions):
+                raise ValueError("source exception must cover all and only count mismatches")
+        expected_passed = all(component_states) or exception is not None
         if self.passed != expected_passed:
             raise ValueError("passed contradicts the evaluated component results")
         mismatch_components = {
@@ -348,7 +383,7 @@ class MultilingualHeadingAudit:
                 raise ValueError(
                     f"{component} component result contradicts mismatch positions"
                 )
-        if self.passed and self.mismatch_positions:
+        if self.passed and self.mismatch_positions and exception is None:
             raise ValueError("a passed audit cannot contain mismatch positions")
         if not self.passed and not self.mismatch_positions:
             raise ValueError("a failed evaluated audit requires mismatch positions")
@@ -497,6 +532,9 @@ class TaggedDocument:
     continuation_hints: tuple[ContinuationHint, ...] = ()
     multilingual_heading_audit: MultilingualHeadingAudit | None = None
     bookmark_page_bounds: tuple[BookmarkPageBounds, ...] = ()
+    raw_children: tuple[StructureElement | ContentFragment, ...] | None = None
+    source_sha256: str | None = None
+    readability_profile: PdfProfile | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.bookmark_page_bounds, tuple):

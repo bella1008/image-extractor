@@ -13,7 +13,7 @@ from tagged_pdf_extractor.domain.models import (
 from tagged_pdf_extractor.infrastructure.output_bundle import OutputBundleWriter
 from tagged_pdf_extractor.domain.readability_formatting import apply_readability_formatting
 from src.semantic_xml_reader import read_review_bundle
-from src.xml_review_gate import BundleValidationError, EXTRACTOR_SHA256
+from src.xml_review_gate import BundleValidationError, LEGACY_EXTRACTOR_SHA256 as EXTRACTOR_SHA256
 from src.xml_review_run import extract_review_document
 
 

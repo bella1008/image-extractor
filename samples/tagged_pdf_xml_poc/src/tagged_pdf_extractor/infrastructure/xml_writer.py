@@ -191,13 +191,14 @@ class XmlDocumentWriter:
                     ),
                 )
 
-        for child in document.children:
+        raw_children = document.raw_children if document.raw_children is not None else document.children
+        for child in raw_children:
             self._append_raw_child(root, child)
 
         self._write_and_verify(
             root,
             path,
-            expected_text=self._raw_text(document.children),
+            expected_text=self._raw_text(raw_children),
             output_name="raw",
             text_data_tags=frozenset({"part"}),
         )
@@ -330,6 +331,11 @@ class XmlDocumentWriter:
                 if audit[data_name] is not None
             },
         )
+        if exception := audit.get("source_count_exception"):
+            add(node, "source-count-exception", {
+                "code": exception["code"], "source-sha256": exception["source_sha256"],
+                "evidence-json": json.dumps(exception, ensure_ascii=False, sort_keys=True),
+            })
         for language in audit["languages"]:
             interval = language["interval"]
             language_node = add(
@@ -487,6 +493,8 @@ class XmlDocumentWriter:
         if isinstance(child, ContentFragment):
             text, fragment_decisions = join_text_parts(child.text_parts)
             attributes = self._fragment_attributes(child)
+            if child.join_previous:
+                attributes['join-previous'] = 'source-token'
             if sentence_break is not None:
                 attributes.update(self._sentence_break_attributes(sentence_break))
                 consumed_sentence_break_paths.add(child_path)
@@ -525,6 +533,12 @@ class XmlDocumentWriter:
             attributes.update(
                 self._promotion_attributes(promotion, source_role=child.source_role)
             )
+            from tagged_pdf_extractor.domain.sq_mi_sheet import SOURCE_SHA as SQ_MI_SHA
+            sq_hebrew_label=(child.language=='HEB'
+                and child.object_ref in {'1641 0 R','1500 0 R','1402 0 R','1310 0 R','1268 0 R'}
+                and dict(child.attributes).get('review-compact-label-sha256')==SQ_MI_SHA)
+            if (child.language == "ARA" or sq_hebrew_label) and child.source_structure_path is not None:
+                attributes["numbered-label"] = promotion.label
         if subtitle is not None:
             attributes.update(self._subtitle_attributes(subtitle))
         if line_break is not None:
@@ -785,6 +799,13 @@ class XmlDocumentWriter:
         element: StructureElement, tag: str
     ) -> dict[str, str]:
         attributes: dict[str, str] = {}
+        if element.display_direction is not None:
+            if element.display_direction != "rtl" or tag != "paragraph" or element.language != "ARA":
+                raise ValueError("Invalid source numeric-condition direction")
+            attributes["display-direction"] = "rtl"
+            attributes["direction-reason"] = "source-glyph-numeric-condition"
+        if element.source_structure_path is not None:
+            attributes["source-structure-path"] = "/".join(str(i) for i in element.source_structure_path)
         if tag == "unknown":
             attributes["source-role"] = element.source_role
         if element.heading_level is not None:

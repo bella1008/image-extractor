@@ -164,7 +164,9 @@ def validate_multilingual_headings(
         signatures.append(LanguageHeadingSignature(interval.language, interval, entries))
 
     comparisons = _compare_signatures(tuple(signatures))
-    passed = all(comparisons[:4])
+    from tagged_pdf_extractor.domain.africa_heading_evidence import verified_jordan_difference
+    source_exception = verified_jordan_difference(profile, document, tuple(signatures), comparisons[4])
+    passed = all(comparisons[:4]) or source_exception is not None
     return MultilingualHeadingAudit(
         applicable=True,
         passed=passed,
@@ -177,6 +179,7 @@ def validate_multilingual_headings(
         numbered_label_sequence_matches=comparisons[3],
         signatures=tuple(signatures),
         mismatch_positions=comparisons[4],
+        source_count_exception=source_exception,
     )
 
 

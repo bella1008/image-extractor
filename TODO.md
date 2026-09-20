@@ -4,6 +4,13 @@
 
 이 절이 새 v2 작업의 현재 상태다. 아래 GridCell/MVP 기록은 과거 구현 이력이다.
 
+- [x] 2026-09-20 최신 XML `8134892`를 v2에 통합. 복구 `e5076d5`/`codex/pre-xml-integration-20260920` 보존. 원본 추출기 소스 동일, adapter의 source replay/과거 receipt 호환, BOOK 다중언어 상위 묶음 처리. [통합 기록](docs/migration/2026-09-20-xml-integration_kr.md).
+- [x] 최신 XML 전체 2524 passed/Windows symlink 1 skip. 실제 14 PDF/32언어 조합 ReviewDocument 기술 보존 통과, 언어별 대장 갱신. 사람 승인으로 승격하지 않음. ZC 통합 Excel 1232셀/스타일/행열 크기/표시 JSON 기존과 동일, 체크59/구성품14 유지.
+- [x] 통합 최종 v2 전체 616 passed/선택적 Node 작성 4 skip, compileall/pip check/diff check 통과. 배포 확인용 ZIP 133파일·한글 경로 무결성 검사·새 PDF→ZC Excel/JSON 전체 실행 통과.
+- [x] 다른 checkout에서 배포 생성 시 동결 원장에 남는 과거 개발 경로 제거/해시 재정렬. 원본 DB 바이트 미변경. 테스트 옛 PC 경로 제거 및 기존에 Git에서 빠져 있던 XL PDF 표본 보존.
+- [ ] XL_ENG canonical profile 확인·등록. POC 시험용 프로필과 공식 운영 메타데이터를 구분한다. 현재 ReviewDocument 연결은 명시적으로 차단되며 통합 실패로 숨기지 않는다.
+- [ ] source replay 성능 최적화: 전체 실행에서 반복 검증 5회. 모든 입력/산출물 해시 및 최종 재검증을 유지하는 실행 단위 근거 재사용을 별도 설계한다.
+
 - [x] 2026-09-15 통합 Excel Python 작성기 연결. 기본 UI/CLI의 Node 환경 의존성 제거, 명시적 Node 호출 호환 유지. 실제 ZC 기존 Excel 1,232셀·열/행 크기·고정창·표 스타일 동일, report/view JSON 바이트 동일. 관련97개 통과/개발용 Artifact 작성2개 skip, 새 Python 실물 작성은 테스트와 실물 양쪽에서 검증. 4시트7영역 렌더 및 독립 코드 검토 완료. 표본 `outputs/checklist_reviewer_zc_20260915_python/`.
 - [x] 2026-09-15 PC 전달용 ZIP builder·전용 환경 설치·시작 명령·한국어 안내 구현. 85개 파일+해시 manifest, GridCell 실행기/Git/기존 결과/PDF/Node 제외. 한글·공백 경로 재배치/무결성/원본 보호 테스트 통과. 배포 명세 `docs/migration/2026-09-15-python-delivery_kr.md`.
 - [x] 2026-09-15 새 가상환경 실제 설치·ZC PDF 전체 실행·완료 결과 AppTest 확인. `outputs/review_pilot_20260915_smoke/다른 PC 검토 프로그램/outputs/zc_fresh/`, XML/MD/ReviewDocument 기존 검증본과 바이트 동일. 검증 대장 `RUN-20260915-PILOT-ZC`. 최종 전달 ZIP `outputs/review_pilot_20260915/review-pilot.zip`.
@@ -37,7 +44,7 @@
 - [x] 항목별 결과 Excel writer/검증 완료 기록과 읽기 전용 Streamlit 화면 연결. Summary/Item Results/Source Evidence 3시트, 항목14/현재 근거26, 판정+설명/출처 분리. 새 출력 폴더로 생성, 완료된 관찰 결과와 연결된 Excel만 다운로드. 실물 `outputs/item_excel_zc_20260911_r2/`, 사용법 `docs/migration/2026-09-11-item-excel-ui_kr.md`.
 - [x] 2026-09-13 사용자 개정: 항목 결과 JSON과 Excel을 동일 실행 폴더에 저장. 새 HTML 생성/다운로드 중단, Summary 12행, 임시 근거 ID 제거, 고정 항목 키 연결, 화면 폴더 입력 하나. observation 완료 기록 v2/Excel view v2 사용. 기존 v1 관찰 결과는 HTML 해시까지 검증하는 읽기 호환 유지.
 - [x] 통합 경로 PC 배포 의존성 정리: Python-only 작성기 선택/구현. 개발용 Node 도구는 ZIP에서 제외. 과거 item-only 작성기는 개발 호환 경로이며 담당자 진입점은 통합 화면이다.
-- [ ] 담당자 실제 PC에서 파일럿 설치/실행 확인. 현재 작업 PC의 별도 설치 검증과 실제 담당자 PC의 설치 완료를 구분한다.
+- [x] 2026-09-19 사용자가 다른 PC에서 기존 파일럿 설치·실행·결과 파일 열기까지 정상 확인 보고. 결과 Excel 사용성 검토와 이번 2026-09-20 통합 ZIP의 타 PC 실사용은 별도다.
 - [x] 통합 레포트 설계 승인 및 CLI 구현: 같은 PDF/XML/추출 완료 기록/context의 완료 관찰 두 개 → 자체 보관 통합 JSON → 4시트 Excel 하나. 상위59건/그중 구성품상세14건 분리 집계, 근거40+26행/내부제외488행/원본547행 보존. 기존 DB/부모 판정/관찰 원문 변경 없음. 실제 결과 `outputs/combined_review_zc_20260913_r2/`, 사용법 `docs/migration/2026-09-13-combined-review-report_kr.md`.
 - [x] 통합 결과의 단일 폴더 Streamlit 조회/다운로드 및 공통 실행 명령 연결. PDF 추출 1회/동일 bundle 공유, `_internal`에 중간 자료 보관, 최상위 통합 Excel/JSON. 일반 관찰 v2 JSON-only/구 v1 HTML 검증 호환, 전체 실행 lock/실패 차단, 다운로드 때 재검증. 실제 `outputs/combined_review_zc_20260913_shared_r2/`. 사용법 `docs/migration/2026-09-13-combined-run-ui_kr.md`.
 - [x] 비개발자용 전체 구조·ReviewDocument/adapter/검토 기능 책임·사람 검토 시점 설명 문서 작성: `docs/architecture/review-document-explained_kr.md`. 기술적 보존 검사와 PDF 원문/업무 승인을 구분.
@@ -77,6 +84,149 @@ Excel 양식 초안: `outputs/review_excel_prototype_20260911/review_report_prot
 
 2026-09-14 화면 실행 연결 검증: 관련58 passed, compileall(src/tests/scripts) 및 diff check 통과.
 실제 AppTest PDF→Excel/JSON→자동 표시 59/14행·다운로드2개 확인. 전체 suite 재실행은 아님.
+
+### XML 추출기 작업장 이력 (통합된 원본 기록)
+- 2026-09-20 XL 추가 검토: Dimensions/Weight 6개 행, 9개 모델 열 묶음의 조건별 값 36개를
+  실제 PDF 문구·좌표와 대조했다. `None` 10개는 원문 표기이며 `[내용 없음]`을 삽입하지 않는다.
+  근거: `samples/tagged_pdf_xml_poc/outputs/xml_review_xl_20260920_spec_associations/review.html`.
+  기존 XML은 셀/문단 순서를 보존하지만 항목-조건-값 연결을 명시하지 않는다. 자동 사양 비교용
+  구조 연결은 후속 구현 대상이며, 이전 Hard gate 0을 이 신규 요건의 통과로 해석하지 않는다.
+  이번 작업은 읽기 전용 대응 검토이며 XL 사용자 승인 및 XT 추가 검토는 미완료다.
+
+- 2026-09-20 사용자가 MENA ENG/ARA 검토 완료를 확정했다. 최종 MENA 결과는
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_bidi_spec_final/review.html`이다.
+  Arabic 안전 문장 `وجِّه دائمًا...`의 동일 MCID 내부 run 순서를 원문 glyph/결합부호 근거로 복원하고,
+  `*: The Frame فقط` 각주의 RTL 표시 순서를 실제 PDF crop과 일치시켰다. ENG/ARA 사양표 굵은 항목은 7개씩 표시한다.
+  MENA Hard gate 0, XML/MD/HTML 185개 검토 단위의 문자 순서 일치이며 사용자 승인을 완료했다.
+
+- 2026-09-20 XL/XT 사용자 검토 후 현재 공용 규칙으로 새로 추출하고 추가 결함을 수정했다.
+  최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_xl_xt_20260920_readability_final/review.html`.
+  XL은 연락처 제목, 말레이시아·필리핀 연락처 원문 문단 줄바꿈, The screen dims 문장 경계,
+  4열 사양표 첫 열의 굵은 항목 33개를 보존한다. XT는 끝의 빈 태그 문단을 허용하는 엄격한 연락처 구조 판별로
+  ENG 제목과 `1282` 다음 줄바꿈을 복원하고, 사양 항목을 ENG 7개·THA 7개 표시한다.
+  XL은 인도향이며 실제 원문의 `For India only` 구간을 유지한다. 두 PDF의 원문 텍스트·노드·표 관계는
+  2026-09-17 승인 근거와 동일하고 XML/MD/HTML 290개 검토 단위 실패 0, Hard gate 0이다.
+  MENA를 제외한 승인 대기 8바이어 통합 화면은
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_pending_20260920_counts_v3/review.html`이다.
+  최종 전체 2,524 passed / 1 Windows symlink skip, XL/XT 집중 113 passed,
+  public import 호환 43 passed, POC/root compileall 성공. 상세:
+  `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-20-xl-xt-readability-followup.md`.
+
+- 2026-09-20 MENA 사용자 검토에서 발견된 표시 결함 4건을 공용 근거 규칙으로 수정했다.
+  표지 연락처 섹션의 구조와 URL·전화 데이터가 모두 확인된 표에만 `cover-contact`를 부여하고,
+  서로 다른 원문 문단만 셀 내부 `<br>`로 보존한다. 연락처 제목은 실제 600/400 글꼴 근거가 있을 때만 굵게 표시한다.
+  검증된 inline navigation icon은 전 프로필 문장 분리에 사용할 수 있게 했고, 사양표 모델 전용 다중행은
+  bbox baseline과 대문자·숫자 model token을 모두 만족할 때만 줄바꿈한다.
+  MENA ENG/ARA의 원문 문자·구조·표 관계는 2026-09-17 승인 근거와 동일하며 Hard gate 0이다.
+  당시 MENA 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_20260920_readability_review/review.html`.
+  당시 승인 대기 9바이어 통합 수치 화면: `samples/tagged_pdf_xml_poc/outputs/xml_review_pending_20260920_counts/review.html`.
+  ASIA 18개 표 중 1개, ZG 146개 중 1개, XH 466개 중 1개, SQ MI 37개 중 2개만 연락처 표로 분류됐다.
+  전체 2,514 passed / 1 Windows symlink skip, 집중 741 passed, public import 호환 43 passed, compileall 성공.
+  이 시점에는 MENA/XL/XT/TK/ZW/PY/SQ_MI/UA/XD 9바이어 모두 사용자 컨펌 대기였다.
+  상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-20-mena-contact-readability.md`.
+
+- 2026-09-19 UA_ENG(A3 ENG), XD_INS(A3 INS) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.
+  최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_ua_xd_20260919_ready/review.html`.
+  UA 제목 24/표 19/검토 단위 109, XD 제목 30/표 43/검토 단위 138; XML/MD/HTML 247단위, 비교 crop 86개 확인. Hard gate 0.
+  UA 전원·비용 하위 조건·표지·소수, XD 모델80개 표·보증/주소표 병합·전원·주소 줄바꿈·URL/소수 수정.
+  전체 2,499 passed / 1 Windows symlink skip; UA 집중 27, XD 집중 16, root public 호환 43 passed.
+  기존 15프로필 재추출 XML/MD 45파일 바이트 동일. 원문 표현·그래픽 Warning 유지.
+  기존 MENA/XL/XT/TK/ZW/PY/SQ_MI 7바이어 승인 대기는 유지하며 UA/XD 포함 총 9바이어가 승인 대기이다.
+  상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-19-ua-xd-xml-review.md`.
+
+- 2026-09-19 PY_ENRU(A2 RUS/ENG), SQ MI_HEAR(A2 HEB/ARA) XML 추출·원문 구조 검증 완료, 사용자 승인 대기.
+  최신 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_py_sq_mi_20260919_verified/review.html`.
+  언어별 본문 제목 23개(표지 포함 24), XML/MD/HTML 417단위, 원문 비교 crop 117개 검증; Hard gate 0.
+  전체 2,456 passed / 1 Windows symlink skip. 마지막 공백 writer 수정 후 관련 406 passed, public 호환 43 passed.
+  기존 13프로필 XML/MD 39파일 바이트 동일; 마지막 writer 변경 후 TK_ARA 3파일 추가 동일.
+  MENA/XL/XT/TK/ZW 기존 5바이어 승인 대기는 유지하며 PY/SQ_MI 포함 총 7바이어가 승인 대기이다.
+  원문 표현·그래픽 Warning은 유지한다. 상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-19-py-sq-mi-xml-review.md`.
+
+- 2026-09-17 MENA_L02(A2 ENG/ARA) / XL_ENG(A3 ENG) / XT_L02(A2 ENG/THA) XML 추출 검증 완료.
+  최신 검토 시작: `samples/tagged_pdf_xml_poc/outputs/xml_review_mena_xl_xt_20260917_ready/review.html`.
+  각 바이어 폴더에 semantic XML/MD/전체 HTML, raw XML, report/review_run/source_audit가 있다.
+  Hard gate 0; 전체 2,391 passed / 1 Windows symlink skip, 비교 화면/제목 추가 9 passed.
+  기존 10개 프로필의 XML/MD 30파일 바이트 동일. XL은 공식 프로필 부재로 검토용 overlay만 사용했다.
+  MENA 원문 ActualText/RTL·표지·연락처, XL 사양 소수·문장 소속, XT 내장 글꼴의 태국어 매핑을 검증했다.
+  TK 비교 화면 RTL 방향만 새 폴더 `outputs/xml_review_tk_20260917_direction_review`에 갱신했으며 추출/전체 HTML 10파일은 동일.
+  사용자 컨펌은 MENA/XL/XT/TK/ZW 모두 대기 상태; 원문 표현·비텍스트 Warning은 후속 사람 검토 대상으로 유지.
+  상세: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-17-mena-xl-xt-xml-review.md`.
+
+- 2026-09-16 TK ARA 제목 대응표의 `0 1`~`0 5` 표시 오류 수정.
+  전체 MD는 원래 `01`~`05` 정상이며, 대응표가 raw 숫자 조각을 별도로 합치던 결함이었다.
+  본문 writer와 동일한 원문 번호 검증을 사용하고 ARA 표 번호는 LTR isolate 처리.
+  최신 TK 검토: `samples/tagged_pdf_xml_poc/outputs/xml_review_tk_20260916_heading_review/tk_review.html`.
+  3언어 제목 72개 본문 대조 및 숫자 5개의 브라우저 위치/간격 PASS, 집중 294 passed, compileall 성공.
+  기존 추출 XML·MD·보고서·전체 HTML 10개는 바이트 동일. 이전 출력은 보존.
+
+- 2026-09-16 TK 사용자 검토와 별도로 ZW_TPE / A3 / TPE 추출 검증 완료, 사용자 검토 대기.
+  원본 `samples/SUG_RAW/2_TV_ZW/BN68-24973D-00_SUG_Y26 TV ALL_ZW_TPE_260327.0.pdf`.
+  시작 HEAD `e06b998844e3b09887e612f4f22940abffeac2a4`, clean 상태.
+  XML 경로에서 겹쳐 그린 글자, 표지 순서, 전원 문장 소속, CJK 줄 연결 및 RoHS 병합 셀 검증.
+  최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_zw_20260916_source_verified/zw_review.html`.
+  Hard gate 0; 제목 24, 검토 단위 122, 표 17, 모델·소비전력 49쌍, RoHS 36셀.
+  전체 XML 2,311 passed / 1 Windows symlink skip, 집중 432 passed, 추가 무결성 6 passed.
+  기존 7개 바이어 + TK 2종의 XML·MD 27파일 바이트 동일. 원문 표현/비텍스트 Warning 4범주.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-16-zw-xml-review.md`.
+  계획: `samples/tagged_pdf_xml_poc/docs/plans/2026-09-16-zw-extraction.md`.
+
+- 2026-09-15 사용자가 대표 바이어 결과의 추가 검토가 필요 없음을 확인하고 TK 추출을 승인했다.
+  TK_L02 A2 ENG/TUR 및 TK_ARA A3의 XML 추출·원문 구조 검증 완료.
+  최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_tk_20260915_source_verified/tk_review.html`.
+  Hard gate 0, XML→MD 360개 단위 PASS, 공백 경계 8곳 및 RTL 모델 별표 검증.
+  원문 편집 후보 7건은 별도 보존. 전체 XML 2,264 passed / 1 symlink skip, TK 집중 148 passed.
+  기존 7개 바이어의 XML·MD 21파일 바이트 동일. 현재 XML 라인 커버리지 95.81%, 분기 91.30%.
+  계획: `docs/superpowers/plans/2026-09-15-tk-xml-review.md`.
+
+- 2026-09-15 대표 바이어 문장 소속의 잔여 8건을 수정·검증했다.
+  ZC C-FRA / AFRICA ARA 전원 연속문장, ZG 5언어 / XU ENG 비용 하위 조건.
+  ZC/CE/AFRICA/ZG 집중, XU A3 해당 구조, KR/LATIN 자동 회귀를 수행했다.
+  최종: `samples/tagged_pdf_xml_poc/outputs/xml_review_common_20260915_verified/ownership_findings.html`.
+  31개 소속 관계 및 XML→MD 2,489개 검토 단위 PASS, 이번 범위 Hard gate 0.
+  전체 2,082 passed / 1 Windows symlink skip. CE/KR/LATIN XML·MD 바이트 동일.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-15-representative-paragraph-ownership.md`.
+  이후 TK_L02 ENG/TUR → TK_ARA A3는 위 최신 항목에서 추출 검증을 완료했다.
+
+- 2026-09-14 CE 문장 소속 수정 후 기존 바이어 5개/15언어를 재추출하여 같은 두 관계를 감사했다.
+  새 미해결 구조 문제: ZC C-FRA 및 AFRICA ARA의 전원 연속문장 2곳,
+  ZG ENG/DEU/FRA/ITA/DUT 및 XU ENG 비용 하위 조건 6곳. 당시 8개는 수정 전이었으며 위 2026-09-15 작업에서 해소했다.
+  기존 회귀 PASS가 해당 관계 전체의 검토 완료를 의미하지 않음을 확인했다.
+  감사: `samples/tagged_pdf_xml_poc/outputs/xml_review_cross_buyer_20260914_ownership_audit/ownership_findings.html`.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-cross-buyer-paragraph-ownership-audit.md`.
+  CE 5언어의 직전 수정 결과는 유지되며, 이 감사로 다른 바이어를 재승인하지 않는다.
+
+- 2026-09-14 CE 5언어 전원 불릿의 연속문장 및 서비스 비용 하위 조건 소속을 수정 검증했다.
+  최신 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_paragraph_final`.
+  최신 HTML: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_paragraph_review/semantic_document.preview.html`.
+  수정부 PDF/HTML 비교: 같은 폴더의 `paragraph_findings.html`.
+  전체 1,980 passed / 1 symlink skip, CE 관련 65개 포함. Hard gate 잔여 0.
+  원문 표현 6건 사용자 PASS 및 향후 편집 에이전트 사례는 승계한다.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-ce-paragraph-ownership.md`.
+
+- 2026-09-14 AFRICA 전 언어 사용자 검토 완료를 확정했다. CE_L05 BOOK의 실제 북마크 순서
+  RUS → ENG → KAZ → MON → KYR로 추출 구조 검증을 진행했고 Hard gate는 해소했다.
+  최종 출력: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_final`.
+  검토 시작: `samples/tagged_pdf_xml_poc/outputs/xml_review_ce_20260914_review/review_start.html`.
+  사용자가 CE 원문 표현 6건 모두 원장 충실도 PASS로 처리했다. 향후 번역/편집 에이전트 평가 사례는
+  `docs/review_agent_cases/ce_l05_translation_editorial_cases.json`에 보존했다.
+  에이전트 제작 시 6건 탐지, 숫자 표기 오탐 방지, TRAMS 승인 KYR 용어 조회를 평가에 반영한다.
+  현재 에이전트 구현이나 DB 작업을 시작한 것은 아니다.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-ce-book-xml-review.md`.
+
+- 2026-09-14 ARA p35 안전 표의 한 줄 경고 문구에서 강제 문장 줄바꿈을 제거했다.
+  현재 출력은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260914_ara_safety_label_final`,
+  HTML은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260914_ara_safety_label_review/semantic_document.preview.html`.
+  원문/표 구조는 동일하며 기존 전체 의미 검토를 승계한다. 사용자 ARA 직접 검토 의견도 기록했다.
+  보고서: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-14-africa-safety-label-line.md`.
+
+- 2026-09-13 AFRICA ENG–ARA 전체 의미/구조 재검토: 당시 결과는
+  `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_eng_ara_final`.
+  Eco Sensor 문장 줄바꿈(5개 언어), ARA 안전 문단의 glyph 조각 순서 10곳을 수정했다.
+  196개 ENG–ARA 본문 대응을 읽었으며 원문 의미 차이 9건과 이미지 검토를 남겼다.
+  특히 ARA p31 LS03H의 가로/세로 조건은 ENG와 반대인 원문 표현이다.
+  현재 보고서는 `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-eng-ara-full-review.md`,
+  HTML은 `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_eng_ara_full_review/semantic_document.preview.html`.
+  이전 누락 감사 결과/폴더는 그대로 보존했다.
 
 Build a local Python-based PDF manual review engine for SUG manuals.
 
@@ -291,6 +441,36 @@ Notes
 ## Next Work
 
 ### Tagged PDF XML/Markdown Review Follow-ups
+
+- [x] AFRICA_L05 BOOK scoped RTL repair (2026-09-13), branch
+  `feature/xml-markdown-review`, starting clean at
+  `840512002a80a12b19c712116530ab69b1459c3a`. Actual bookmark order is
+  ENG/FRA/SPA/POR/ARA (physical pages 2/8/14/20/35). Semantic Arabic reads
+  36 down to 27; Raw retains source order. ActualText restores chapter digits;
+  pure RTL glyph reconstruction retains glyph owners and combining marks.
+  Focused: `50 passed`; full real-sample POC: `1760 passed, 1 skipped`.
+  Public imports and compileall pass. No legacy GridCell or DB changes.
+- [x] AFRICA follow-up structural acceptance (2026-09-13), starting clean at
+  `8eb2dfbb6c0f9fca8d1a7fda2ef448a706cb0a3f`: common 21 heading child-type groups
+  match all five languages. Covers/contact/blank pages are counted separately.
+  Observed totals 22/21/21/21/22 remain visible; only the fingerprinted Jordan-only
+  source difference is accepted. RTL UI, LTR islands, model/range associations and
+  ActualText decimals have source-backed fixes. All engine hard gates pass.
+  Final: `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_recheck_final_v2`.
+  Focused: `101 passed`; full real-sample POC: `1811 passed, 1 skipped`.
+  Raw/Semantic 4499 fragment identities and text survive. 18505 glyph origins
+  match independent PyMuPDF geometry within 0.02 pt.
+- [x] ZG ENG/FRA same-language review and Arabic rendered-output follow-up (2026-09-13).
+  Common 21 headings match each; actual One Connect/password/declaration/source wording differences documented.
+  Fixed four LTR decimal spaces, three Arabic inch-condition paragraphs and Wi-Fi bracket boundaries.
+  Raw XML byte-identical; 4499 source identities retained. Marked/Edge rendering verifies four RTL spans.
+  Current: `samples/tagged_pdf_xml_poc/outputs/xml_review_africa_20260913_followup_final_v3`.
+  Focused 141 passed; full 1851 passed, 1 Windows symlink skip; compileall/public imports pass.
+  Review: `samples/tagged_pdf_xml_poc/docs/reviews/2026-09-13-africa-zg-same-language-and-rtl-review.md`.
+- [ ] User overall review with source crops for image-only symbols/barcode. Generic native/meaning warnings
+  closed for extraction scope; actual EC/1999/5 preserved. No DB candidates.
+- [x] Audit sug-manual-review skill against current XML workflow; proposal recorded in POC docs/reviews.
+  Global skill was not changed.
 
 - [x] Task 8: gate cross-profile readability and multilingual-heading parity
   against the exact ZG, ZC, LATIN, KR, and XU real PDFs. Shared evidence policy:

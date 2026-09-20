@@ -5,7 +5,7 @@ import json
 from pathlib import Path, PureWindowsPath
 from xml.etree import ElementTree as ET
 from src.item_review_service import _unique_object
-from src.xml_review_gate import CONTRACT, EXTRACTOR_SHA256, REQUIRED_GATES, require
+from src.xml_review_gate import SUPPORTED_CONTRACTS, REQUIRED_GATES, require
 
 
 def parse_archived_source(report, receipt_bytes, xml_bytes, extraction_bytes):
@@ -15,7 +15,8 @@ def parse_archived_source(report, receipt_bytes, xml_bytes, extraction_bytes):
     require(hashlib.sha256(receipt_bytes).hexdigest() == inputs.get('receipt_sha256'), 'source receipt hash mismatch')
     receipt = json.loads(receipt_bytes, object_pairs_hook=_unique_object)
     require(isinstance(receipt, dict) and receipt == inputs.get('source_bundle'), 'source receipt and observation differ')
-    require(receipt.get('contract') == CONTRACT and receipt.get('extractor_sha256') == EXTRACTOR_SHA256,
+    require(isinstance(receipt.get('contract'), str) and receipt['contract'] in SUPPORTED_CONTRACTS
+            and receipt.get('extractor_sha256') == SUPPORTED_CONTRACTS[receipt['contract']],
             'unsupported source extraction contract')
     pdf_hash = receipt.get('pdf_sha256')
     require(isinstance(pdf_hash, str) and len(pdf_hash) == 64 and all(c in '0123456789abcdef' for c in pdf_hash),

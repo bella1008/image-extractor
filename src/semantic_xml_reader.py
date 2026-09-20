@@ -122,6 +122,13 @@ def read_review_bundle(folder: Path, receipt: dict, *, pdf_path: Path, mapping_p
                             for i, (r, s) in enumerate(zip(raw_children, semantic_children)))
             # A container crossing language boundaries is not a match window.
             child_languages = {child.language for child in content if child.language is not None}
+            if (checked.adapter_raw is not None and intervals and "language" not in attrs
+                    and language is not None and child_languages and child_languages != {language}):
+                # Some BOOK Articles contain the previous language's last page
+                # and the next language's front cover. Replay proves this tree;
+                # keep their audited children but do not label the whole Article.
+                language = None
+                attrs["review:language-evidence"] = "mixed_audited_container"
             require(language is None or not child_languages or child_languages == {language}, "container crosses language interval")
         if xml_path in heading_entries:
             entry = heading_entries[xml_path]
@@ -139,7 +146,8 @@ def read_review_bundle(folder: Path, receipt: dict, *, pdf_path: Path, mapping_p
                           attributes=tuple(attrs.items()), evidence=(evidence,))
 
     try:
-        raw_roots, semantic_roots = _children(checked.raw), _children(checked.semantic)
+        alignment = checked.adapter_raw if checked.adapter_raw is not None else checked.raw
+        raw_roots, semantic_roots = _children(alignment), _children(checked.semantic)
         require(len(raw_roots) == len(semantic_roots), "raw/semantic root count mismatch")
         roots = tuple(convert(raw, semantic, (i,), f"/{semantic.tag}[{i}]", None)
                       for i, (raw, semantic) in enumerate(zip(raw_roots, semantic_roots)))

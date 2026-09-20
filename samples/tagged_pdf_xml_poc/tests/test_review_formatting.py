@@ -164,12 +164,13 @@ def _form_document(
             )
         )
     if include_table:
+        cell_names = ("one", "two", "three", "four")
         cells = tuple(
             _element(
                 "table_cell",
                 _styled_paragraph(f"Cell label {index}", 600, 7.0),
                 _styled_paragraph(
-                    f"Cell detail {index}",
+                    f"Cell detail {cell_names[index]}",
                     table_detail_weight,
                     table_detail_size,
                 ),
@@ -510,7 +511,15 @@ def test_zg_sample_contains_ten_form_headings_and_retains_90_line_breaks() -> No
     assert sum(
         hint.display_role == "strong_label"
         for hint in document.text_display_hints
+    ) == 100
+    assert sum(
+        hint.reason == "form_cluster_middle_tier_with_weaker_detail"
+        for hint in document.text_display_hints
     ) == 70
+    assert sum(
+        hint.reason == "repeated_table_label_value_typography"
+        for hint in document.text_display_hints
+    ) == 30
 
 
 def test_line_break_hint_is_frozen_and_document_default_is_compatible() -> None:

@@ -1,0 +1,283 @@
+{
+  "profiles": [
+    {
+      "source_token": "ZC_L02",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25100B-00_SUG_Y26 TV ALL_ZC_L02_260122.0.pdf",
+      "pdf_sha256": "e7ae68f7e314b500425bb81608aa1f3a1fe683ee555d7ea38db705b42649c4a1",
+      "languages": [
+        "ENG",
+        "C-FRA"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 947,
+        "C-FRA": 991
+      },
+      "review_node_count": 3780,
+      "receipt_sha256": "378b62aa00299c812d56bc12d32b540e808547ff0f4a83cdaef92b7bb6c41df7",
+      "seconds": 23.61,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "XU_ENG",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-24437C-01_SUG_Y26 TV ALL_XU_ENG_260129.0.pdf",
+      "pdf_sha256": "f6d2a6d7c19672bcba92e1bfaaee364cdbcd8538006057a52af2f4ebb7e047f7",
+      "languages": [
+        "ENG"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 1168
+      },
+      "review_node_count": 2378,
+      "receipt_sha256": "417f9c27ebfeb3571548814d1d37577d5ab45581d7f7b44c572f098fdf8d5830",
+      "seconds": 13.77,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "ZG XN ZT_L05",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25448A-00_SUG_Y26 TV ALL_ZG XN ZT_L05_260204.0.pdf",
+      "pdf_sha256": "931ccb150d7166812d071e13842f2268fc42ce653fbbcf7f0ae1d83e1979bb54",
+      "languages": [
+        "ENG",
+        "DEU",
+        "FRA",
+        "ITA",
+        "DUT"
+      ],
+      "text_fragments_by_language": {
+        "UNASSIGNED": 9,
+        "ENG": 1287,
+        "DEU": 1359,
+        "FRA": 1323,
+        "ITA": 1343,
+        "DUT": 1375
+      },
+      "review_node_count": 12864,
+      "receipt_sha256": "70b3bd01187b6e4d9fa77af1508d46a81faef0839be97e1d90310720fc70f9a4",
+      "seconds": 139.55,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "AFRICA_L05",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25031G-00_SUG_Y26 TV ALL_AFRICA_L05_251230.0.pdf",
+      "pdf_sha256": "cdc2123f2e1dde2f46314a9ef31bda0bdfb4b4455ff26436838004d65e05c848",
+      "languages": [
+        "ENG",
+        "FRA",
+        "SPA",
+        "POR",
+        "ARA"
+      ],
+      "text_fragments_by_language": {
+        "UNASSIGNED": 75,
+        "ENG": 827,
+        "FRA": 847,
+        "SPA": 841,
+        "POR": 836,
+        "ARA": 1073
+      },
+      "review_node_count": 8887,
+      "receipt_sha256": "ad61cf34b8807f12fba5f5c1d23c4d0d76c26a808f4bfca3f0bb9555f894e9d9",
+      "seconds": 94.7,
+      "run": "xml_integration_20260920_r4"
+    },
+    {
+      "source_token": "CE_L05",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-26318A-00_SUG_Y26 TV ALL_CE_L05_260422.0.pdf",
+      "pdf_sha256": "0a0ff58debef3c386332b9708b13d38ffb12cb4b0cfacc3400ab4f93070a7640",
+      "languages": [
+        "RUS",
+        "ENG",
+        "KAZ",
+        "MON",
+        "KYR"
+      ],
+      "text_fragments_by_language": {
+        "RUS": 1146,
+        "ENG": 1051,
+        "KAZ": 1124,
+        "MON": 1083,
+        "KYR": 1105,
+        "UNASSIGNED": 50
+      },
+      "review_node_count": 10604,
+      "receipt_sha256": "577e60413ec9858b38884a3ffe67d1ac247f64dd7c307063b0ba311b505edacf",
+      "seconds": 101.48,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "TK_L02",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-26343A-00_SUG_Y26 TV ALL_TK_L02_260327.0.pdf",
+      "pdf_sha256": "1cd4ef4874bff0b7b977fc33ed59f754f0da2a79df660bd82ec10bbe5097c1dd",
+      "languages": [
+        "ENG",
+        "TUR"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 1134,
+        "TUR": 1161
+      },
+      "review_node_count": 4728,
+      "receipt_sha256": "1868e2f1b6504557e76e8da94679d102b69c2de215abb69226facd53cbedec1a",
+      "seconds": 42.84,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "TK_ARA",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-26344A-00_SUG_Y26 TV ALL_TK_ARA_260327.0.pdf",
+      "pdf_sha256": "4e7252d53db9836ba2f093e527cda211867fd9ce5312fcb53e592b91fb7ac552",
+      "languages": [
+        "ARA"
+      ],
+      "text_fragments_by_language": {
+        "ARA": 1446
+      },
+      "review_node_count": 2513,
+      "receipt_sha256": "61799046603932749ea37fac9a69250dedc5f5f8b84f25b3272a34668e2c0d13",
+      "seconds": 39.8,
+      "run": "xml_integration_20260920_r2"
+    },
+    {
+      "source_token": "MENA_L02",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25031L-00_SUG_Y26 TV ALL_MENA_L02_260114.0.pdf",
+      "pdf_sha256": "b4d6f56c8e7f85b6d8c8b0681954223b0194a9ccc9e7cc2499d121f611f12ecf",
+      "languages": [
+        "ENG",
+        "ARA"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 925,
+        "ARA": 1083
+      },
+      "review_node_count": 3957,
+      "receipt_sha256": "06de503a36b48f141de76b45b9661c935183414092142ba14bad53f094de429f",
+      "seconds": 64.08,
+      "run": "xml_integration_20260920_r2"
+    },
+    {
+      "source_token": "SQ MI_HEAR",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-24437H-00_SUG_Y26 TV ALL_SQ MI_HEAR_260220.0.pdf",
+      "pdf_sha256": "28831342b1433d01fbc93a8276bb4de1692dbc7cc7c5996d95204a468b9bcf18",
+      "languages": [
+        "HEB",
+        "ARA"
+      ],
+      "text_fragments_by_language": {
+        "HEB": 1135,
+        "ARA": 1111
+      },
+      "review_node_count": 4259,
+      "receipt_sha256": "2404dca25916dcdbd47f625674a92053a95969fbf0132a98d43e64503765c39c",
+      "seconds": 66.49,
+      "run": "xml_integration_20260920_r2"
+    },
+    {
+      "source_token": "XT_L02",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25031M-00_SUG_Y26 TV ALL_XT_L02_260113.0.pdf",
+      "pdf_sha256": "9a1f4a2bd1d5f097c14768510a44b51147a7b57249d689fefcfacbe7df9c65da",
+      "languages": [
+        "ENG",
+        "THA"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 892,
+        "THA": 925
+      },
+      "review_node_count": 3706,
+      "receipt_sha256": "037eaead3c68d339bc09eb19749cd924f8c583bf6127cd4036cef81ba71e8ed2",
+      "seconds": 78,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "ZW_TPE",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-24973D-00_SUG_Y26 TV ALL_ZW_TPE_260327.0.pdf",
+      "pdf_sha256": "37e8ef8c16b250463c4a57f5efc199a0f65bd8f9a1e10eacc5562b727f82e99f",
+      "languages": [
+        "TPE"
+      ],
+      "text_fragments_by_language": {
+        "TPE": 1233
+      },
+      "review_node_count": 2362,
+      "receipt_sha256": "bff7b470da05a8e6595b27637cbb54f8e98b3d8f4b42194b37c085c10bd54d6b",
+      "seconds": 20.7,
+      "run": "xml_integration_20260920_r2"
+    },
+    {
+      "source_token": "PY_ENRU",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-26639A-00_SUG_Y26 TV ALL_PY_ENRU_260427.0.pdf",
+      "pdf_sha256": "973824f547bebb72fcd57e8c6ca50a455b2c8b83ea5392822fca2c461ddee1c1",
+      "languages": [
+        "RUS",
+        "ENG"
+      ],
+      "text_fragments_by_language": {
+        "RUS": 1253,
+        "ENG": 1164
+      },
+      "review_node_count": 4674,
+      "receipt_sha256": "98624ae70911e1f45f82cec4dbb7dac9c0ab38ff70b5d1891125d5a0c3e18eff",
+      "seconds": 39.25,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "UA_ENG",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-26754A-00_SUG_Y26 TV ALL_UA_ENG_260520.0.pdf",
+      "pdf_sha256": "38b9bdb357c6b9fd0ccfa0fc3fd3e3a0a0c9ce787fe56fb3fc16c4db1c1ee80a",
+      "languages": [
+        "ENG"
+      ],
+      "text_fragments_by_language": {
+        "ENG": 1155
+      },
+      "review_node_count": 2244,
+      "receipt_sha256": "72f71a3cce4a6a749f6af56a8df9d7f7cb200568a9940dae0da6bd63ec2d307f",
+      "seconds": 17.89,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "XD_INS",
+      "status": "technical_pass",
+      "pdf_filename": "BN68-25031D-00_SUG_Y26 TV ALL_XD_INS_260113.0.pdf",
+      "pdf_sha256": "f332cca0f65ea88a6b00489d076173a6a5eaf859bc4a1773c05a3153c97dad56",
+      "languages": [
+        "INS"
+      ],
+      "text_fragments_by_language": {
+        "INS": 1298
+      },
+      "review_node_count": 3376,
+      "receipt_sha256": "7ccfb5753fc86866031a12163b364d43892897bf4b3baef47c9d57a9165257c5",
+      "seconds": 28.86,
+      "run": "xml_integration_20260920_r1"
+    },
+    {
+      "source_token": "XL_ENG",
+      "status": "blocked",
+      "pdf_filename": "BN68-25031J-00_SUG_Y26 TV ALL_XL_ENG_260306.0.pdf",
+      "pdf_sha256": "dce6f5417123809235904c6ce3e7a1ff32aadc57df0a28e2a74d2c676b15a849",
+      "error_type": "UnknownSourceTokenError",
+      "reason": "No canonical PDF profile for source_token 'XL_ENG'",
+      "seconds": 0.11,
+      "run": "xml_integration_20260920_r1"
+    }
+  ],
+  "technical_pass_pdf_count": 14,
+  "technical_pass_profile_language_count": 32,
+  "human_approval": "not_granted",
+  "schema_version": "xml-integration-audit/1",
+  "contract": "tagged-pdf-xml/8134892",
+  "extractor_sha256": "f46c72b75627f030ec7ec78c5cd34e3eede2b2e50edaf3a53407f8db97991477"
+}

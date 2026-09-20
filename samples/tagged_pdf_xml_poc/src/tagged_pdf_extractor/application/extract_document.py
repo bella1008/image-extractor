@@ -27,8 +27,26 @@ from tagged_pdf_extractor.domain.review_formatting import (
 from tagged_pdf_extractor.domain.readability_formatting import (
     apply_readability_formatting,
 )
+from tagged_pdf_extractor.domain.cover_contact import apply_cover_contact_formatting
+from tagged_pdf_extractor.domain.model_code_lines import annotate_model_code_lines
 from tagged_pdf_extractor.domain.subtitle_detection import detect_table_subtitles
 from tagged_pdf_extractor.domain.role_mapping import is_heading_candidate
+from tagged_pdf_extractor.domain.africa_book import prepare_africa_book
+from tagged_pdf_extractor.domain.ce_book import prepare_ce_book
+from tagged_pdf_extractor.domain.tk_sheet import prepare_tk_sheet
+from tagged_pdf_extractor.domain.tk_arabic import prepare_tk_arabic
+from tagged_pdf_extractor.domain.zw_sheet import prepare_zw_sheet, zw_scope
+from tagged_pdf_extractor.domain.mena_sheet import prepare_mena_sheet
+from tagged_pdf_extractor.domain.xl_sheet import prepare_xl_sheet
+from tagged_pdf_extractor.domain.xt_sheet import prepare_xt_sheet
+from tagged_pdf_extractor.domain.py_sheet import prepare_py_sheet
+from tagged_pdf_extractor.domain.sq_mi_sheet import prepare_sq_mi_sheet
+from tagged_pdf_extractor.domain.ua_sheet import prepare_ua_sheet
+from tagged_pdf_extractor.domain.xd_sheet import prepare_xd_sheet
+from tagged_pdf_extractor.domain.zw_source_text import restore_zw_text
+from tagged_pdf_extractor.domain.zw_line_join import restore_zw_line_join
+from tagged_pdf_extractor.domain.verified_paragraph_ownership import repair_verified_paragraph_ownership
+from tagged_pdf_extractor.domain.profile_scope import parse_source_token
 from tagged_pdf_extractor.ports.baseline_reader import BaselineReaderPort
 from tagged_pdf_extractor.ports.output_writer import (
     OutputValidation,
@@ -66,15 +84,45 @@ class ExtractDocument:
         if not pdf_path.is_file():
             raise IsADirectoryError(f"PDF source is not a file: {pdf_path}")
 
-        document = self.reader.read(pdf_path)
+        profile = (self.profile_repository.lookup(pdf_path)
+                   if self.profile_repository is not None
+                   and parse_source_token(pdf_path.name) in {"AFRICA_L05", "CE_L05", "TK_L02", "TK_ARA", "ZW_TPE", "MENA_L02", "XL_ENG", "XT_L02", "PY_ENRU", "SQ MI_HEAR", "UA_ENG", "XD_INS"} else None)
+        profile_reader = getattr(self.reader, "read_for_profile", None)
+        document = (profile_reader(pdf_path, profile) if profile is not None and callable(profile_reader)
+                    else self.reader.read(pdf_path))
+        if profile is not None:
+            document = prepare_africa_book(document, profile)
+            document = prepare_ce_book(document, profile)
+            document = prepare_tk_sheet(document, profile)
+            document = prepare_tk_arabic(document, profile)
+            document = prepare_mena_sheet(document, profile)
+            document = prepare_xl_sheet(document, profile)
+            document = prepare_xt_sheet(document, profile)
+            document = prepare_py_sheet(document, profile)
+            document = prepare_sq_mi_sheet(document, profile)
+            document = prepare_ua_sheet(document, profile)
+            document = prepare_xd_sheet(document, profile)
+            document = prepare_zw_sheet(document, profile)
+            if zw_scope(profile):
+                children, evidence = restore_zw_text(document.children, document.diagnostics)
+                document = replace(document, children=children, diagnostics=(*document.diagnostics,evidence))
+                children, evidence = restore_zw_line_join(document.children, document.diagnostics)
+                document = replace(document, children=children, diagnostics=(*document.diagnostics,evidence))
+        if (profile is None and self.profile_repository is not None
+                and parse_source_token(pdf_path.name) in {"ZC_L02", "ZG XN ZT_L05", "XU_ENG"}):
+            profile = self.profile_repository.lookup(pdf_path)
+        document = repair_verified_paragraph_ownership(document, profile)
         document = promote_numbered_chapter_headings(document)
         profile_resolution = None
         if self.profile_repository is not None:
-            profile = self.profile_repository.lookup(pdf_path)
+            if profile is None:
+                profile = self.profile_repository.lookup(pdf_path)
             resolution = resolve_language_intervals(profile, document)
             profile_resolution = (profile, resolution)
         document = detect_table_subtitles(document)
         document = apply_profile_review_formatting(document)
+        document = apply_cover_contact_formatting(document)
+        document = annotate_model_code_lines(document)
         if profile_resolution is not None:
             profile, resolution = profile_resolution
             if resolution.diagnostic is None:
@@ -98,7 +146,7 @@ class ExtractDocument:
                 )
             document = replace(document, multilingual_heading_audit=audit)
         document = _detect_list_continuations(document)
-        document = apply_readability_formatting(document)
+        document = apply_readability_formatting(replace(document, readability_profile=profile))
         document = _remove_continuation_sentence_break_conflicts(document)
         baseline = self.baseline_reader.read_text(pdf_path)
         validation = self.writer.validate(document)

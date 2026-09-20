@@ -6,6 +6,7 @@ import hashlib
 from io import BytesIO
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -30,10 +31,16 @@ def _sanitize_text(data, root):
     replacements = {
         root_text: 'release://sanitized/worktree',
         root_text.replace('\\', '\\\\'): 'release://sanitized/worktree',
+        root.as_posix(): 'release://sanitized/worktree',
     }
     text = data.decode('utf-8')
     for needle, replacement in replacements.items():
         text = text.replace(needle, replacement)
+    # Frozen provenance still names its original author's checkout after clone.
+    # Keep the relative evidence suffix, and never rewrite the source masters.
+    text = re.sub(r'[A-Za-z]:[\\/]+Users[\\/]+[^\\/"<>\r\n]+[\\/]+'
+                  r'image-extractor[\\/]+\.worktrees[\\/]+xml-review-v2(?=[\\/])',
+                  'release://sanitized/worktree', text)
     return text.encode('utf-8')
 
 

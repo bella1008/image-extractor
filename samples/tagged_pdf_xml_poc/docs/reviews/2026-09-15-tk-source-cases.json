@@ -1,0 +1,208 @@
+{
+  "purpose": "Source-preserving translation/editorial agent regression examples",
+  "cases": [
+    {
+      "case_id": "TK-TUR-01",
+      "source_token": "TK_L02",
+      "language": "TUR",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26343A-00_SUG_Y26 TV ALL_TK_L02_260327.0.pdf",
+      "source_sha256": "1cd4ef4874bff0b7b977fc33ed59f754f0da2a79df660bd82ec10bbe5097c1dd",
+      "pages": [
+        2
+      ],
+      "object_ref": "558 0 R",
+      "source_structure_path": "0/0/10/25",
+      "source_text": "Mevcut televizyon setinizin kendisini veya yerini değiştirmiyorsanız yukarıdaki önlemlerin aynısı alınmalıdır.",
+      "finding": "기존 TV를 유지·이동하는 ENG 조건과 TUR 조건 표현의 대응 확인.",
+      "pdf_crop": {
+        "page": 2,
+        "rect": [
+          1069.4095458984375,
+          422.54425048828125,
+          1258.5257568359375,
+          472.4802551269531
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_L02\\TK-TUR-01.png",
+        "source_ref": "558 0 R",
+        "source_path": "0/0/10/25"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    },
+    {
+      "case_id": "TK-TUR-02",
+      "source_token": "TK_L02",
+      "language": "TUR",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26343A-00_SUG_Y26 TV ALL_TK_L02_260327.0.pdf",
+      "source_sha256": "1cd4ef4874bff0b7b977fc33ed59f754f0da2a79df660bd82ec10bbe5097c1dd",
+      "pages": [
+        2
+      ],
+      "object_ref": "510 0 R",
+      "source_structure_path": "0/0/10/61/1/1",
+      "source_text": "Samsung logosu üzerindeki veya TV'nin altındaki koruyucu film çıkarılırsa ekran kararabilir.\nKoruyucu film takılıysa, filmi çıkarın.",
+      "finding": "보호 필름을 제거하지 않았을 때라는 ENG 조건과 TUR 제거 조건의 방향 확인.",
+      "pdf_crop": {
+        "page": 2,
+        "rect": [
+          41.85110092163086,
+          38.12517547607422,
+          1616.2962646484375,
+          1113.008544921875
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_L02\\TK-TUR-02.png",
+        "source_ref": "510 0 R",
+        "source_path": "0/0/10/61/1/1"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    },
+    {
+      "case_id": "TK-ENG-01",
+      "source_token": "TK_L02",
+      "language": "ENG",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26343A-00_SUG_Y26 TV ALL_TK_L02_260327.0.pdf",
+      "source_sha256": "1cd4ef4874bff0b7b977fc33ed59f754f0da2a79df660bd82ec10bbe5097c1dd",
+      "pages": [
+        1
+      ],
+      "object_ref": "1589 0 R",
+      "source_structure_path": "0/0/1/108",
+      "source_text": "The battery icncorporated in this product is not user replaceable.\nFor information on its replacement, please contact your service provider.\nDo not attempt to remove the battery or dispose it in a fire.\nDo not disassemble, crush, or puncture the battery.\nIf you intend to discard the product, the waste collection site will take the appropriate measures for the recycling and treatment of the product, including the battery.",
+      "finding": "icncorporated 원문 철자 검토.",
+      "pdf_crop": {
+        "page": 1,
+        "rect": [
+          1483.266845703125,
+          1002.7738647460938,
+          1690.8387451171875,
+          1116.7528076171875
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_L02\\TK-ENG-01.png",
+        "source_ref": "1589 0 R",
+        "source_path": "0/0/1/108"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    },
+    {
+      "case_id": "TK-ARA-01",
+      "source_token": "TK_ARA",
+      "language": "ARA",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26344A-00_SUG_Y26 TV ALL_TK_ARA_260327.0.pdf",
+      "source_sha256": "4e7252d53db9836ba2f093e527cda211867fd9ce5312fcb53e592b91fb7ac552",
+      "pages": [
+        2
+      ],
+      "object_ref": "72 0 R",
+      "source_structure_path": "0/0/1/58/1/1",
+      "source_text": "تدعم طُرز LS03H وضع الوضع الرأسي عندما تثبيت أفقيًا (باستثناء 98LS03HE ).",
+      "finding": "LS03H 설치 방향: ENG 수직과 ARA أفقيًا 원문 표현 대응 확인.",
+      "pdf_crop": {
+        "page": 2,
+        "rect": [
+          244.40060424804688,
+          273.7092590332031,
+          454.06561279296875,
+          321.7062683105469
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_ARA\\TK-ARA-01.png",
+        "source_ref": "72 0 R",
+        "source_path": "0/0/1/58/1/1"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    },
+    {
+      "case_id": "TK-ARA-02",
+      "source_token": "TK_ARA",
+      "language": "ARA",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26344A-00_SUG_Y26 TV ALL_TK_ARA_260327.0.pdf",
+      "source_sha256": "4e7252d53db9836ba2f093e527cda211867fd9ce5312fcb53e592b91fb7ac552",
+      "pages": [
+        2
+      ],
+      "object_ref": "354 0 R",
+      "source_structure_path": "0/0/1/96/0/0/0/1",
+      "source_text": "100 ميجاوات عند 2.4 جيجا هرتز - 2.4835 جيجا هرتز، 200 ميجاوات عند 5.15 جيجا هرتز - 5.25 جيجا هرتز، 100 ميجاوات عند 5.25 جيجا هرتز - 5.35 & جيجا هرتز 5.47 جيجا هرتز -5.725 جيجا هرتز، 25 ميجاوات عند 5.725 جيجا هرتز - 5.85 جيجا هرتز، 200 ميجاوات عند 5.945 جيجا هرتز - 6.425 جيجا هرتز.",
+      "finding": "ENG mW와 ARA ميجاوات 원문 단위 표현 대응 확인.",
+      "pdf_crop": {
+        "page": 2,
+        "rect": [
+          240.79750061035156,
+          871.3285522460938,
+          477.2095031738281,
+          963.3135375976562
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_ARA\\TK-ARA-02.png",
+        "source_ref": "354 0 R",
+        "source_path": "0/0/1/96/0/0/0/1"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    },
+    {
+      "case_id": "TK-ARA-03",
+      "source_token": "TK_ARA",
+      "language": "ARA",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26344A-00_SUG_Y26 TV ALL_TK_ARA_260327.0.pdf",
+      "source_sha256": "4e7252d53db9836ba2f093e527cda211867fd9ce5312fcb53e592b91fb7ac552",
+      "pages": [
+        1
+      ],
+      "object_ref": "788 0 R",
+      "source_structure_path": "0/0/1/30/2/2/1/1",
+      "source_text": "قك بتوصيل السلك بحيث تكون الدعامات المثبّتة بالحائط على الارتفاع نفسه للدعامات المثبّتة بالتلفزيون أو على ارتفاع أقل منها.",
+      "finding": "낙하 방지 지시문의 قك 원문 철자 검토.",
+      "pdf_crop": {
+        "page": 1,
+        "rect": [
+          250.66909790039062,
+          1043.909912109375,
+          588.5740966796875,
+          1102.906982421875
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_ARA\\TK-ARA-03.png",
+        "source_ref": "788 0 R",
+        "source_path": "0/0/1/30/2/2/1/1"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    },
+    {
+      "case_id": "TK-ARA-04",
+      "source_token": "TK_ARA",
+      "language": "ARA",
+      "pdf": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-extractor-release\\samples\\SUG_RAW\\TV_TK\\BN68-26344A-00_SUG_Y26 TV ALL_TK_ARA_260327.0.pdf",
+      "source_sha256": "4e7252d53db9836ba2f093e527cda211867fd9ce5312fcb53e592b91fb7ac552",
+      "pages": [
+        1
+      ],
+      "object_ref": "429 0 R",
+      "source_structure_path": "0/0/1/1",
+      "source_text": "يأتي هذا التلفزيون مزوّدًا بدليل الدليل البسيط للمستخدم ومزودًا بدليل دليل المستخدم مدمج.",
+      "finding": "도입부 دليل 반복 원문 편집 검토.",
+      "pdf_crop": {
+        "page": 1,
+        "rect": [
+          246.6291046142578,
+          85.59635925292969,
+          539.2581176757812,
+          133.59335327148438
+        ],
+        "crop": "C:\\Users\\bella\\image-extractor\\.worktrees\\xml-markdown-review\\samples\\tagged_pdf_xml_poc\\outputs\\xml_review_tk_20260915_source_verified\\TK_ARA\\TK-ARA-04.png",
+        "source_ref": "429 0 R",
+        "source_path": "0/0/1/1"
+      },
+      "extraction_verdict": "matches_source_pdf",
+      "future_agent_action": "flag_for_translation_or_editorial_review; never silently rewrite extraction",
+      "checklist_db_candidate": false
+    }
+  ]
+}

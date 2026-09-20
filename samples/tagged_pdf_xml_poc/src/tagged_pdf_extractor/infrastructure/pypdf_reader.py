@@ -50,6 +50,58 @@ class TaggedPdfReader:
     def __init__(self, collector: McidTextCollector | None = None) -> None:
         self.collector = collector or McidTextCollector()
 
+    def read_for_profile(self, pdf_path, profile):
+        from dataclasses import replace
+        from hashlib import sha256
+        from tagged_pdf_extractor.domain.africa_book import africa_book_scope
+        from tagged_pdf_extractor.domain.ce_book import ce_book_scope
+        from tagged_pdf_extractor.domain.tk_sheet import tk_l02_scope
+        from tagged_pdf_extractor.domain.zw_sheet import zw_scope
+        from tagged_pdf_extractor.domain.xl_sheet import xl_scope
+        from tagged_pdf_extractor.domain.xt_sheet import xt_scope
+        from tagged_pdf_extractor.domain.py_sheet import py_scope
+        from tagged_pdf_extractor.domain.ua_sheet import ua_scope
+        from tagged_pdf_extractor.domain.xd_sheet import xd_scope
+        if xd_scope(profile):
+            from tagged_pdf_extractor.infrastructure.xd_source_evidence import add_xd_source_evidence
+            return add_xd_source_evidence(self.read(pdf_path), profile)
+        if ua_scope(profile):
+            from tagged_pdf_extractor.infrastructure.ua_source_evidence import add_ua_source_evidence
+            return add_ua_source_evidence(self.read(pdf_path), profile)
+        if py_scope(profile):
+            from tagged_pdf_extractor.infrastructure.py_source_evidence import add_py_source_evidence
+            return add_py_source_evidence(self.read(pdf_path), profile)
+        from tagged_pdf_extractor.domain.sq_mi_sheet import sq_mi_scope
+        if sq_mi_scope(profile):
+            from tagged_pdf_extractor.infrastructure.sq_mi_source_evidence import SqMiTextRunner
+            document = TaggedPdfReader(McidTextCollector(runner=SqMiTextRunner())).read(pdf_path)
+            return replace(document, source_sha256=sha256(Path(pdf_path).read_bytes()).hexdigest())
+        if xt_scope(profile):
+            from tagged_pdf_extractor.infrastructure.xt_source_evidence import add_xt_source_evidence
+            return add_xt_source_evidence(self.read(pdf_path), profile)
+        if xl_scope(profile):
+            from tagged_pdf_extractor.infrastructure.xl_source_evidence import add_xl_source_evidence
+            return add_xl_source_evidence(self.read(pdf_path), profile)
+        if zw_scope(profile):
+            from tagged_pdf_extractor.infrastructure.zw_source_evidence import add_zw_source_evidence
+            from tagged_pdf_extractor.infrastructure.zw_object_evidence import add_zw_object_evidence
+            return add_zw_source_evidence(add_zw_object_evidence(self.read(pdf_path), profile), profile)
+        if tk_l02_scope(profile):
+            from tagged_pdf_extractor.infrastructure.tk_source_evidence import add_tk_source_evidence
+            return add_tk_source_evidence(self.read(pdf_path), profile)
+        if ce_book_scope(profile):
+            from tagged_pdf_extractor.infrastructure.ce_source_evidence import add_ce_source_evidence
+            return add_ce_source_evidence(self.read(pdf_path), profile)
+        from tagged_pdf_extractor.infrastructure.africa_actual_text import ActualTextRunner
+        from tagged_pdf_extractor.domain.tk_arabic import tk_ara_scope
+        from tagged_pdf_extractor.domain.mena_sheet import mena_scope
+        if not (africa_book_scope(profile) or tk_ara_scope(profile) or mena_scope(profile)):
+            return self.read(pdf_path)
+        document = TaggedPdfReader(McidTextCollector(
+            runner=ActualTextRunner(arabic_pages_only=True)
+        )).read(pdf_path)
+        return replace(document, source_sha256=sha256(Path(pdf_path).read_bytes()).hexdigest())
+
     @staticmethod
     def resolve(value: Any) -> Any:
         current = value
@@ -131,6 +183,26 @@ class TaggedPdfReader:
             mcid_bboxes[index] = result.bboxes_by_mcid
             seen_mcids[index] = result.seen_mcids
             diagnostics.extend(result.diagnostics)
+            evidence = getattr(getattr(self.collector, "runner", None), "evidence", None)
+            if evidence:
+                diagnostics.append(Diagnostic(
+                    "warning", "pdf_actual_text_applied",
+                    "PDF-authored ActualText replaced glyph decoding on an Arabic page.",
+                    {"page_index": index, "replacements": list(evidence)},
+                ))
+                evidence.clear()
+            rtl_lines = getattr(getattr(self.collector, "runner", None), "rtl_lines", None)
+            if rtl_lines:
+                diagnostics.append(Diagnostic("warning", "africa_rtl_glyph_source",
+                    "Source glyph ownership and text matrices observed before RTL flushing.",
+                    {"page_index": index, "lines": list(rtl_lines)}))
+                rtl_lines.clear()
+            decimal_lines = getattr(getattr(self.collector, "runner", None), "ltr_decimal_lines", None)
+            if decimal_lines:
+                diagnostics.append(Diagnostic("info", "africa_ltr_decimal_source",
+                    "Source glyph runs for LTR decimal kerning verification.",
+                    {"page_index": index, "lines": list(decimal_lines)}))
+                decimal_lines.clear()
 
         role_map = self._read_role_map(struct_root.get("/RoleMap"))
         children = self._walk_kids(

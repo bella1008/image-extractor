@@ -142,6 +142,36 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 
 `special_character_counts_preserved`와 각 문자의 `count_preserved`는 문서 전체 문자 개수만 비교하는 보수적인 집계 proxy입니다. 특정 OSD 경로의 순서·문맥·문장 연결이 보존됐다는 뜻은 아닙니다. 지정 ZC OSD 경로의 문맥 보존은 아래 표본을 통합 테스트에서 직접 찾아 별도로 검증합니다.
 
+## AFRICA BOOK XML 검증 — 2026-09-13
+
+`AFRICA_L05 + BOOK + ENG/FRA/SPA/POR/ARA`의 명시적 XML 경로입니다.
+북마크 순서는 ENG/FRA/SPA/POR/ARA이며 Arabic 본문은 p35→30,
+표지를 포함한 전체 Arabic은 p36→27로 읽습니다. Raw 순서를 보존하고
+Semantic에는 원래 source-structure-path를 기록합니다.
+
+PDF ActualText, glyph 단위 복원, glyph advance와 figure 좌표로 혼합 줄의
+읽기 순서를 확인합니다. LTR URL/숫자, RTL 방향 표시, 조건·범위 구분자와
+glyph 내부 발음기호 순서를 보존하며 불확실한 geometry는 재배치하지 않습니다.
+소수 조각도 원 glyph/ActualText/연속 좌표가 일치할 때만 합칩니다.
+
+**추출 검수 통과 / 이미지 crop을 함께 사용하는 사용자 전반 검토 단계**입니다. 공통 제목 21개와
+각각의 하위 블록 종류·개수가 다섯 언어 모두 일치합니다. 본문 제목 수
+22/21/21/21/22는 그대로 기록하고 ENG/ARA에 실제 있는 Jordan 항목만
+PDF SHA·실제 제목/경로/표·공통 서명을 검증한 source exception으로 처리합니다.
+표지/연락처/빈 페이지는 별도로 집계합니다.
+
+최종 bundle: `outputs/xml_review_africa_20260913_followup_final_v3`.
+기본 XML/Markdown/report와 review_document.json, review_run.json을 확인했습니다.
+집중 141개, 전체 1851개 테스트 통과; Windows symlink 1개 skip입니다.
+원문·crop·집계 정의·남은 Warning은
+[후속 검토 기록](docs/reviews/2026-09-13-africa-zg-same-language-and-rtl-review.md)에 있습니다.
+ZG의 동일 언어 ENG/FRA 공통 제목 21개를 비교했고 원본 차이를 별도로 확인했습니다.
+LTR 소수 공백과 Arabic 인치/괄호 결함을 source glyph로 수정했습니다.
+검증된 Arabic 숫자 조건 네 문단은 Semantic의 `display-direction`과 Markdown의
+`<span dir="rtl">`로 표시합니다. inline HTML의 dir 속성을 지원하는 Markdown
+미리보기를 사용하며 전체 `semantic_document.preview.html`과 PDF 비교 화면도 제공합니다.
+`sug-manual-review` 전역 스킬의 수정 제안은 docs/reviews의 skill audit에 있습니다.
+
 ## 교차 프로필 가독성 근거 정책
 
 문장 경계, 목록 continuation, inline subtitle, 다국어 heading parity는 원문 문구나 번역 사전이 아니라 공통 구조·기하·글꼴 근거로만 판정합니다. BBox는 PDF에서 관찰될 때 XML과 보고서의 선택적 감사 근거로 보존하되 Raw XML 원문이나 Markdown에는 판정 속성을 섞지 않습니다. 좌표 계산은 문자 간격(`Tc`)을 반영하고, 아직 정확히 모델링하지 않는 단어 간격(`Tw`)·텍스트 상승(`Ts`) 상태에서는 BBox를 만들지 않습니다. BBox 등 판정에 필요한 근거가 없으면 해당 표시를 만들지 않는 fail-closed 방식입니다.
@@ -149,7 +179,7 @@ heading 목록은 구조 경로, source role, semantic role, level, 연결된 �
 - 목록 continuation은 목록과의 인접성, 같은 페이지와 언어, 수평 정렬, 세로 간격, 글꼴 크기, 충돌 구조 부재를 각각 통과해야 합니다. 앞 목록의 marker/body와 대상 문단은 완전한 기하·타이포그래피 근거가 필요하고, 뒤 목록은 구조 경계 및 모호하지 않은 동일 페이지·언어 근거로만 사용합니다. 표준 `P`가 아닌 사용자 정의 source role이 semantic `P`로 해석되는 경우에도 나머지 조건을 모두 통과해야 합니다.
 - inline subtitle은 단독 table wrapper, 유일한 inline leaf paragraph, offset 경계, 상대 굵기 근거가 모두 있을 때만 표시합니다.
 - 다국어 heading audit은 승격 heading, level이 확인된 source-role heading 후보, 구조적으로 검출된 section heading의 전체 level/origin/번호 label 서명을 비교합니다. heading 문구와 level 없는 문서 title은 서명에 포함하지 않습니다.
-- Runtime에는 buyer, 문구, 언어별 번역 heading을 추가하지 않습니다. 감사 근거는 `extraction_report.json`과 `semantic_document.xml`에 남고, 원문 보존용 `raw_structure.xml` 및 검토용 Markdown에는 audit 속성이 노출되지 않습니다.
+- 아래 공통 가독성 규칙에는 buyer, 문구, 언어별 번역 heading을 추가하지 않습니다. 별도 AFRICA profile 경로도 번역 heading을 사용하지 않습니다. 감사 근거는 `extraction_report.json`과 `semantic_document.xml`에 남고, 원문 보존용 `raw_structure.xml` 및 검토용 Markdown에는 audit 속성이 노출되지 않습니다.
 
 ## 2026-09-08 교차 프로필 검증 결과
 

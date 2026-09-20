@@ -97,6 +97,8 @@ def multilingual_heading_audit_to_data(
         if not audit.applicable
         else "blocked_by_invalid_interval"
         if pending
+        else "passed_with_source_exception"
+        if audit.source_count_exception is not None
         else "passed"
         if audit.passed
         else "failed"
@@ -154,6 +156,8 @@ def multilingual_heading_audit_to_data(
 
     return {
         "applicable": audit.applicable,
+        **({"source_count_exception": _stable_json_value(audit.source_count_exception)}
+           if audit.source_count_exception is not None else {}),
         "status": status,
         "passed": audit.passed,
         "expected_interval_count": audit.expected_interval_count,
@@ -224,7 +228,7 @@ def multilingual_heading_hard_gates(
     else:
         values = (
             True,
-            bool(audit_data["total_heading_count_matches"]),
+            bool(audit_data["total_heading_count_matches"]) or bool(audit_data.get("source_count_exception")),
             bool(audit_data["heading_level_sequence_matches"]),
             bool(audit_data["heading_origin_sequence_matches"]),
             bool(audit_data["numbered_label_sequence_matches"]),
@@ -374,14 +378,24 @@ class QualityEvaluator:
             for diagnostic in document.diagnostics
             if diagnostic.code in EXTRACTION_LOSS_DIAGNOSTIC_CODES
         )
+        from tagged_pdf_extractor.domain.zw_source_text import verified_zw_special_counts
+        verified_counts = verified_zw_special_counts(document, normalized_baseline, _SPECIAL_CHARACTERS)
+        mirrored_font_counts = False
+        if verified_counts is None:
+            from tagged_pdf_extractor.domain.sq_mi_brackets import verified_sq_special_counts
+            verified_counts = verified_sq_special_counts(document, normalized_baseline, _SPECIAL_CHARACTERS)
+            mirrored_font_counts = verified_counts is not None
         special_characters = {
             character: {
                 "tagged": normalized_tagged.count(character),
                 "baseline": normalized_baseline.count(character),
+                **({"verified_visible_source": verified_counts[character],
+                    ("baseline_mirrored_font_difference" if mirrored_font_counts else "baseline_overprint_copies"): normalized_baseline.count(character)-verified_counts[character]}
+                   if verified_counts is not None else {}),
                 "count_preserved": (
-                    normalized_baseline.count(character) == 0
+                    (verified_counts[character] if verified_counts is not None else normalized_baseline.count(character)) == 0
                     or normalized_tagged.count(character)
-                    >= normalized_baseline.count(character)
+                    >= (verified_counts[character] if verified_counts is not None else normalized_baseline.count(character))
                 ),
             }
             for character in _SPECIAL_CHARACTERS
